@@ -119,3 +119,19 @@ export type {
   AdoWorkItemId,
   AdoWorkItemUpdate,
 } from "./AdoTeam.js";
+
+export {
+  createAdoControlPlane,
+  validateAdoControlPlaneFactoryConfig,
+} from "./AdoControlPlaneFactory.js";
+export type {
+  AdoControlPlaneAccess,
+  AdoControlPlaneFactoryConfig,
+  AdoControlPlaneFactoryValidationError,
+  AdoControlPlaneFactoryValidationErrorCode,
+  AdoControlPlaneFactoryValidationResult,
+  AdoFakeControlPlaneFactoryConfig,
+  AdoInjectedControlPlaneClient,
+  AdoInjectedControlPlaneFactoryConfig,
+  AdoReadOnlyControlPlane,
+} from "./AdoControlPlaneFactory.js";
