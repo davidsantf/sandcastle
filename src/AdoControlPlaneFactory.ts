@@ -155,8 +155,9 @@ const requireReadOnlyClient = (
   }
 
   return {
-    fetchWorkItem: client.fetchWorkItem,
-    getPullRequestCiStatus: client.getPullRequestCiStatus,
+    fetchWorkItem: (id) => client.fetchWorkItem!(id),
+    getPullRequestCiStatus: (pullRequestId) =>
+      client.getPullRequestCiStatus!(pullRequestId),
   };
 };
 
@@ -182,9 +183,9 @@ const requireWriteClient = (
 
   return {
     ...readOnlyClient,
-    updateWorkItem: client.updateWorkItem,
-    addWorkItemComment: client.addWorkItemComment,
-    createPullRequest: client.createPullRequest,
+    updateWorkItem: (id, update) => client.updateWorkItem!(id, update),
+    addWorkItemComment: (id, body) => client.addWorkItemComment!(id, body),
+    createPullRequest: (request) => client.createPullRequest!(request),
   };
 };
 

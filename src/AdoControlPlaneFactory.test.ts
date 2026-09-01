@@ -4,6 +4,11 @@ import {
   validateAdoControlPlaneFactoryConfig,
   type AdoInjectedControlPlaneClient,
 } from "./AdoControlPlaneFactory.js";
+import type {
+  AdoPullRequestRequest,
+  AdoWorkItemId,
+  AdoWorkItemUpdate,
+} from "./AdoTeam.js";
 
 const workItem = {
   id: 101,
@@ -43,6 +48,86 @@ describe("createAdoControlPlane", () => {
     await expect(controlPlane.getPullRequestCiStatus("1")).resolves.toEqual({
       status: "succeeded",
     });
+  });
+
+  it("preserves the host client binding for class-backed injected adapters", async () => {
+    class StatefulAdoClient implements AdoInjectedControlPlaneClient {
+      constructor(private readonly titlePrefix: string) {}
+
+      async fetchWorkItem(id: AdoWorkItemId) {
+        return {
+          ...workItem,
+          id,
+          title: `${this.titlePrefix}-${id}`,
+        };
+      }
+
+      async updateWorkItem(id: AdoWorkItemId, update: AdoWorkItemUpdate) {
+        return {
+          ...workItem,
+          id,
+          title: update.title ?? `${this.titlePrefix}-updated-${id}`,
+        };
+      }
+
+      async addWorkItemComment(id: AdoWorkItemId, body: string) {
+        return {
+          id: `${this.titlePrefix}-comment-${id}`,
+          workItemId: id,
+          body: `${this.titlePrefix}: ${body}`,
+          createdAt: new Date(0),
+        };
+      }
+
+      async createPullRequest(request: AdoPullRequestRequest) {
+        return {
+          id: `${this.titlePrefix}-pr`,
+          title: `${this.titlePrefix}: ${request.title}`,
+          sourceBranch: request.sourceBranch,
+          targetBranch: request.targetBranch,
+          workItemIds: request.workItemIds ?? [],
+          draft: request.draft ?? false,
+        };
+      }
+
+      async getPullRequestCiStatus(pullRequestId: string) {
+        return {
+          status:
+            pullRequestId === `${this.titlePrefix}-pr`
+              ? "succeeded"
+              : "pending",
+        } as const;
+      }
+    }
+
+    const controlPlane = createAdoControlPlane({
+      mode: "injected",
+      client: new StatefulAdoClient("stateful"),
+    });
+
+    await expect(controlPlane.fetchWorkItem(202)).resolves.toMatchObject({
+      id: 202,
+      title: "stateful-202",
+    });
+    await expect(
+      controlPlane.updateWorkItem(202, { title: "custom-title" }),
+    ).resolves.toMatchObject({ title: "custom-title" });
+    await expect(
+      controlPlane.addWorkItemComment(202, "Comment"),
+    ).resolves.toMatchObject({
+      id: "stateful-comment-202",
+      body: "stateful: Comment",
+    });
+    await expect(
+      controlPlane.createPullRequest({
+        title: "PR",
+        sourceBranch: "feature",
+        targetBranch: "main",
+      }),
+    ).resolves.toMatchObject({ id: "stateful-pr", title: "stateful: PR" });
+    await expect(
+      controlPlane.getPullRequestCiStatus("stateful-pr"),
+    ).resolves.toEqual({ status: "succeeded" });
   });
 
   it("delegates injected adapter calls", async () => {
