@@ -121,6 +121,15 @@ export type {
 } from "./AdoTeam.js";
 
 export {
+  prepareAdoWorkItemRun,
+  startAdoWorkItemRun,
+} from "./AdoOneWorkItemFlow.js";
+export type {
+  AdoWorkItemRunPreparationResult,
+  PrepareAdoWorkItemRunOptions,
+} from "./AdoOneWorkItemFlow.js";
+
+export {
   createAdoControlPlane,
   validateAdoControlPlaneFactoryConfig,
 } from "./AdoControlPlaneFactory.js";

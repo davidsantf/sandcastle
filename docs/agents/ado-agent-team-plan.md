@@ -11,13 +11,14 @@ The host provides an injected ADO client to Sandcastle's adapter seam. Sandcastl
 
 ## Current Slice
 
-- Add `src/AdoControlPlaneFactory.ts` as the public factory seam.
-- Support `fake` mode backed by `FakeAdoControlPlane`, including seeded work items and optional CI status.
-- Support `injected` mode backed by typed host-provided methods matching `AdoControlPlane` operations.
-- Validate required capabilities before returning an adapter.
-- Add read-only mode that exposes only work item fetch and CI status methods.
-- Add unit tests for fake creation, injected delegation, fail-closed validation, and read-only capability boundaries.
-- Export public factory types and functions from `src/index.ts`.
+- Add `src/AdoOneWorkItemFlow.ts` as a deterministic one-work-item demo/helper flow.
+- Fetch one ADO work item through an injected or fake `AdoControlPlane`.
+- Derive a branch with `createAdoWorkItemBranchName` unless the caller provides one.
+- Build and validate a single implementer assignment with `validateAdoTeamConfig`.
+- Post a start/progress comment only when validation succeeds and the caller has not requested `dryRun`/`skipComment`.
+- Return typed work item, assignment, branch, validation, and optional comment context.
+- Add unit tests for happy path, not-found fail-closed behavior, validation failure without comments, caller-provided branch, dry run, and injected mock control planes.
+- Export public helper types and functions from `src/index.ts`.
 
 ## Guardrails
 
