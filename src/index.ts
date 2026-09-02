@@ -98,3 +98,49 @@ export type {
   MergeToHeadBranchStrategy,
   NamedBranchStrategy,
 } from "./SandboxProvider.js";
+export {
+  createAdoWorkItemBranchName,
+  FakeAdoControlPlane,
+  validateAdoTeamConfig,
+} from "./AdoTeam.js";
+export type {
+  AdoCiStatus,
+  AdoControlPlane,
+  AdoPullRequestContext,
+  AdoPullRequestRequest,
+  AdoTeamAgentAssignment,
+  AdoTeamConfig,
+  AdoTeamRole,
+  AdoTeamValidationError,
+  AdoTeamValidationErrorCode,
+  AdoTeamValidationResult,
+  AdoWorkItemComment,
+  AdoWorkItemContext,
+  AdoWorkItemId,
+  AdoWorkItemUpdate,
+} from "./AdoTeam.js";
+
+export {
+  prepareAdoWorkItemRun,
+  startAdoWorkItemRun,
+} from "./AdoOneWorkItemFlow.js";
+export type {
+  AdoWorkItemRunPreparationResult,
+  PrepareAdoWorkItemRunOptions,
+} from "./AdoOneWorkItemFlow.js";
+
+export {
+  createAdoControlPlane,
+  validateAdoControlPlaneFactoryConfig,
+} from "./AdoControlPlaneFactory.js";
+export type {
+  AdoControlPlaneAccess,
+  AdoControlPlaneFactoryConfig,
+  AdoControlPlaneFactoryValidationError,
+  AdoControlPlaneFactoryValidationErrorCode,
+  AdoControlPlaneFactoryValidationResult,
+  AdoFakeControlPlaneFactoryConfig,
+  AdoInjectedControlPlaneClient,
+  AdoInjectedControlPlaneFactoryConfig,
+  AdoReadOnlyControlPlane,
+} from "./AdoControlPlaneFactory.js";
