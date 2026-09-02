@@ -11,13 +11,19 @@ The host provides an injected ADO client to Sandcastle's adapter seam. Sandcastl
 
 ## Current Slice
 
-- Add a PR publishing helper that maps local Sandcastle execution output into Azure Repos pull request metadata through `AdoControlPlane`.
-- Accept explicit source branch, target branch, title, optional description, linked work item IDs, draft flag, and optional progress/completion metadata from the local execution plane.
-- Call only typed `AdoControlPlane` methods: `createPullRequest`, and optionally `addWorkItemComment` / `updateWorkItem` when caller-provided options request work item updates.
-- Fail closed before publishing when the provided control plane does not expose required write or PR capabilities.
-- Keep the helper independent of live ADO MCP tool names, Azure CLI commands, network calls, secrets, git pushes, and sandbox execution.
-- Return a typed result containing the created PR context and any work item comments/updates performed through the injected control plane.
-- Add unit tests for fake control-plane publishing, injected adapter delegation, missing PR capability failure, missing comment/update capability failure when requested, and no live ADO/shell dependency.
+- Add a bounded CI/review feedback loop helper that maps the current work item and associated pull request context into local Sandcastle follow-up actions through `AdoControlPlane`.
+- Accept explicit current work item context, associated pull request context, optional feedback-loop bounds, and caller-provided options for recording progress, actionable feedback, and completion summaries.
+- Read CI status and review feedback only through typed `AdoControlPlane` methods; do not import or call live ADO MCP tools, Azure CLI, Azure DevOps CLI, network APIs, secrets, git commands, or sandbox execution.
+- Map CI states deterministically:
+  - pending or running CI returns a wait/no-op action;
+  - succeeded CI with no actionable review feedback returns a summary-only result;
+  - failed checks return clear local fix-and-test actions that identify failed checks and expected local validation to rerun.
+- Represent review feedback as typed, actionable summaries associated with the current pull request; comments requesting changes return local update actions for Sandcastle to execute.
+- Record feedback-loop progress, actionable feedback summaries, and completion summaries against the current work item only through write-capable `AdoControlPlane` comment or update methods when requested.
+- Fail closed before recording progress or feedback when caller-requested writes require missing comment/update capabilities.
+- Stop at the configured bound when CI or review feedback remains unchanged, and return a bounded summary instead of looping indefinitely.
+- Keep merge approval, merge completion, merge-readiness decisions, and equivalent PR finalization actions outside Sandcastle; the feedback loop may summarize observed status but must not approve, complete, or merge pull requests.
+- Add unit tests for fake CI transitions from pending to running to succeeded, failed CI check action mapping, review feedback requiring changes, bounded repeated feedback, write-capable comment/update recording, missing capability failures, and no live ADO/MCP/network/shell/CLI dependency.
 - Export public helper types and functions from `src/index.ts`.
 
 ## Guardrails

@@ -104,8 +104,12 @@ export {
   validateAdoTeamConfig,
 } from "./AdoTeam.js";
 export type {
+  AdoCiCheck,
+  AdoCiCheckState,
   AdoCiStatus,
   AdoControlPlane,
+  AdoReviewFeedback,
+  AdoReviewFeedbackComment,
   AdoPullRequestContext,
   AdoPullRequestRequest,
   AdoTeamAgentAssignment,
@@ -153,3 +157,14 @@ export type {
   PublishAdoPullRequestOptions,
   PublishAdoPullRequestResult,
 } from "./AdoPullRequestPublisher.js";
+
+export { runAdoFeedbackLoop } from "./AdoFeedbackLoop.js";
+export type {
+  AdoFeedbackLoopAction,
+  AdoFeedbackLoopControlPlaneLike,
+  AdoFeedbackLoopObservation,
+  AdoFeedbackLoopPullRequestContext,
+  AdoFeedbackLoopResult,
+  AdoFeedbackLoopResultKind,
+  RunAdoFeedbackLoopOptions,
+} from "./AdoFeedbackLoop.js";

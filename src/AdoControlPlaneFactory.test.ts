@@ -188,6 +188,54 @@ describe("createAdoControlPlane", () => {
     expect(client.getPullRequestCiStatus).toHaveBeenCalledWith("pr-1");
   });
 
+  it("preserves optional injected review-feedback capability", async () => {
+    const client: AdoInjectedControlPlaneClient = {
+      fetchWorkItem: vi.fn(async () => workItem),
+      updateWorkItem: vi.fn(async (_id, update) => ({
+        ...workItem,
+        ...update,
+      })),
+      addWorkItemComment: vi.fn(async (id, body) => ({
+        id: "comment-1",
+        workItemId: id,
+        body,
+        createdAt: new Date(0),
+      })),
+      createPullRequest: vi.fn(async (request) => ({
+        id: "pr-1",
+        title: request.title,
+        sourceBranch: request.sourceBranch,
+        targetBranch: request.targetBranch,
+        workItemIds: request.workItemIds ?? [],
+        draft: request.draft ?? false,
+      })),
+      getPullRequestCiStatus: vi.fn(async () => ({
+        status: "succeeded" as const,
+      })),
+      getPullRequestReviewFeedback: vi.fn(async () => ({
+        status: "none" as const,
+      })),
+    };
+
+    const writeControlPlane = createAdoControlPlane({
+      mode: "injected",
+      client,
+    });
+    const readOnlyControlPlane = createAdoControlPlane({
+      mode: "injected",
+      access: "read-only",
+      client,
+    });
+
+    await expect(
+      writeControlPlane.getPullRequestReviewFeedback?.("pr-1"),
+    ).resolves.toEqual({ status: "none" });
+    await expect(
+      readOnlyControlPlane.getPullRequestReviewFeedback?.("pr-1"),
+    ).resolves.toEqual({ status: "none" });
+    expect(client.getPullRequestReviewFeedback).toHaveBeenCalledTimes(2);
+  });
+
   it("fails closed when injected write-capable mode is missing methods", () => {
     expect(() =>
       createAdoControlPlane({

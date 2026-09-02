@@ -2,6 +2,7 @@ import {
   FakeAdoControlPlane,
   type AdoCiStatus,
   type AdoControlPlane,
+  type AdoReviewFeedback,
   type AdoPullRequestContext,
   type AdoPullRequestRequest,
   type AdoWorkItemComment,
@@ -17,6 +18,9 @@ export interface AdoReadOnlyControlPlane {
   readonly getPullRequestCiStatus: (
     pullRequestId: string,
   ) => Promise<AdoCiStatus>;
+  readonly getPullRequestReviewFeedback?: (
+    pullRequestId: string,
+  ) => Promise<AdoReviewFeedback>;
 }
 
 export type AdoControlPlaneAccess = "read-only" | "write";
@@ -39,6 +43,9 @@ export interface AdoInjectedControlPlaneClient {
   readonly getPullRequestCiStatus?: (
     pullRequestId: string,
   ) => Promise<AdoCiStatus>;
+  readonly getPullRequestReviewFeedback?: (
+    pullRequestId: string,
+  ) => Promise<AdoReviewFeedback>;
 }
 
 export interface AdoFakeControlPlaneFactoryConfig {
@@ -46,6 +53,9 @@ export interface AdoFakeControlPlaneFactoryConfig {
   readonly access?: AdoControlPlaneAccess;
   readonly workItems?: readonly AdoWorkItemContext[];
   readonly ciStatus?: AdoCiStatus;
+  readonly ciStatusSequence?: readonly AdoCiStatus[];
+  readonly reviewFeedback?: AdoReviewFeedback;
+  readonly reviewFeedbackSequence?: readonly AdoReviewFeedback[];
 }
 
 export interface AdoInjectedControlPlaneFactoryConfig {
@@ -158,6 +168,12 @@ const requireReadOnlyClient = (
     fetchWorkItem: (id) => client.fetchWorkItem!(id),
     getPullRequestCiStatus: (pullRequestId) =>
       client.getPullRequestCiStatus!(pullRequestId),
+    ...(isFunction(client.getPullRequestReviewFeedback)
+      ? {
+          getPullRequestReviewFeedback: (pullRequestId: string) =>
+            client.getPullRequestReviewFeedback!(pullRequestId),
+        }
+      : {}),
   };
 };
 
@@ -195,15 +211,32 @@ const createReadOnlyControlPlane = (
   fetchWorkItem: (id) => client.fetchWorkItem(id),
   getPullRequestCiStatus: (pullRequestId) =>
     client.getPullRequestCiStatus(pullRequestId),
+  ...(client.getPullRequestReviewFeedback === undefined
+    ? {}
+    : {
+        getPullRequestReviewFeedback: (pullRequestId: string) =>
+          client.getPullRequestReviewFeedback!(pullRequestId),
+      }),
 });
 
 const createFakeControlPlane = (
   config: AdoFakeControlPlaneFactoryConfig,
 ): FakeAdoControlPlane => {
   const controlPlane = new FakeAdoControlPlane(config.workItems ?? []);
-  if (config.ciStatus !== undefined) {
+  if (config.ciStatusSequence !== undefined) {
+    controlPlane.setPullRequestCiStatusSequence(config.ciStatusSequence);
+  } else if (config.ciStatus !== undefined) {
     controlPlane.setPullRequestCiStatus(config.ciStatus);
   }
+
+  if (config.reviewFeedbackSequence !== undefined) {
+    controlPlane.setPullRequestReviewFeedbackSequence(
+      config.reviewFeedbackSequence,
+    );
+  } else if (config.reviewFeedback !== undefined) {
+    controlPlane.setPullRequestReviewFeedback(config.reviewFeedback);
+  }
+
   return controlPlane;
 };
 

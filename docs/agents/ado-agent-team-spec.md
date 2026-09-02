@@ -14,6 +14,11 @@ Add Azure DevOps (ADO) agent-team tooling to Sandcastle without coupling Sandcas
 - RF-006: Keep one primary work item per implementer iteration and require distinct branch/worktree assignments for parallel implementers unless duplicate work item use is explicit.
 - RF-007: Provide a PR publishing helper that accepts local execution results, including branch and worktree output, and publishes PR metadata through the injected `AdoControlPlane` contract.
 - RF-008: The PR publishing helper must call only typed `AdoControlPlane` PR, comment, and update methods, and must fail closed when the injected control plane lacks write or PR capabilities.
+- RF-009: Provide a bounded CI/review feedback loop that reads CI status and review feedback only through typed `AdoControlPlane` methods for the current work item and associated pull request context.
+- RF-010: Map control-plane CI and review states into local execution actions: pending or running states produce a wait/no-op result, successful CI with no actionable review feedback produces a summary-only result, failed checks produce clear local fix-and-test actions, and review comments requesting changes produce clear local update actions.
+- RF-011: Record feedback-loop progress, actionable feedback summaries, and completion summaries against the current work item only through write-capable `AdoControlPlane` update or comment methods.
+- RF-012: Support deterministic fake CI and review status transitions so tests can model pending, running, failed, succeeded, and review-feedback scenarios without live services.
+- RF-013: Keep merge approval, merge completion, and final merge-readiness decisions outside Sandcastle; the feedback loop may summarize observed status but must not approve, complete, or merge pull requests.
 
 ## Conformance Criteria
 
@@ -24,9 +29,15 @@ Add Azure DevOps (ADO) agent-team tooling to Sandcastle without coupling Sandcas
 - CC-005: Public APIs are exported from `src/index.ts` when intended for host integration.
 - CC-006: PR publishing helper tests cover fake control-plane behavior and injected adapter behavior without shelling out to ADO tooling.
 - CC-007: PR publishing helper tests verify missing write or PR capabilities are rejected before publishing metadata.
+- CC-008: Feedback-loop tests use fake or injected control planes only and verify that no live ADO, MCP, network, shell, Azure CLI, or Azure DevOps CLI calls are made.
+- CC-009: Given fake CI transitions from pending to running to succeeded, the feedback loop returns wait/no-op actions until success and then returns a summary-only result with no local fix action.
+- CC-010: Given a fake failed CI status with check details, the feedback loop returns a clear local execution action that identifies the failed check and the expected local validation to rerun.
+- CC-011: Given fake review feedback that requests changes, the feedback loop records the feedback against the current work item through write-capable control-plane methods and returns only local update actions to Sandcastle.
+- CC-012: Given repeated unchanged CI or review feedback, the feedback loop stops at its configured bound and reports a bounded summary instead of looping indefinitely.
+- CC-013: Tests verify the feedback loop never calls approve, complete, merge, or equivalent pull request finalization methods.
 
 ## Non-Goals
 
 - Implementing real Azure DevOps CLI, REST, or MCP calls.
 - Moving issue tracking into sandbox shell commands.
-- Building merge automation; merge decisions remain outside this slice.
+- Building merge automation, merge approval, merge completion, or final merge-readiness decisions; these remain outside this slice.
