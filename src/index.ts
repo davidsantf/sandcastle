@@ -168,3 +168,25 @@ export type {
   AdoFeedbackLoopResultKind,
   RunAdoFeedbackLoopOptions,
 } from "./AdoFeedbackLoop.js";
+
+export { runAdoTeam, validateAdoTeamRunnerOptions } from "./AdoTeamRunner.js";
+export type {
+  AdoTeamFeedbackLoopContext,
+  AdoTeamFeedbackLoopOptionsFactory,
+  AdoTeamFeedbackLoopRunner,
+  AdoTeamLocalExecution,
+  AdoTeamLocalExecutionContext,
+  AdoTeamLocalExecutionResult,
+  AdoTeamPullRequestContext,
+  AdoTeamPullRequestOptionsFactory,
+  AdoTeamPullRequestPublisher,
+  AdoTeamRunnerAssignmentResult,
+  AdoTeamRunnerAssignmentStatus,
+  AdoTeamRunnerCounts,
+  AdoTeamRunnerExecutionBounds,
+  AdoTeamRunnerResult,
+  AdoTeamRunnerValidationError,
+  AdoTeamRunnerValidationErrorCode,
+  AdoTeamRunnerValidationResult,
+  RunAdoTeamOptions,
+} from "./AdoTeamRunner.js";

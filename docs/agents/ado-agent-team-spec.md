@@ -19,6 +19,16 @@ Add Azure DevOps (ADO) agent-team tooling to Sandcastle without coupling Sandcas
 - RF-011: Record feedback-loop progress, actionable feedback summaries, and completion summaries against the current work item only through write-capable `AdoControlPlane` update or comment methods.
 - RF-012: Support deterministic fake CI and review status transitions so tests can model pending, running, failed, succeeded, and review-feedback scenarios without live services.
 - RF-013: Keep merge approval, merge completion, and final merge-readiness decisions outside Sandcastle; the feedback loop may summarize observed status but must not approve, complete, or merge pull requests.
+- RF-014: Provide an ADO agent-team orchestration runner that coordinates multiple implementer iterations from ADO work item assignments while preserving Sandcastle-local execution responsibilities.
+- RF-015: The runner input must include assigned work items, implementer slots, branch/worktree assignment data, a maximum parallelism limit, duplicate-work-item policy, execution bounds, and injected control-plane/local-execution dependencies.
+- RF-016: The runner output must include per-implementer assignment validation results, selected branch/worktree assignments, local execution summaries, PR/CI metadata observed through the control plane, skipped assignment reasons, and bounded completion status.
+- RF-017: The runner must validate before execution that parallel implementers do not share the same primary work item unless duplicate primary work item use is explicitly configured for that run.
+- RF-018: The runner must validate before execution that parallel implementers receive distinct branch and worktree assignments; conflicts must fail closed with actionable diagnostics before any local execution begins.
+- RF-019: The runner must enforce configured maximum parallelism and execution bounds, including rejecting non-positive parallelism, capping active implementer iterations to the configured limit, and stopping rather than looping indefinitely when bounds are reached.
+- RF-020: The runner must compose existing Sandcastle helpers for local git branches, worktrees, sandbox execution, agent providers, command execution, tests, commits, PR publishing, and CI/review feedback where those helpers already exist, instead of duplicating those responsibilities.
+- RF-021: The runner must use `AdoControlPlane` only for Boards, pull request, and CI/review metadata; local git, sandbox, agent provider, command execution, tests, and commits must remain in Sandcastle/local code.
+- RF-022: The runner must not call live ADO, MCP, network, Azure CLI, or Azure DevOps CLI APIs directly; all control-plane behavior must flow through injected fake or adapter-backed `AdoControlPlane` contracts.
+- RF-023: The runner must expose a local execution seam for implementer iteration execution so tests can inject deterministic local execution results without directly running agents, shells, sandboxes, tests, or commits.
 
 ## Conformance Criteria
 
@@ -35,6 +45,15 @@ Add Azure DevOps (ADO) agent-team tooling to Sandcastle without coupling Sandcas
 - CC-011: Given fake review feedback that requests changes, the feedback loop records the feedback against the current work item through write-capable control-plane methods and returns only local update actions to Sandcastle.
 - CC-012: Given repeated unchanged CI or review feedback, the feedback loop stops at its configured bound and reports a bounded summary instead of looping indefinitely.
 - CC-013: Tests verify the feedback loop never calls approve, complete, merge, or equivalent pull request finalization methods.
+- CC-014: Given two parallel implementer assignments with the same primary work item and duplicate work item use disabled, the runner rejects the run before starting local execution and reports the conflicting implementer slots and work item.
+- CC-015: Given two parallel implementer assignments with the same primary work item and duplicate work item use explicitly enabled, the runner accepts the assignments only when their branch and worktree values remain distinct.
+- CC-016: Given two parallel implementer assignments with duplicate branch or worktree values, the runner rejects the run before starting local execution and reports the conflicting branch or worktree.
+- CC-017: Given more ready implementer assignments than the configured maximum parallelism, the runner starts no more than the configured number concurrently and reports remaining assignments as pending or skipped according to the configured bounds.
+- CC-018: Given zero or negative maximum parallelism, the runner fails closed with a validation error and starts no local execution.
+- CC-019: Given injected fake `AdoControlPlane` and fake local execution seam implementations, runner tests complete deterministically without live ADO, MCP, network, shell, Azure CLI, Azure DevOps CLI, sandbox, agent provider, test runner, or git side effects.
+- CC-020: Given a successful local execution seam result for an implementer assignment, the runner passes local branch and worktree output to existing PR publishing and feedback-loop helpers rather than invoking ADO PR, CI, or review operations directly.
+- CC-021: Given a local execution seam failure for one implementer assignment, the runner records that assignment as failed locally and does not let the failure cause another parallel implementer to reuse the failed assignment's branch, worktree, or primary work item.
+- CC-022: Given execution bounds are reached before all assignments complete, the runner stops scheduling additional iterations and returns a bounded summary containing completed, failed, pending, and skipped assignment counts.
 
 ## Non-Goals
 
