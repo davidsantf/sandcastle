@@ -20,6 +20,7 @@ export type AdoTeamRunnerValidationErrorCode =
   | AdoTeamValidationError["code"]
   | "invalid-max-parallelism"
   | "invalid-max-assignments"
+  | "missing-work-item"
   | "missing-branch"
   | "missing-worktree";
 
@@ -169,6 +170,11 @@ const implementerAssignments = (
 ): readonly AdoTeamAgentAssignment[] =>
   assignments.filter((assignment) => assignment.role === "implementer");
 
+const assignmentWorkItem = (assignment: AdoTeamAgentAssignment): string =>
+  assignment.workItemId === undefined
+    ? ""
+    : String(assignment.workItemId).trim();
+
 const assignmentBranch = (assignment: AdoTeamAgentAssignment): string =>
   assignment.branch ?? "";
 
@@ -180,6 +186,15 @@ const missingAssignmentErrors = (
 ): readonly AdoTeamRunnerValidationError[] =>
   implementerAssignments(assignments).flatMap((assignment) => {
     const errors: AdoTeamRunnerValidationError[] = [];
+    if (assignmentWorkItem(assignment).length === 0) {
+      errors.push({
+        code: "missing-work-item",
+        value: assignment.agentId,
+        assignmentIds: [assignment.agentId],
+        message: `ADO implementer '${assignment.agentId}' requires a primary work item assignment`,
+      });
+    }
+
     if (assignmentBranch(assignment).length === 0) {
       errors.push({
         code: "missing-branch",

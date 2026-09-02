@@ -89,6 +89,45 @@ describe("validateAdoTeamRunnerOptions", () => {
 });
 
 describe("runAdoTeam", () => {
+  it("rejects missing primary work item assignments before local execution", async () => {
+    const assignments: readonly AdoTeamAgentAssignment[] = [
+      {
+        agentId: "implementer-a",
+        role: "implementer",
+        branch: "sandcastle/a",
+        worktreePath: "/repo/.sandcastle/worktrees/implementer-a",
+      },
+    ];
+    const executeLocal = vi.fn(async () => ({ status: "completed" as const }));
+
+    const result = await runAdoTeam({
+      assignments,
+      maxParallelism: 1,
+      controlPlane: controlPlaneFor(assignments),
+      executeLocal,
+    });
+
+    expect(result.status).toBe("rejected");
+    expect(result.counts).toEqual({
+      completed: 0,
+      failed: 0,
+      pending: 0,
+      skipped: 1,
+    });
+    expect(result.validation).toEqual({
+      ok: false,
+      errors: [
+        {
+          code: "missing-work-item",
+          value: "implementer-a",
+          assignmentIds: ["implementer-a"],
+          message:
+            "ADO implementer 'implementer-a' requires a primary work item assignment",
+        },
+      ],
+    });
+    expect(executeLocal).not.toHaveBeenCalled();
+  });
   it("rejects duplicate primary work items before starting local execution", async () => {
     const assignments = [
       { ...assignment("implementer-a", 5), branch: "sandcastle/a" },
