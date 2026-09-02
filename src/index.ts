@@ -144,3 +144,12 @@ export type {
   AdoInjectedControlPlaneFactoryConfig,
   AdoReadOnlyControlPlane,
 } from "./AdoControlPlaneFactory.js";
+
+export { publishAdoPullRequest } from "./AdoPullRequestPublisher.js";
+export type {
+  AdoPullRequestPublisherControlPlaneLike,
+  AdoPullRequestWorkItemCommentRequest,
+  AdoPullRequestWorkItemUpdateRequest,
+  PublishAdoPullRequestOptions,
+  PublishAdoPullRequestResult,
+} from "./AdoPullRequestPublisher.js";

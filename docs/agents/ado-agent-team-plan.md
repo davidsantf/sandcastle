@@ -11,13 +11,13 @@ The host provides an injected ADO client to Sandcastle's adapter seam. Sandcastl
 
 ## Current Slice
 
-- Add `src/AdoOneWorkItemFlow.ts` as a deterministic one-work-item demo/helper flow.
-- Fetch one ADO work item through an injected or fake `AdoControlPlane`.
-- Derive a branch with `createAdoWorkItemBranchName` unless the caller provides one.
-- Build and validate a single implementer assignment with `validateAdoTeamConfig`.
-- Post a start/progress comment only when validation succeeds and the caller has not requested `dryRun`/`skipComment`.
-- Return typed work item, assignment, branch, validation, and optional comment context.
-- Add unit tests for happy path, not-found fail-closed behavior, validation failure without comments, caller-provided branch, dry run, and injected mock control planes.
+- Add a PR publishing helper that maps local Sandcastle execution output into Azure Repos pull request metadata through `AdoControlPlane`.
+- Accept explicit source branch, target branch, title, optional description, linked work item IDs, draft flag, and optional progress/completion metadata from the local execution plane.
+- Call only typed `AdoControlPlane` methods: `createPullRequest`, and optionally `addWorkItemComment` / `updateWorkItem` when caller-provided options request work item updates.
+- Fail closed before publishing when the provided control plane does not expose required write or PR capabilities.
+- Keep the helper independent of live ADO MCP tool names, Azure CLI commands, network calls, secrets, git pushes, and sandbox execution.
+- Return a typed result containing the created PR context and any work item comments/updates performed through the injected control plane.
+- Add unit tests for fake control-plane publishing, injected adapter delegation, missing PR capability failure, missing comment/update capability failure when requested, and no live ADO/shell dependency.
 - Export public helper types and functions from `src/index.ts`.
 
 ## Guardrails
@@ -26,7 +26,8 @@ The host provides an injected ADO client to Sandcastle's adapter seam. Sandcastl
 - Do not perform live ADO, MCP, network, or secret-dependent operations in tests.
 - Do not treat MCP as a sandbox issue-tracker shell command.
 - Keep future real ADO bindings in host integration code that implements the injected client contract.
+- Do not push branches, create PRs, or run git commands from the PR publishing helper; callers own local execution and publishing prerequisites.
 
 ## Validation
 
-Run targeted Vitest tests for ADO files, TypeScript type checking, and formatting checks for changed files.
+Run targeted Vitest tests for ADO files, TypeScript type checking, diff whitespace checks, and formatting checks for changed files.
