@@ -11,20 +11,31 @@ The host provides an injected ADO client to Sandcastle's adapter seam. Sandcastl
 
 ## Current Slice
 
-- Add a bounded CI/review feedback loop helper that maps the current work item and associated pull request context into local Sandcastle follow-up actions through `AdoControlPlane`.
-- Accept explicit current work item context, associated pull request context, optional feedback-loop bounds, and caller-provided options for recording progress, actionable feedback, and completion summaries.
-- Read CI status and review feedback only through typed `AdoControlPlane` methods; do not import or call live ADO MCP tools, Azure CLI, Azure DevOps CLI, network APIs, secrets, git commands, or sandbox execution.
-- Map CI states deterministically:
-  - pending or running CI returns a wait/no-op action;
-  - succeeded CI with no actionable review feedback returns a summary-only result;
-  - failed checks return clear local fix-and-test actions that identify failed checks and expected local validation to rerun.
-- Represent review feedback as typed, actionable summaries associated with the current pull request; comments requesting changes return local update actions for Sandcastle to execute.
-- Record feedback-loop progress, actionable feedback summaries, and completion summaries against the current work item only through write-capable `AdoControlPlane` comment or update methods when requested.
-- Fail closed before recording progress or feedback when caller-requested writes require missing comment/update capabilities.
-- Stop at the configured bound when CI or review feedback remains unchanged, and return a bounded summary instead of looping indefinitely.
-- Keep merge approval, merge completion, merge-readiness decisions, and equivalent PR finalization actions outside Sandcastle; the feedback loop may summarize observed status but must not approve, complete, or merge pull requests.
-- Add unit tests for fake CI transitions from pending to running to succeeded, failed CI check action mapping, review feedback requiring changes, bounded repeated feedback, write-capable comment/update recording, missing capability failures, and no live ADO/MCP/network/shell/CLI dependency.
-- Export public helper types and functions from `src/index.ts`.
+- Add an ADO agent-team orchestration runner that coordinates multiple implementer iterations from ADO work item assignments while keeping all local execution responsibilities inside Sandcastle.
+- Accept explicit runner inputs:
+  - assigned work items and implementer slots;
+  - branch and worktree assignment data for each slot;
+  - maximum parallelism;
+  - duplicate primary work item policy;
+  - execution bounds;
+  - injected `AdoControlPlane`;
+  - injected local execution seam for implementer iteration execution.
+- Validate assignments before starting any local execution:
+  - reject zero or negative maximum parallelism;
+  - reject duplicate primary work item use across parallel implementers unless explicitly enabled for the run;
+  - always reject duplicate branch or worktree assignments across parallel implementers;
+  - return actionable diagnostics that identify the conflicting implementer slots and conflicting work item, branch, or worktree value.
+- Enforce configured maximum parallelism by scheduling no more than the configured number of active implementer iterations at once and reporting assignments that remain pending or skipped when execution bounds are reached.
+- Expose a local execution seam so tests can inject deterministic implementer results without running agents, shells, sandboxes, tests, commits, git commands, ADO, MCP, network calls, Azure CLI, or Azure DevOps CLI.
+- Compose existing Sandcastle helpers instead of duplicating responsibilities:
+  - local execution remains responsible for branches, worktrees, sandbox execution, agent providers, command execution, tests, and commits;
+  - successful local execution results are passed to the existing PR publishing helper;
+  - PR/CI/review metadata is observed through the existing feedback-loop helper.
+- Use `AdoControlPlane` only for Boards, pull request, CI, and review metadata. The runner must not call live ADO, MCP, network, Azure CLI, Azure DevOps CLI, git, sandbox, test runner, or agent-provider APIs directly.
+- Return a bounded runner result that includes per-implementer assignment validation results, selected branch and worktree assignments, local execution summaries, PR/CI metadata observed through the control plane, skipped assignment reasons, completed/failed/pending/skipped counts, and bounded completion status.
+- Isolate local execution failures per assignment: a failed implementer iteration is recorded as failed locally, does not stop unrelated parallel assignments by default, and does not allow another implementer to reuse the failed assignment's branch, worktree, or primary work item.
+- Add unit tests for duplicate primary work item rejection and opt-in allowance, duplicate branch/worktree rejection, zero or negative maximum parallelism rejection, maximum parallelism scheduling, deterministic fake local execution seam results, successful composition with PR publishing and feedback-loop helpers, local execution failure isolation, bounded pending/skipped summaries, and no live ADO/MCP/network/shell/CLI/sandbox/agent/test/git dependency.
+- Export public runner types and functions from `src/index.ts`.
 
 ## Guardrails
 
