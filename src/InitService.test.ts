@@ -151,6 +151,87 @@ describe("InitService scaffold", () => {
     expect(envExample).not.toContain("GH_TOKEN=");
   });
 
+  it("listIssueTrackers includes Azure DevOps", () => {
+    const trackers = listIssueTrackers();
+    expect(trackers.some((t) => t.name === "azure-devops")).toBe(true);
+  });
+
+  it("getIssueTracker returns Azure DevOps CLI-only template commands", () => {
+    const tracker = getIssueTracker("azure-devops");
+
+    expect(tracker).toBeDefined();
+    expect(tracker!.label).toBe("Azure DevOps");
+    expect(tracker!.templateArgs.LIST_TASKS_COMMAND).toBe(
+      'az boards query --org "$AZURE_DEVOPS_ORG" --project "$AZURE_DEVOPS_PROJECT" --wiql "$AZURE_DEVOPS_TASKS_WIQL" --output json',
+    );
+    expect(tracker!.templateArgs.VIEW_TASK_COMMAND).toBe(
+      'az boards work-item show --org "$AZURE_DEVOPS_ORG" --id <ID> --expand all --output json',
+    );
+    expect(tracker!.templateArgs.CLOSE_TASK_COMMAND).toBe(
+      'az boards work-item update --org "$AZURE_DEVOPS_ORG" --id <ID> --state "$AZURE_DEVOPS_CLOSED_STATE" --discussion "Closed by Sandcastle agent." --output json',
+    );
+    expect(tracker!.templateArgs.LIST_TASKS_COMMAND).not.toMatch(/mcp/i);
+    expect(tracker!.templateArgs.VIEW_TASK_COMMAND).not.toMatch(/mcp/i);
+    expect(tracker!.templateArgs.CLOSE_TASK_COMMAND).not.toMatch(/mcp/i);
+  });
+
+  it("generates .env.example with Azure DevOps issue tracker variables", async () => {
+    const dir = await makeDir();
+    await runScaffold(dir, {
+      issueTracker: getIssueTracker("azure-devops"),
+    });
+
+    const envExample = await readFile(
+      join(dir, ".sandcastle", ".env.example"),
+      "utf-8",
+    );
+    expect(envExample).toContain("AZURE_DEVOPS_EXT_PAT=");
+    expect(envExample).toContain("AZURE_DEVOPS_ORG=");
+    expect(envExample).toContain("AZURE_DEVOPS_PROJECT=");
+    expect(envExample).toContain("AZURE_DEVOPS_TASKS_WIQL=");
+    expect(envExample).toContain("AZURE_DEVOPS_CLOSED_STATE=Closed");
+  });
+
+  it("scaffolds Azure CLI and Azure DevOps extension install steps", async () => {
+    const dir = await makeDir();
+    await runScaffold(dir, {
+      issueTracker: getIssueTracker("azure-devops"),
+    });
+
+    const dockerfile = await readFile(
+      join(dir, ".sandcastle", "Dockerfile"),
+      "utf-8",
+    );
+    expect(dockerfile).toContain(
+      "Install Azure CLI and Azure DevOps extension",
+    );
+    expect(dockerfile).toContain(
+      "https://packages.microsoft.com/repos/azure-cli/",
+    );
+    expect(dockerfile).toContain("apt-get install -y azure-cli");
+    expect(dockerfile).toContain("az extension add --name azure-devops");
+    expect(dockerfile).toContain(
+      "rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*",
+    );
+    expect(dockerfile).not.toContain("{{ISSUE_TRACKER_TOOLS}}");
+  });
+
+  it("scaffolds Azure DevOps prompts with az boards commands and no MCP strings", async () => {
+    const dir = await makeDir();
+    await runScaffold(dir, {
+      templateName: "simple-loop",
+      issueTracker: getIssueTracker("azure-devops"),
+    });
+
+    const prompt = await readFile(
+      join(dir, ".sandcastle", "prompt.md"),
+      "utf-8",
+    );
+    expect(prompt).toContain("az boards query");
+    expect(prompt).toContain("az boards work-item update");
+    expect(prompt).not.toMatch(/mcp/i);
+  });
+
   it("does not scaffold config.json for blank template", async () => {
     const dir = await makeDir();
     await runScaffold(dir);
