@@ -516,6 +516,29 @@ RUN curl -fsSL https://raw.githubusercontent.com/steveyegge/beads/main/scripts/i
 
 RUN corepack enable`;
 
+const AZURE_DEVOPS_CLI_TOOLS = `# Install Azure CLI and Azure DevOps extension
+# Azure DevOps extension supports Azure DevOps Services cloud; Azure DevOps Server is not supported.
+RUN apt-get update && apt-get install -y \
+  apt-transport-https \
+  ca-certificates \
+  gnupg \
+  lsb-release \
+  && mkdir -p /etc/apt/keyrings \
+  && curl -sLS https://packages.microsoft.com/keys/microsoft.asc \
+  | gpg --dearmor \
+  | tee /etc/apt/keyrings/microsoft.gpg > /dev/null \
+  && chmod go+r /etc/apt/keyrings/microsoft.gpg \
+  && AZ_DIST=$(lsb_release -cs) \
+  && echo "Types: deb" > /etc/apt/sources.list.d/azure-cli.sources \
+  && echo "URIs: https://packages.microsoft.com/repos/azure-cli/" >> /etc/apt/sources.list.d/azure-cli.sources \
+  && echo "Suites: $AZ_DIST" >> /etc/apt/sources.list.d/azure-cli.sources \
+  && echo "Components: main" >> /etc/apt/sources.list.d/azure-cli.sources \
+  && echo "Architectures: $(dpkg --print-architecture)" >> /etc/apt/sources.list.d/azure-cli.sources \
+  && echo "Signed-by: /etc/apt/keyrings/microsoft.gpg" >> /etc/apt/sources.list.d/azure-cli.sources \
+  && apt-get update && apt-get install -y azure-cli \
+  && az extension add --name azure-devops \
+  && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*`;
+
 // Sentinels baked into the scaffold for the `custom` issue tracker. The
 // project ships deliberately broken-until-configured; the setup agent finds
 // and replaces these markers in place (see SETUP_ISSUE_TRACKER.md). Defined as
@@ -541,6 +564,27 @@ const ISSUE_TRACKER_REGISTRY: IssueTrackerEntry[] = [
 # Create a fine-grained token: https://github.com/settings/personal-access-tokens/new
 # Required repository permissions: Issues (Read and write) and Metadata (Read)
 GH_TOKEN=`,
+  },
+  {
+    name: "azure-devops",
+    label: "Azure DevOps",
+    templateArgs: {
+      LIST_TASKS_COMMAND: `az boards query --org "$AZURE_DEVOPS_ORG" --project "$AZURE_DEVOPS_PROJECT" --wiql "$AZURE_DEVOPS_TASKS_WIQL" --output json`,
+      VIEW_TASK_COMMAND: `az boards work-item show --org "$AZURE_DEVOPS_ORG" --id <ID> --expand all --output json`,
+      CLOSE_TASK_COMMAND: `az boards work-item update --org "$AZURE_DEVOPS_ORG" --id <ID> --state "$AZURE_DEVOPS_CLOSED_STATE" --discussion "Closed by Sandcastle agent." --output json`,
+      ISSUE_TRACKER_TOOLS: AZURE_DEVOPS_CLI_TOOLS,
+    },
+    envExample: `# Azure DevOps personal access token for non-interactive Azure DevOps CLI auth.
+# Keep this token scoped to the minimum Azure Boards permissions required.
+AZURE_DEVOPS_EXT_PAT=
+# Azure DevOps Services organization URL, e.g. https://dev.azure.com/example
+AZURE_DEVOPS_ORG=
+# Azure DevOps project name.
+AZURE_DEVOPS_PROJECT=
+# WIQL used to list ready work items. Customize this for your team's backlog scope.
+AZURE_DEVOPS_TASKS_WIQL=SELECT [System.Id], [System.Title], [System.State], [System.WorkItemType] FROM WorkItems WHERE [System.TeamProject] = @project AND [System.State] <> 'Closed' ORDER BY [System.ChangedDate] DESC
+# Azure Boards workflow states vary by process; set the state your project uses for completed work.
+AZURE_DEVOPS_CLOSED_STATE=Closed`,
   },
   {
     name: "beads",
