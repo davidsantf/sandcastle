@@ -104,8 +104,12 @@ export {
   validateAdoTeamConfig,
 } from "./AdoTeam.js";
 export type {
+  AdoCiCheck,
+  AdoCiCheckState,
   AdoCiStatus,
   AdoControlPlane,
+  AdoReviewFeedback,
+  AdoReviewFeedbackComment,
   AdoPullRequestContext,
   AdoPullRequestRequest,
   AdoTeamAgentAssignment,
@@ -144,3 +148,45 @@ export type {
   AdoInjectedControlPlaneFactoryConfig,
   AdoReadOnlyControlPlane,
 } from "./AdoControlPlaneFactory.js";
+
+export { publishAdoPullRequest } from "./AdoPullRequestPublisher.js";
+export type {
+  AdoPullRequestPublisherControlPlaneLike,
+  AdoPullRequestWorkItemCommentRequest,
+  AdoPullRequestWorkItemUpdateRequest,
+  PublishAdoPullRequestOptions,
+  PublishAdoPullRequestResult,
+} from "./AdoPullRequestPublisher.js";
+
+export { runAdoFeedbackLoop } from "./AdoFeedbackLoop.js";
+export type {
+  AdoFeedbackLoopAction,
+  AdoFeedbackLoopControlPlaneLike,
+  AdoFeedbackLoopObservation,
+  AdoFeedbackLoopPullRequestContext,
+  AdoFeedbackLoopResult,
+  AdoFeedbackLoopResultKind,
+  RunAdoFeedbackLoopOptions,
+} from "./AdoFeedbackLoop.js";
+
+export { runAdoTeam, validateAdoTeamRunnerOptions } from "./AdoTeamRunner.js";
+export type {
+  AdoTeamFeedbackLoopContext,
+  AdoTeamFeedbackLoopOptionsFactory,
+  AdoTeamFeedbackLoopRunner,
+  AdoTeamLocalExecution,
+  AdoTeamLocalExecutionContext,
+  AdoTeamLocalExecutionResult,
+  AdoTeamPullRequestContext,
+  AdoTeamPullRequestOptionsFactory,
+  AdoTeamPullRequestPublisher,
+  AdoTeamRunnerAssignmentResult,
+  AdoTeamRunnerAssignmentStatus,
+  AdoTeamRunnerCounts,
+  AdoTeamRunnerExecutionBounds,
+  AdoTeamRunnerResult,
+  AdoTeamRunnerValidationError,
+  AdoTeamRunnerValidationErrorCode,
+  AdoTeamRunnerValidationResult,
+  RunAdoTeamOptions,
+} from "./AdoTeamRunner.js";

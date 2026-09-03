@@ -47,10 +47,47 @@ export interface AdoPullRequestContext {
   readonly draft: boolean;
 }
 
+export type AdoCiCheckState = "pending" | "running" | "succeeded" | "failed";
+
+export interface AdoCiCheck {
+  readonly name: string;
+  readonly status: AdoCiCheckState;
+  readonly summary?: string;
+  readonly localValidationCommand?: string;
+}
+
 export type AdoCiStatus =
-  | { readonly status: "pending" }
-  | { readonly status: "succeeded" }
-  | { readonly status: "failed"; readonly summary: string };
+  | { readonly status: "pending"; readonly summary?: string }
+  | { readonly status: "running"; readonly summary?: string }
+  | { readonly status: "succeeded"; readonly summary?: string }
+  | {
+      readonly status: "failed";
+      readonly summary: string;
+      readonly checks?: readonly AdoCiCheck[];
+    };
+
+export interface AdoReviewFeedbackComment {
+  readonly id?: string;
+  readonly author?: string;
+  readonly body: string;
+  readonly filePath?: string;
+  readonly line?: number;
+  readonly isActionable?: boolean;
+}
+
+export type AdoReviewFeedback =
+  | { readonly status: "none"; readonly summary?: string }
+  | { readonly status: "approved"; readonly summary?: string }
+  | {
+      readonly status: "commented";
+      readonly summary?: string;
+      readonly comments: readonly AdoReviewFeedbackComment[];
+    }
+  | {
+      readonly status: "changes-requested";
+      readonly summary?: string;
+      readonly comments: readonly AdoReviewFeedbackComment[];
+    };
 
 /**
  * Control-plane surface for Azure DevOps-backed orchestration.
@@ -77,6 +114,9 @@ export interface AdoControlPlane {
   readonly getPullRequestCiStatus: (
     pullRequestId: string,
   ) => Promise<AdoCiStatus>;
+  readonly getPullRequestReviewFeedback?: (
+    pullRequestId: string,
+  ) => Promise<AdoReviewFeedback>;
 }
 
 export type AdoTeamRole = "planner" | "implementer" | "reviewer" | "merger";
@@ -236,6 +276,11 @@ export class FakeAdoControlPlane implements AdoControlPlane {
   #nextCommentId = 1;
   #nextPullRequestId = 1;
   #ciStatus: AdoCiStatus = { status: "pending" };
+  #ciStatusSequence: AdoCiStatus[] | undefined;
+  #ciStatusSequenceIndex = 0;
+  #reviewFeedback: AdoReviewFeedback = { status: "none" };
+  #reviewFeedbackSequence: AdoReviewFeedback[] | undefined;
+  #reviewFeedbackSequenceIndex = 0;
 
   constructor(workItems: readonly AdoWorkItemContext[] = []) {
     for (const workItem of workItems) {
@@ -312,11 +357,73 @@ export class FakeAdoControlPlane implements AdoControlPlane {
   }
 
   async getPullRequestCiStatus(_pullRequestId: string): Promise<AdoCiStatus> {
+    if (this.#ciStatusSequence !== undefined) {
+      const status =
+        this.#ciStatusSequence[
+          Math.min(
+            this.#ciStatusSequenceIndex,
+            this.#ciStatusSequence.length - 1,
+          )
+        ]!;
+      this.#ciStatusSequenceIndex += 1;
+      return status;
+    }
+
     return this.#ciStatus;
   }
 
   setPullRequestCiStatus(status: AdoCiStatus): void {
     this.#ciStatus = status;
+    this.#ciStatusSequence = undefined;
+    this.#ciStatusSequenceIndex = 0;
+  }
+
+  setPullRequestCiStatusSequence(statuses: readonly AdoCiStatus[]): void {
+    if (statuses.length === 0) {
+      throw new Error(
+        "ADO fake CI status sequence must contain at least one status",
+      );
+    }
+
+    this.#ciStatusSequence = [...statuses];
+    this.#ciStatusSequenceIndex = 0;
+  }
+
+  async getPullRequestReviewFeedback(
+    _pullRequestId: string,
+  ): Promise<AdoReviewFeedback> {
+    if (this.#reviewFeedbackSequence !== undefined) {
+      const feedback =
+        this.#reviewFeedbackSequence[
+          Math.min(
+            this.#reviewFeedbackSequenceIndex,
+            this.#reviewFeedbackSequence.length - 1,
+          )
+        ]!;
+      this.#reviewFeedbackSequenceIndex += 1;
+      return feedback;
+    }
+
+    return this.#reviewFeedback;
+  }
+
+  setPullRequestReviewFeedback(feedback: AdoReviewFeedback): void {
+    this.#reviewFeedback = feedback;
+    this.#reviewFeedbackSequence = undefined;
+    this.#reviewFeedbackSequenceIndex = 0;
+  }
+
+  setPullRequestReviewFeedbackSequence(
+    feedback: readonly AdoReviewFeedback[],
+  ): void {
+    if (feedback.length === 0) {
+      throw new Error(
+        "ADO fake review feedback sequence must contain at least one status",
+      );
+    }
+
+    this.#reviewFeedbackSequence = [...feedback];
+    this.#reviewFeedbackSequenceIndex = 0;
   }
 
   listComments(): readonly AdoWorkItemComment[] {
