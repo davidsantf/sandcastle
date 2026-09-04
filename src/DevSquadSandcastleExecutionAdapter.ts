@@ -1,11 +1,8 @@
-import { exec } from "node:child_process";
-import { promisify } from "node:util";
+import path from "node:path";
 import { run } from "./run.js";
 import type { AgentProvider } from "./AgentProvider.js";
 import type { LoggingOption, RunResult, Timeouts } from "./run.js";
 import type { BranchStrategy, SandboxProvider } from "./SandboxProvider.js";
-
-const execAsync = promisify(exec);
 
 export type DevSquadSandcastleExecutionStatus =
   | "completed"
@@ -27,7 +24,7 @@ export type DevSquadSandcastleAgentRole = "implementer" | (string & {});
 export interface DevSquadRepoContext {
   readonly hostRepoPath: string;
   readonly worktreePath: string;
-  readonly workingDirectory?: string;
+  readonly workingDirectory: string;
 }
 
 export interface DevSquadBranchContext {
@@ -162,6 +159,7 @@ export interface DevSquadSandcastleFailureDetails {
 export type DevSquadSandcastleValidationErrorCode =
   | "missing-host-repo-path"
   | "missing-worktree-path"
+  | "missing-working-directory"
   | "missing-source-branch"
   | "missing-target-branch"
   | "missing-work-item-id"
@@ -172,11 +170,13 @@ export type DevSquadSandcastleValidationErrorCode =
   | "missing-validation-command"
   | "missing-validation-command-label"
   | "missing-validation-command-text"
+  | "invalid-validation-command-cwd"
   | "invalid-max-iterations"
   | "invalid-idle-timeout"
   | "invalid-completion-timeout"
   | "invalid-timeout"
-  | "missing-execution-seam";
+  | "missing-execution-seam"
+  | "missing-validation-runner";
 
 export interface DevSquadSandcastleValidationError {
   readonly code: DevSquadSandcastleValidationErrorCode;
@@ -213,6 +213,28 @@ const isBlank = (value: string | undefined): boolean =>
 const isPositiveInteger = (value: number): boolean =>
   Number.isInteger(value) && value > 0;
 
+const isPathInsideOrEqual = (parent: string, child: string): boolean => {
+  const resolvedParent = path.resolve(parent);
+  const resolvedChild = path.resolve(child);
+  const relative = path.relative(resolvedParent, resolvedChild);
+  return (
+    relative.length === 0 ||
+    (!relative.startsWith("..") && !path.isAbsolute(relative))
+  );
+};
+
+const isValidationCwdAllowed = (
+  commandCwd: string | undefined,
+  request: DevSquadSandcastleExecutionRequest,
+): boolean => {
+  if (commandCwd === undefined || commandCwd.trim().length === 0) return true;
+
+  return (
+    isPathInsideOrEqual(request.repo.workingDirectory, commandCwd) ||
+    isPathInsideOrEqual(request.repo.worktreePath, commandCwd)
+  );
+};
+
 const pushMissing = (
   errors: DevSquadSandcastleValidationError[],
   code: DevSquadSandcastleValidationErrorCode,
@@ -242,6 +264,14 @@ export const validateDevSquadSandcastleExecutionRequest = (
       "missing-worktree-path",
       "repo.worktreePath",
       "Worktree path",
+    );
+  }
+  if (isBlank(request.repo.workingDirectory)) {
+    pushMissing(
+      errors,
+      "missing-working-directory",
+      "repo.workingDirectory",
+      "Working directory",
     );
   }
   if (isBlank(request.branch.sourceBranch)) {
@@ -310,6 +340,14 @@ export const validateDevSquadSandcastleExecutionRequest = (
         "Validation command text",
       );
     }
+    if (!isValidationCwdAllowed(command.cwd, request)) {
+      errors.push({
+        code: "invalid-validation-command-cwd",
+        path: `validationCommands.${index}.cwd`,
+        message:
+          "Validation command cwd must stay inside repo.workingDirectory or repo.worktreePath",
+      });
+    }
   });
 
   if (
@@ -360,6 +398,15 @@ export const validateDevSquadSandcastleExecutionRequest = (
       path: "sandcastle",
       message:
         "Provide an injected execution seam or Sandcastle agent/sandbox config",
+    });
+  }
+
+  if (options.runValidationCommand === undefined) {
+    errors.push({
+      code: "missing-validation-runner",
+      path: "runValidationCommand",
+      message:
+        "Provide an injected host-approved validation runner; the adapter does not execute request-supplied shell strings by default",
     });
   }
 
@@ -450,7 +497,7 @@ Boundaries:
 Repository context:
 - Host repo path: ${request.repo.hostRepoPath}
 - Worktree path: ${request.repo.worktreePath}
-- Working directory: ${request.repo.workingDirectory ?? request.repo.worktreePath}
+- Working directory: ${request.repo.workingDirectory}
 
 Branch context:
 - Source branch: ${request.branch.sourceBranch}
@@ -497,12 +544,8 @@ export const defaultDevSquadSandcastleExecutionSeam: DevSquadSandcastleExecution
       throw new Error("Missing Sandcastle agent/sandbox config");
     }
 
-    const branchStrategy: BranchStrategy = request.sandcastle
-      .branchStrategy ?? {
-      type: "branch",
-      branch: request.branch.sourceBranch,
-      baseBranch: request.branch.targetBranch,
-    };
+    const branchStrategy: BranchStrategy | undefined =
+      request.sandcastle.branchStrategy;
     const completionSignal: string | string[] | undefined =
       request.sandcastle.completionSignal === undefined
         ? undefined
@@ -513,7 +556,7 @@ export const defaultDevSquadSandcastleExecutionSeam: DevSquadSandcastleExecution
     const result = await run({
       agent: request.sandcastle.agent,
       sandbox: request.sandcastle.sandbox,
-      cwd: request.repo.hostRepoPath,
+      cwd: request.repo.worktreePath,
       prompt,
       maxIterations: request.bounds?.maxIterations,
       idleTimeoutSeconds: request.bounds?.idleTimeoutSeconds,
@@ -531,44 +574,6 @@ export const defaultDevSquadSandcastleExecutionSeam: DevSquadSandcastleExecution
     });
 
     return mapRunResult(result);
-  };
-
-export const defaultDevSquadValidationCommandRunner: DevSquadValidationCommandRunner =
-  async ({ command, request }) => {
-    const started = Date.now();
-    try {
-      const result = await execAsync(command.command, {
-        cwd:
-          command.cwd ??
-          request.repo.workingDirectory ??
-          request.repo.worktreePath,
-        timeout: request.bounds?.timeoutMs,
-        windowsHide: true,
-        maxBuffer: 1024 * 1024,
-      });
-      return {
-        status: "passed",
-        exitCode: 0,
-        stdout: result.stdout,
-        stderr: result.stderr,
-        durationMs: Date.now() - started,
-        diagnostics: [],
-      };
-    } catch (error) {
-      const failed = error as Error & {
-        readonly code?: number;
-        readonly stdout?: string;
-        readonly stderr?: string;
-      };
-      return {
-        status: "failed",
-        exitCode: typeof failed.code === "number" ? failed.code : 1,
-        stdout: failed.stdout,
-        stderr: failed.stderr,
-        durationMs: Date.now() - started,
-        diagnostics: [errorMessage(error)],
-      };
-    }
   };
 
 const skippedValidation = (
@@ -640,8 +645,10 @@ export const runDevSquadSandcastleExecution = async (
 
   const prompt = buildDevSquadSandcastleImplementationPrompt(request);
   const execute = options.execute ?? defaultDevSquadSandcastleExecutionSeam;
-  const runValidationCommand =
-    options.runValidationCommand ?? defaultDevSquadValidationCommandRunner;
+  const runValidationCommand = options.runValidationCommand;
+  if (runValidationCommand === undefined) {
+    throw new Error("Validation runner missing after request validation");
+  }
 
   let execution: DevSquadSandcastleExecutionSeamResult;
   try {

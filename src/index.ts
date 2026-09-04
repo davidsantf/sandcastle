@@ -194,7 +194,6 @@ export type {
 export {
   buildDevSquadSandcastleImplementationPrompt,
   defaultDevSquadSandcastleExecutionSeam,
-  defaultDevSquadValidationCommandRunner,
   runDevSquadSandcastleExecution,
   validateDevSquadSandcastleExecutionRequest,
 } from "./DevSquadSandcastleExecutionAdapter.js";

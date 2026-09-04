@@ -1,10 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
+import { run } from "./run.js";
 import {
   buildDevSquadSandcastleImplementationPrompt,
+  defaultDevSquadSandcastleExecutionSeam,
   runDevSquadSandcastleExecution,
   validateDevSquadSandcastleExecutionRequest,
   type DevSquadSandcastleExecutionRequest,
 } from "./DevSquadSandcastleExecutionAdapter.js";
+
+vi.mock("./run.js", () => ({
+  run: vi.fn(),
+}));
 
 const request = (
   overrides: Partial<DevSquadSandcastleExecutionRequest> = {},
@@ -41,7 +47,7 @@ describe("validateDevSquadSandcastleExecutionRequest", () => {
   it("aggregates invalid input diagnostics before execution", () => {
     const result = validateDevSquadSandcastleExecutionRequest(
       request({
-        repo: { hostRepoPath: "", worktreePath: "" },
+        repo: { hostRepoPath: "", worktreePath: "", workingDirectory: "" },
         branch: { sourceBranch: "", targetBranch: "" },
         workItem: { id: " ", title: "" },
         specContent: "",
@@ -62,6 +68,7 @@ describe("validateDevSquadSandcastleExecutionRequest", () => {
       errors: expect.arrayContaining([
         expect.objectContaining({ code: "missing-host-repo-path" }),
         expect.objectContaining({ code: "missing-worktree-path" }),
+        expect.objectContaining({ code: "missing-working-directory" }),
         expect.objectContaining({ code: "missing-source-branch" }),
         expect.objectContaining({ code: "missing-target-branch" }),
         expect.objectContaining({ code: "missing-work-item-id" }),
@@ -76,16 +83,39 @@ describe("validateDevSquadSandcastleExecutionRequest", () => {
         expect.objectContaining({ code: "invalid-completion-timeout" }),
         expect.objectContaining({ code: "invalid-timeout" }),
         expect.objectContaining({ code: "missing-execution-seam" }),
+        expect.objectContaining({ code: "missing-validation-runner" }),
       ]),
     });
   });
 
-  it("accepts an injected execution seam without live Sandcastle config", () => {
+  it("accepts injected execution and validation seams without live Sandcastle config", () => {
     const result = validateDevSquadSandcastleExecutionRequest(request(), {
       execute: async () => ({ branch: "feature" }),
+      runValidationCommand: async () => ({ exitCode: 0 }),
     });
 
     expect(result).toEqual({ ok: true });
+  });
+
+  it("rejects validation command cwd outside the worktree context", () => {
+    const result = validateDevSquadSandcastleExecutionRequest(
+      request({
+        validationCommands: [
+          { label: "escape", command: "npm test", cwd: "/tmp/outside" },
+        ],
+      }),
+      {
+        execute: async () => ({ branch: "feature" }),
+        runValidationCommand: async () => ({ exitCode: 0 }),
+      },
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [
+        expect.objectContaining({ code: "invalid-validation-command-cwd" }),
+      ],
+    });
   });
 });
 
@@ -160,6 +190,43 @@ describe("runDevSquadSandcastleExecution", () => {
     expect(result.validation.status).toBe("skipped");
     expect(execute).not.toHaveBeenCalled();
     expect(runValidationCommand).not.toHaveBeenCalled();
+  });
+
+  it("rejects missing injected validation runner before execution", async () => {
+    const execute = vi.fn(async () => ({ branch: "never" }));
+
+    const result = await runDevSquadSandcastleExecution(request(), { execute });
+
+    expect(result.status).toBe("input-invalid");
+    expect(result.failure).toMatchObject({ category: "input-validation" });
+    expect(result.failure?.safeCauseDetails).toContain("runValidationCommand");
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it("passes the supplied worktree as the default Sandcastle cwd without creating a named checkout", async () => {
+    vi.mocked(run).mockResolvedValueOnce({
+      branch: "davidsant/devsquad-sandcastle-execution-adapter",
+      commits: [],
+      stdout: "done",
+      iterations: [],
+    } as never);
+
+    await defaultDevSquadSandcastleExecutionSeam({
+      request: request({
+        sandcastle: {
+          agent: {} as never,
+          sandbox: { tag: "bind-mount" } as never,
+        },
+      }),
+      prompt: "prompt",
+    });
+
+    expect(run).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cwd: "/repo/.sandcastle/worktrees/implementer-12",
+        branchStrategy: undefined,
+      }),
+    );
   });
 
   it("returns execution-failed and skips validation when execution seam throws", async () => {
