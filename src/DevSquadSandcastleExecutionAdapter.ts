@@ -229,7 +229,7 @@ type BoundaryPathApi = Pick<
 const hasWindowsPathSyntax = (value: string): boolean =>
   /^[A-Za-z]:[\\/]/.test(value) ||
   value.startsWith("\\\\") ||
-  value.includes("\\");
+  value.startsWith("\\");
 
 const boundaryPathApi = (parent: string, child: string): BoundaryPathApi =>
   hasWindowsPathSyntax(parent) || hasWindowsPathSyntax(child)

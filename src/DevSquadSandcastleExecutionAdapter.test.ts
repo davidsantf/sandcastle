@@ -207,6 +207,28 @@ describe("validateDevSquadSandcastleExecutionRequest", () => {
       ],
     });
   });
+  it("rejects POSIX backslash sibling escapes as worktree children", () => {
+    const result = validateDevSquadSandcastleExecutionRequest(
+      request({
+        repo: {
+          hostRepoPath: "/tmp/root",
+          worktreePath: "/tmp/root/worktree",
+          workingDirectory: "/tmp/root/worktree\\escape",
+        },
+      }),
+      {
+        execute: async () => ({ branch: "feature" }),
+        runValidationCommand: async () => ({ exitCode: 0 }),
+      },
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [
+        expect.objectContaining({ code: "invalid-working-directory-boundary" }),
+      ],
+    });
+  });
 
   it("rejects validation command cwd outside the worktree context", () => {
     const result = validateDevSquadSandcastleExecutionRequest(
