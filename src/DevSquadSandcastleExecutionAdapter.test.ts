@@ -97,6 +97,68 @@ describe("validateDevSquadSandcastleExecutionRequest", () => {
     expect(result).toEqual({ ok: true });
   });
 
+  it("accepts workingDirectory equal to worktreePath after POSIX path resolution", () => {
+    const result = validateDevSquadSandcastleExecutionRequest(
+      request({
+        repo: {
+          hostRepoPath: "/repo",
+          worktreePath: "/repo/.sandcastle/worktrees/implementer-12",
+          workingDirectory:
+            "/repo/.sandcastle/worktrees/implementer-12/package/..",
+        },
+      }),
+      {
+        execute: async () => ({ branch: "feature" }),
+        runValidationCommand: async () => ({ exitCode: 0 }),
+      },
+    );
+
+    expect(result).toEqual({ ok: true });
+  });
+
+  it("accepts workingDirectory child of worktreePath for Windows-style paths", () => {
+    const result = validateDevSquadSandcastleExecutionRequest(
+      request({
+        repo: {
+          hostRepoPath: "C:\\repo",
+          worktreePath: "C:\\repo\\.sandcastle\\worktrees\\implementer-12",
+          workingDirectory:
+            "C:\\repo\\.sandcastle\\worktrees\\implementer-12\\package",
+        },
+      }),
+      {
+        execute: async () => ({ branch: "feature" }),
+        runValidationCommand: async () => ({ exitCode: 0 }),
+      },
+    );
+
+    expect(result).toEqual({ ok: true });
+  });
+
+  it("rejects workingDirectory outside worktreePath", () => {
+    const result = validateDevSquadSandcastleExecutionRequest(
+      request({
+        repo: {
+          hostRepoPath: "/repo",
+          worktreePath: "/repo/.sandcastle/worktrees/implementer-12",
+          workingDirectory:
+            "/repo/.sandcastle/worktrees/implementer-12-sibling",
+        },
+      }),
+      {
+        execute: async () => ({ branch: "feature" }),
+        runValidationCommand: async () => ({ exitCode: 0 }),
+      },
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [
+        expect.objectContaining({ code: "invalid-working-directory-boundary" }),
+      ],
+    });
+  });
+
   it("rejects validation command cwd outside the worktree context", () => {
     const result = validateDevSquadSandcastleExecutionRequest(
       request({
@@ -187,6 +249,38 @@ describe("runDevSquadSandcastleExecution", () => {
 
     expect(result.status).toBe("input-invalid");
     expect(result.failure).toMatchObject({ category: "input-validation" });
+    expect(result.validation.status).toBe("skipped");
+    expect(execute).not.toHaveBeenCalled();
+    expect(runValidationCommand).not.toHaveBeenCalled();
+  });
+
+  it("rejects workingDirectory boundary violations before calling execution or validation seams", async () => {
+    const execute = vi.fn(async () => ({ branch: "never" }));
+    const runValidationCommand = vi.fn(async () => ({ exitCode: 0 }));
+
+    const result = await runDevSquadSandcastleExecution(
+      request({
+        repo: {
+          hostRepoPath: "/repo",
+          worktreePath: "/repo/.sandcastle/worktrees/implementer-12",
+          workingDirectory: "/tmp/external-workdir",
+        },
+        validationCommands: [
+          {
+            label: "external",
+            command: "npm test",
+            cwd: "/tmp/external-workdir",
+          },
+        ],
+      }),
+      { execute, runValidationCommand },
+    );
+
+    expect(result.status).toBe("input-invalid");
+    expect(result.failure).toMatchObject({ category: "input-validation" });
+    expect(result.failure?.safeCauseDetails).toContain(
+      "Working directory must stay inside or equal to repo.worktreePath",
+    );
     expect(result.validation.status).toBe("skipped");
     expect(execute).not.toHaveBeenCalled();
     expect(runValidationCommand).not.toHaveBeenCalled();

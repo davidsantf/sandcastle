@@ -160,6 +160,7 @@ export type DevSquadSandcastleValidationErrorCode =
   | "missing-host-repo-path"
   | "missing-worktree-path"
   | "missing-working-directory"
+  | "invalid-working-directory-boundary"
   | "missing-source-branch"
   | "missing-target-branch"
   | "missing-work-item-id"
@@ -213,13 +214,29 @@ const isBlank = (value: string | undefined): boolean =>
 const isPositiveInteger = (value: number): boolean =>
   Number.isInteger(value) && value > 0;
 
+type BoundaryPathApi = Pick<
+  typeof path.posix,
+  "isAbsolute" | "relative" | "resolve"
+>;
+
+const hasWindowsPathSyntax = (value: string): boolean =>
+  /^[A-Za-z]:[\\/]/.test(value) ||
+  value.startsWith("\\\\") ||
+  value.includes("\\");
+
+const boundaryPathApi = (parent: string, child: string): BoundaryPathApi =>
+  hasWindowsPathSyntax(parent) || hasWindowsPathSyntax(child)
+    ? path.win32
+    : path.posix;
+
 const isPathInsideOrEqual = (parent: string, child: string): boolean => {
-  const resolvedParent = path.resolve(parent);
-  const resolvedChild = path.resolve(child);
-  const relative = path.relative(resolvedParent, resolvedChild);
+  const pathApi = boundaryPathApi(parent, child);
+  const resolvedParent = pathApi.resolve(parent);
+  const resolvedChild = pathApi.resolve(child);
+  const relative = pathApi.relative(resolvedParent, resolvedChild);
   return (
     relative.length === 0 ||
-    (!relative.startsWith("..") && !path.isAbsolute(relative))
+    (!relative.startsWith("..") && !pathApi.isAbsolute(relative))
   );
 };
 
@@ -273,6 +290,21 @@ export const validateDevSquadSandcastleExecutionRequest = (
       "repo.workingDirectory",
       "Working directory",
     );
+  }
+  if (
+    !isBlank(request.repo.worktreePath) &&
+    !isBlank(request.repo.workingDirectory) &&
+    !isPathInsideOrEqual(
+      request.repo.worktreePath,
+      request.repo.workingDirectory,
+    )
+  ) {
+    errors.push({
+      code: "invalid-working-directory-boundary",
+      path: "repo.workingDirectory",
+      message:
+        "Working directory must stay inside or equal to repo.worktreePath",
+    });
   }
   if (isBlank(request.branch.sourceBranch)) {
     pushMissing(
