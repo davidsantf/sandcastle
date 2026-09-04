@@ -1,3 +1,6 @@
+import { mkdtempSync, mkdirSync, rmSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { run } from "./run.js";
 import {
@@ -11,6 +14,52 @@ import {
 vi.mock("./run.js", () => ({
   run: vi.fn(),
 }));
+
+const withTempBoundaryFixture = <T>(
+  callback: (fixture: {
+    readonly root: string;
+    readonly worktree: string;
+    readonly packageDir: string;
+    readonly outside: string;
+  }) => T,
+): T => {
+  const root = mkdtempSync(path.join(tmpdir(), "sandcastle-boundary-"));
+  try {
+    const worktree = path.join(root, "worktree");
+    const packageDir = path.join(worktree, "package");
+    const outside = path.join(root, "outside");
+    mkdirSync(packageDir, { recursive: true });
+    mkdirSync(outside, { recursive: true });
+
+    return callback({ root, worktree, packageDir, outside });
+  } finally {
+    rmSync(root, { force: true, recursive: true });
+  }
+};
+
+const createDirectoryLinkOrSkip = (
+  target: string,
+  linkPath: string,
+): boolean => {
+  try {
+    symlinkSync(
+      target,
+      linkPath,
+      process.platform === "win32" ? "junction" : "dir",
+    );
+    return true;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "EPERM" || code === "EACCES" || code === "ENOTSUP") {
+      console.warn(
+        `Skipping symlink/junction boundary assertion because the platform refused link creation: ${code}`,
+      );
+      return false;
+    }
+
+    throw error;
+  }
+};
 
 const request = (
   overrides: Partial<DevSquadSandcastleExecutionRequest> = {},
@@ -177,6 +226,97 @@ describe("validateDevSquadSandcastleExecutionRequest", () => {
       errors: [
         expect.objectContaining({ code: "invalid-validation-command-cwd" }),
       ],
+    });
+  });
+
+  it("rejects an existing symlink or junction escape as repo.workingDirectory", () => {
+    withTempBoundaryFixture(({ root, worktree, outside }) => {
+      const escapedWorkingDirectory = path.join(worktree, "escaped-workdir");
+      if (!createDirectoryLinkOrSkip(outside, escapedWorkingDirectory)) return;
+
+      const result = validateDevSquadSandcastleExecutionRequest(
+        request({
+          repo: {
+            hostRepoPath: root,
+            worktreePath: worktree,
+            workingDirectory: escapedWorkingDirectory,
+          },
+        }),
+        {
+          execute: async () => ({ branch: "feature" }),
+          runValidationCommand: async () => ({ exitCode: 0 }),
+        },
+      );
+
+      expect(result).toEqual({
+        ok: false,
+        errors: [
+          expect.objectContaining({
+            code: "invalid-working-directory-boundary",
+          }),
+        ],
+      });
+    });
+  });
+
+  it("rejects an existing symlink or junction escape as validation command cwd", () => {
+    withTempBoundaryFixture(({ root, worktree, packageDir, outside }) => {
+      const escapedValidationCwd = path.join(
+        worktree,
+        "escaped-validation-cwd",
+      );
+      if (!createDirectoryLinkOrSkip(outside, escapedValidationCwd)) return;
+
+      const result = validateDevSquadSandcastleExecutionRequest(
+        request({
+          repo: {
+            hostRepoPath: root,
+            worktreePath: worktree,
+            workingDirectory: packageDir,
+          },
+          validationCommands: [
+            {
+              label: "escaped cwd",
+              command: "npm test",
+              cwd: escapedValidationCwd,
+            },
+          ],
+        }),
+        {
+          execute: async () => ({ branch: "feature" }),
+          runValidationCommand: async () => ({ exitCode: 0 }),
+        },
+      );
+
+      expect(result).toEqual({
+        ok: false,
+        errors: [
+          expect.objectContaining({ code: "invalid-validation-command-cwd" }),
+        ],
+      });
+    });
+  });
+
+  it("accepts a legitimate real child workingDirectory", () => {
+    withTempBoundaryFixture(({ root, worktree, packageDir }) => {
+      const result = validateDevSquadSandcastleExecutionRequest(
+        request({
+          repo: {
+            hostRepoPath: root,
+            worktreePath: worktree,
+            workingDirectory: packageDir,
+          },
+          validationCommands: [
+            { label: "real cwd", command: "npm test", cwd: packageDir },
+          ],
+        }),
+        {
+          execute: async () => ({ branch: "feature" }),
+          runValidationCommand: async () => ({ exitCode: 0 }),
+        },
+      );
+
+      expect(result).toEqual({ ok: true });
     });
   });
 });

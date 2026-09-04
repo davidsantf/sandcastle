@@ -1,3 +1,4 @@
+import { realpathSync } from "node:fs";
 import path from "node:path";
 import { run } from "./run.js";
 import type { AgentProvider } from "./AgentProvider.js";
@@ -216,7 +217,13 @@ const isPositiveInteger = (value: number): boolean =>
 
 type BoundaryPathApi = Pick<
   typeof path.posix,
-  "isAbsolute" | "relative" | "resolve"
+  | "basename"
+  | "dirname"
+  | "isAbsolute"
+  | "join"
+  | "parse"
+  | "relative"
+  | "resolve"
 >;
 
 const hasWindowsPathSyntax = (value: string): boolean =>
@@ -229,10 +236,53 @@ const boundaryPathApi = (parent: string, child: string): BoundaryPathApi =>
     ? path.win32
     : path.posix;
 
+const canUseFilesystemCanonicalization = (value: string): boolean =>
+  process.platform === "win32"
+    ? hasWindowsPathSyntax(value)
+    : !hasWindowsPathSyntax(value);
+
+const realpathIfExists = (value: string): string | undefined => {
+  try {
+    return realpathSync.native(value);
+  } catch {
+    return undefined;
+  }
+};
+
+const canonicalizeBoundaryPath = (
+  value: string,
+  pathApi: BoundaryPathApi,
+): string => {
+  const resolved = pathApi.resolve(value);
+  if (!canUseFilesystemCanonicalization(resolved)) return resolved;
+
+  const realpath = realpathIfExists(resolved);
+  if (realpath !== undefined) return realpath;
+
+  const root = pathApi.parse(resolved).root;
+  let current = resolved;
+  const missingSegments: string[] = [];
+
+  while (current !== root && current.length > 0) {
+    missingSegments.unshift(pathApi.basename(current));
+    current = pathApi.dirname(current);
+
+    const ancestorRealpath = realpathIfExists(current);
+    if (ancestorRealpath !== undefined) {
+      return missingSegments.reduce(
+        (candidate, segment) => pathApi.join(candidate, segment),
+        ancestorRealpath,
+      );
+    }
+  }
+
+  return resolved;
+};
+
 const isPathInsideOrEqual = (parent: string, child: string): boolean => {
   const pathApi = boundaryPathApi(parent, child);
-  const resolvedParent = pathApi.resolve(parent);
-  const resolvedChild = pathApi.resolve(child);
+  const resolvedParent = canonicalizeBoundaryPath(parent, pathApi);
+  const resolvedChild = canonicalizeBoundaryPath(child, pathApi);
   const relative = pathApi.relative(resolvedParent, resolvedChild);
   return (
     relative.length === 0 ||
