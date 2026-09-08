@@ -63,6 +63,116 @@ await run({
 });
 ```
 
+## Persistent DevSquad/ADO workflow checkpoints
+
+Host coordinators can persist offline resume state and serialize local workflow
+updates with `openDevSquadAdoWorkflowLedger()`. The caller must provide the
+canonical **host repository root** explicitly; the ledger never invokes git,
+discovers a root, or contacts ADO, GitHub, MCP, a network, a sandbox, or an
+agent provider.
+
+```typescript
+import { randomBytes } from "node:crypto";
+import { openDevSquadAdoWorkflowLedger } from "@ai-hero/sandcastle";
+
+const opened = await openDevSquadAdoWorkflowLedger({
+  // Pass this same main-checkout root when calling from any worktree.
+  repositoryRoot: "/host/repos/example",
+});
+if (!opened.ok) throw new Error(opened.error.kind);
+
+const ledger = opened.value;
+const initialized = await ledger.initializeRecord({
+  workItemId: 137,
+  operationId: "initialize-137", // stable across an ambiguous retry
+  phase: "implement", // caller-defined; Sandcastle has no phase allowlist
+  status: "ready",
+  branch: "users/agent/137",
+  worktreePath: "/host/repos/example/.sandcastle/worktrees/137",
+});
+if (!initialized.ok) throw new Error(initialized.error.kind);
+
+// Supply a cryptographically random 32-byte, unpadded base64url token.
+const claimToken = randomBytes(32).toString("base64url");
+const acquired = await ledger.acquireClaim({
+  workItemId: 137,
+  operationId: "claim-137-loop-a",
+  ownerId: "loop-a",
+  claimToken,
+  leaseDurationMs: 60_000,
+});
+if (!acquired.ok) throw new Error(acquired.error.kind);
+
+const claim = acquired.value.outcome.authority;
+const checkpointed = await ledger.checkpoint({
+  workItemId: 137,
+  operationId: "checkpoint-137-running",
+  authority: {
+    ownerId: claim.ownerId,
+    claimToken: claim.claimToken,
+    fencingValue: claim.fencingValue,
+  },
+  expected: {
+    revision: acquired.value.record.revision,
+    phase: acquired.value.record.phase,
+    status: acquired.value.record.status,
+  },
+  patch: {
+    status: "running",
+    agentId: "implementer-a",
+    sessionId: "session-1",
+    observations: {
+      workItemCommentId: "481",
+      pullRequest: { threadId: "12", commentId: "29" },
+    },
+  },
+});
+```
+
+State is stored as strict, immutable schema-v1 generations beneath
+`.sandcastle/devsquad-ado/`. The generated `.sandcastle/.gitignore` excludes
+that directory to prevent accidental commits, but gitignore is **not access
+control**. Keep the repository writable only by its trusted owner.
+
+The production storage boundary currently supports POSIX local filesystems only
+when Node can verify owner-only ledger modes, use no-follow file opens, publish
+with exclusive same-filesystem hard links, flush files, and sync directory
+metadata. It probes the required hard-link and directory-sync capabilities
+before creating `ledger.json` and fails closed with `unsupported-permissions` or
+`unsupported-filesystem` when they cannot be established. Network shares and
+synchronized filesystems remain outside the supported boundary even if a probe
+appears to succeed.
+
+On Windows, the public opener currently returns `unsupported-permissions`
+before creating ledger state. Node's filesystem APIs do not provide the ACL
+inspection/establishment, reparse-safe open, and directory durability controls
+required by ADR-0025, and core deliberately does not fall back to shell or CLI
+ACL tools. Stored Windows and UNC _worktree reference strings_ remain valid
+opaque metadata; that does not imply Windows ledger-storage support.
+
+Claim tokens are capabilities: retain them only in the coordinator that owns
+the claim, do not log them, and reuse the original token plus operation ID when
+retrying an ambiguous acquisition. Sandcastle persists only a SHA-256 verifier;
+read, list, recovery, checkpoint, renew, and release projections are token-free.
+Expired claims can be taken over with a higher fencing value. A stale authority
+cannot checkpoint, renew, or release the later owner's state.
+
+All methods return a Promise of a discriminated `{ ok, value | error }` result.
+Handle categories such as `claim-conflict`, `stale-fencing`,
+`revision-conflict`, `state-conflict`, `idempotency-conflict`,
+`corrupt-artifact`, and `unsupported-schema-version` without parsing message
+text. A `storage` error with `outcome: "indeterminate"` means publication may
+have happened: retry the exact request with the same operation ID. Recovery
+fails closed, preserves corrupt evidence, and never promotes a temporary file
+or falls back from a corrupt highest generation. Use `inspectRecoveryErrors()`
+for a bounded, deterministic read-only scan.
+
+The ledger records structurally valid phase and status strings but defines no
+phase order, transition policy, terminal state, merge readiness, or resumability
+policy. DevSquad/the host remains responsible for lifecycle decisions and all
+external ADO or GitHub actions. `listResumableRecords()` therefore returns every
+valid initialized record; the host decides which ones should resume.
+
 ## Sandbox Providers
 
 Sandcastle uses a `SandboxProvider` to create isolated environments. The `sandbox` option on `run()`, `interactive()`, and `createSandbox()` accepts any provider, including `noSandbox()` — opt in to running the agent directly on the host when container isolation is undesired. Built-in providers:

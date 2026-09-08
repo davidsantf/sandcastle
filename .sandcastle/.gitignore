@@ -1,3 +1,5 @@
+# Prevent accidental commits of local runtime data; this is not access control.
 .env
 logs
 worktrees
+devsquad-ado
