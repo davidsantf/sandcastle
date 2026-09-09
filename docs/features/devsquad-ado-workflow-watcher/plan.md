@@ -153,7 +153,7 @@ export interface DevSquadAdoWatchIntakeRules {
 
 export interface DevSquadAdoWatchBudgets {
   readonly maxPolls: number;
-  readonly maxPassDurationMs: number;
+  readonly maxPollStartElapsedMs: number;
   readonly observationTimeoutMs: number;
 }
 
@@ -207,22 +207,25 @@ export type DevSquadAdoWatchReasonCode =
   | "claim-expired"
   | "claim-authorization"
   | "stale-fencing"
+  | "stale-observation"
   | "revision-conflict"
   | "state-conflict"
   | "idempotency-conflict"
   | "checkpoint-indeterminate"
   | "observation-failed"
   | "observation-timeout"
+  | "observation-anchor-missing"
   | "pull-request-observation-unavailable"
   | "invalid-observation-identifier"
   | "ledger-recovery"
   | "ledger-capacity"
+  | "ledger-unavailable"
   | "cancelled";
 
 export type DevSquadAdoWatchStopReason =
   | "candidates-resolved"
   | "poll-budget-exhausted"
-  | "duration-budget-exhausted"
+  | "poll-start-budget-exhausted"
   | "cancelled";
 
 export interface DevSquadAdoWatchClaimMetadata {
@@ -293,49 +296,54 @@ export const deriveDevSquadAdoWatcherOperationId: (
 ) => string;
 ```
 
-`deriveDevSquadAdoWatcherOperationId` is public so a host can reason about, log, or reconcile the exact operation identifiers a retried pass will reuse.
+`deriveDevSquadAdoWatcherOperationId` is public so a host can reason about, log, or reconcile the exact operation identifiers a pass uses. Its input is a discriminated union: the `checkpoint` arm carries the observation generation, and the claim-lifecycle arms carry the claim epoch. A host that wants to predict a retry's checkpoint identifier supplies the same generation; the claim identifiers are deliberately not predictable, because they must not be reused.
 
 ## Validation Rules
 
 Validation runs to completion before any seam call or ledger operation and returns the first failure with a stable field path.
 
-| Field                          | Rule                                                                                                                                                                                                                          |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ledger`                       | Object exposing callable `readRecord`, `acquireClaim`, `renewClaim`, `releaseClaim`, `checkpoint`.                                                                                                                            |
-| `seam`                         | Object; `observeWorkItemComments` present and callable; `observePullRequestActivity` callable when present.                                                                                                                   |
-| `passId`                       | Nonblank NFC string, no control characters, 1–120 UTF-8 bytes.                                                                                                                                                                |
-| `ownerId`                      | Nonblank NFC string, no control characters, 1–256 UTF-8 bytes.                                                                                                                                                                |
-| `candidates`                   | Nonempty array; each canonicalizes through the ledger's work-item rules; no duplicate canonical identifier; at most 1,000 entries.                                                                                            |
-| `intakeRules.phases`           | Nonempty array of distinct nonblank strings ≤ 256 UTF-8 bytes.                                                                                                                                                                |
-| `intakeRules.statuses`         | Nonempty array of distinct nonblank strings ≤ 256 UTF-8 bytes.                                                                                                                                                                |
-| `budgets.maxPolls`             | Positive safe integer ≤ 10,000.                                                                                                                                                                                               |
-| `budgets.maxPassDurationMs`    | Positive safe integer.                                                                                                                                                                                                        |
-| `budgets.observationTimeoutMs` | Positive safe integer.                                                                                                                                                                                                        |
-| `lease.leaseDurationMs`        | Positive safe integer ≤ 86,400,000; default 60,000.                                                                                                                                                                           |
-| `lease.renewalThresholdMs`     | Positive safe integer strictly less than the lease duration; default `max(1, trunc(lease / 3))`. When the default cannot satisfy that rule the offending field is `lease.leaseDurationMs`, because no threshold was supplied. |
-| `backoff.baseIntervalMs`       | Nonnegative safe integer; default 1,000.                                                                                                                                                                                      |
-| `backoff.multiplier`           | Finite number ≥ 1; default 2.                                                                                                                                                                                                 |
-| `backoff.maxIntervalMs`        | Nonnegative safe integer ≥ `baseIntervalMs`; default 30,000.                                                                                                                                                                  |
-| `backoff.jitter`               | Callable when present; its return is coerced with `trunc` and clamped to `[0, maxIntervalMs]`.                                                                                                                                |
-| `clock`                        | Callable returning a valid `Date`.                                                                                                                                                                                            |
-| `delay`                        | Callable.                                                                                                                                                                                                                     |
-| `signal`                       | `AbortSignal` when present.                                                                                                                                                                                                   |
+| Field                           | Rule                                                                                                                                                                                                                          |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ledger`                        | Object exposing callable `readRecord`, `acquireClaim`, `renewClaim`, `releaseClaim`, `checkpoint`.                                                                                                                            |
+| `seam`                          | Object; `observeWorkItemComments` present and callable; `observePullRequestActivity` callable when present.                                                                                                                   |
+| `passId`                        | Nonblank NFC string, no control characters, 1–120 UTF-8 bytes.                                                                                                                                                                |
+| `ownerId`                       | Nonblank NFC string, no control characters, 1–256 UTF-8 bytes.                                                                                                                                                                |
+| `candidates`                    | Nonempty array; each canonicalizes through the ledger's work-item rules; no duplicate canonical identifier; at most 1,000 entries.                                                                                            |
+| `intakeRules.phases`            | Nonempty array of distinct nonblank strings ≤ 256 UTF-8 bytes.                                                                                                                                                                |
+| `intakeRules.statuses`          | Nonempty array of distinct nonblank strings ≤ 256 UTF-8 bytes.                                                                                                                                                                |
+| `budgets.maxPolls`              | Positive safe integer ≤ 10,000.                                                                                                                                                                                               |
+| `budgets.maxPollStartElapsedMs` | Positive safe integer.                                                                                                                                                                                                        |
+| `budgets.observationTimeoutMs`  | Positive safe integer.                                                                                                                                                                                                        |
+| `lease.leaseDurationMs`         | Positive safe integer ≤ 86,400,000; default 60,000.                                                                                                                                                                           |
+| `lease.renewalThresholdMs`      | Positive safe integer strictly less than the lease duration; default `max(1, trunc(lease / 3))`. When the default cannot satisfy that rule the offending field is `lease.leaseDurationMs`, because no threshold was supplied. |
+| `backoff.baseIntervalMs`        | Nonnegative safe integer; default 1,000.                                                                                                                                                                                      |
+| `backoff.multiplier`            | Finite number ≥ 1; default 2.                                                                                                                                                                                                 |
+| `backoff.maxIntervalMs`         | Nonnegative safe integer ≥ `baseIntervalMs`; default 30,000.                                                                                                                                                                  |
+| `backoff.jitter`                | Callable when present; its return is coerced with `trunc` and clamped to `[0, maxIntervalMs]`.                                                                                                                                |
+| `clock`                         | Callable returning a valid `Date`.                                                                                                                                                                                            |
+| `delay`                         | Callable.                                                                                                                                                                                                                     |
+| `signal`                        | `AbortSignal` when present.                                                                                                                                                                                                   |
 
 Intake rules are exact-match sets with no wildcard. Admitting every status requires listing every status, which keeps lifecycle policy in the host.
 
 ## Deterministic Operation Identifiers
 
 ```text
-digestInput = canonicalJson({ v: 1, passId, workItemId, step, ordinal })
-operationId = `dsw1.${step}.${sha256hex(digestInput).slice(0, 32)}`
+checkpoint identity     = { v: 2, passId, workItemId, step: "checkpoint", ordinal, generation }
+claim-lifecycle identity = { v: 2, passId, workItemId, step, ordinal, claimEpoch }
+operationId              = `dsw2.${step}.${sha256hex(canonicalJson(identity)).slice(0, 32)}`
 ```
 
 - `step` ∈ `claim` | `renew` | `checkpoint` | `release`.
 - `ordinal` is `0` for `claim`, `checkpoint`, and `release`; the one-based renewal sequence for `renew`.
 - `workItemId` is the canonical ledger identifier, not the caller's raw input.
+- `generation` names both ends of the advance: `fromWorkItemCommentId`, `fromPullRequest`, `toWorkItemCommentId`, `toPullRequest`.
+- `claimEpoch` is 16 random bytes, base64url, minted immediately before `acquireClaim` and reused by that claim's renewals and release.
 - Length is 48 ASCII bytes, well inside the ledger's 256-byte identifier bound.
 
-Canonical serialization of the identity object removes delimiter ambiguity between long pass and work-item identifiers. Retrying a pass with the same `passId` and candidate set reproduces every identifier exactly, so an already-durable mutation replays instead of duplicating.
+Canonical serialization of the identity object removes delimiter ambiguity between long pass and work-item identifiers.
+
+The two scopes are not interchangeable. A **checkpoint** identifier must reproduce on retry so an already-durable advance replays instead of duplicating, and must differ for a different advance so a `passId` reused for later work is not falsely rejected. A **claim-lifecycle** identifier must _not_ reproduce across acquisitions: ADR-0025 hashes the capability token into the acquire digest, and tokens are freshly random, so a reused claim identifier can only produce a permanent `idempotency-conflict`. The epoch is an idempotency namespace, never a capability, and never a claim token.
 
 ## Candidate Ordering
 
@@ -352,8 +360,8 @@ loop:
   if signal.aborted            -> stop("cancelled")
   if polls >= maxPolls         -> stop("poll-budget-exhausted")
   now := clock()               # ONE reading for this entire poll
-  if polls > 0 and now - startedAt >= maxPassDurationMs
-                               -> stop("duration-budget-exhausted")
+  if polls > 0 and now - startedAt >= maxPollStartElapsedMs
+                               -> stop("poll-start-budget-exhausted")
   polls := polls + 1
 
   for candidate in pending (canonical order):
@@ -424,13 +432,33 @@ For each observation kind, given the persisted cursor `anchor` and the seam's or
 ```text
 if entries is empty            -> no new events
 if anchor is null              -> new := entries
-else if anchor == last(entries)-> no new events
 else if anchor appears at i    -> new := entries[i+1 ..]
-else                           -> new := entries      # seam returned post-cursor entries only
-next cursor := last(new)
+else                           -> FAIL CLOSED: observation-anchor-missing
+next cursor := last persistable entry of new
 ```
 
-Equality is exact string comparison for work-item comments and exact pair comparison of `threadId` and `commentId` for pull requests. No identifier is parsed, ordered, or compared arithmetically. A pull-request entry with a missing, null, or blank `commentId` is not persistable; if it is the last entry, the last persistable entry before it becomes the next cursor, and `pull-request-thread` is recorded in `skippedCursorKinds`.
+Equality is exact string comparison for work-item comments and exact pair comparison of `threadId` and `commentId` for pull requests. No identifier is parsed, ordered, or compared arithmetically.
+
+The final branch is the fail-closed one. The seam window is anchor-inclusive, so a non-empty window that does not contain a supplied anchor is undecidable: it is indistinguishable from a window in which every entry is new, and treating it that way silently re-delivers the whole window. The candidate reports `failed` / `observation-anchor-missing` and advances nothing.
+
+A pull-request entry with a missing, null, or blank `commentId` is not persistable; the newest persistable entry among the new entries becomes the next cursor. `pull-request-thread` is recorded in `skippedCursorKinds` **only when no persistable entry exists at all**, so `cursorChanges` and `skippedCursorKinds` never name the same kind in one outcome.
+
+## Observation Staleness Gate
+
+The record is read before observation and returned again by the acquisition. Between those two reads another owner can acquire, advance a cursor, and release, so the acquisition can succeed while the selection in hand is already stale.
+
+```text
+observed := readRecord(candidate)          # anchors used for selection
+claimed  := acquireClaim(...).record       # record as it stands under the claim
+
+if observed.observations.workItemCommentId != claimed.observations.workItemCommentId
+   or observed.observations.pullRequest    != claimed.observations.pullRequest
+   or observed.pullRequest.id              != claimed.pullRequest.id
+                               -> releaseClaim(); report no-change / stale-observation
+                                  (candidate stays pending and re-observes next poll)
+```
+
+Phase and status are excluded on purpose: they are taken fresh from `claimed` and carried into the checkpoint precondition, so a foreign change to them conflicts on its own terms rather than being reclassified as staleness.
 
 ## Cancellation Points
 
@@ -466,22 +494,24 @@ On abort the pass releases every held claim, reports every already-acknowledged 
 
 ## Invariant Traceability
 
-| Invariant | Enforcement                                                               | Test               |
-| --------- | ------------------------------------------------------------------------- | ------------------ |
-| INV-001   | Static dependency assertion plus seam-only observation                    | TEST-024           |
-| INV-002   | Seam exposes observation methods only; recording fake asserts call set    | TEST-003           |
-| INV-003   | Single poll clock reading, canonical ordering, pure eligibility           | TEST-006, TEST-007 |
-| INV-004   | Foreign-claim gate plus acquire-on-intent                                 | TEST-008           |
-| INV-005   | Fencing value carried on every mutation; ledger rejects superseded fences | TEST-009           |
-| INV-006   | Signal appended only after checkpoint acceptance                          | TEST-004, TEST-005 |
-| INV-007   | `acted` set only from an accepted checkpoint response                     | TEST-004, TEST-023 |
-| INV-008   | Derived operation IDs reused verbatim on retry                            | TEST-012           |
-| INV-009   | No phase table; intake rules are caller-supplied exact-match sets         | TEST-014           |
-| INV-010   | Projection to identifiers, token isolation, redacted errors               | TEST-021           |
-| INV-011   | Poll and duration budgets checked before each additional poll             | TEST-016           |
-| INV-012   | Finalizer releases every held claim on every exit path                    | TEST-011, TEST-017 |
-| INV-013   | Ledger recovery categories surfaced unchanged, never repaired             | TEST-020           |
-| INV-014   | Per-candidate step isolation with independent outcomes                    | TEST-019           |
+| Invariant | Enforcement                                                                             | Test                         |
+| --------- | --------------------------------------------------------------------------------------- | ---------------------------- |
+| INV-001   | Static dependency assertion plus seam-only observation                                  | TEST-024                     |
+| INV-002   | Seam exposes observation methods only; recording fake asserts call set                  | TEST-003                     |
+| INV-003   | Single poll clock reading, canonical ordering, pure eligibility                         | TEST-006, TEST-007           |
+| INV-004   | Foreign-claim gate plus acquire-on-intent                                               | TEST-008                     |
+| INV-005   | Fencing value carried on every mutation; ledger rejects superseded fences               | TEST-009                     |
+| INV-006   | Signal appended only after checkpoint acceptance                                        | TEST-004, TEST-005, TEST-019 |
+| INV-007   | `acted` set only from an accepted checkpoint response                                   | TEST-004, TEST-023           |
+| INV-008   | Checkpoint IDs reused verbatim on retry; claim IDs scoped per acquisition               | TEST-012, TEST-023           |
+| INV-009   | No phase table; intake rules are caller-supplied exact-match sets                       | TEST-014                     |
+| INV-010   | Projection to identifiers, token isolation, redacted errors                             | TEST-021                     |
+| INV-011   | Poll budget checked before each additional poll; elapsed budget bounds poll starts only | TEST-016                     |
+| INV-012   | Finalizer releases every held claim on every exit path                                  | TEST-011, TEST-017           |
+| INV-013   | Ledger recovery categories surfaced unchanged, never repaired                           | TEST-020                     |
+| INV-014   | Per-candidate step isolation with independent outcomes                                  | TEST-019                     |
+| INV-015   | Anchors compared between the pre-claim read and the acquired record                     | TEST-009                     |
+| INV-016   | Every injected ledger call classified into a typed outcome or `ledger-fault`            | TEST-019, TEST-011           |
 
 ## Conformance Test Matrix
 

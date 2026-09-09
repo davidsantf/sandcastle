@@ -59,23 +59,26 @@ const REASON_CODES = [
   "claim-expired",
   "claim-authorization",
   "stale-fencing",
+  "stale-observation",
   "revision-conflict",
   "state-conflict",
   "idempotency-conflict",
   "checkpoint-indeterminate",
   "observation-failed",
   "observation-timeout",
+  "observation-anchor-missing",
   "pull-request-observation-unavailable",
   "invalid-observation-identifier",
   "ledger-recovery",
   "ledger-capacity",
+  "ledger-unavailable",
   "cancelled",
 ] as const;
 
 const STOP_REASONS = [
   "candidates-resolved",
   "poll-budget-exhausted",
-  "duration-budget-exhausted",
+  "poll-start-budget-exhausted",
   "cancelled",
 ] as const;
 
@@ -213,7 +216,7 @@ describe("DevSquadAdoWorkflowWatcher dependency boundary", () => {
       intakeRules: { phases: ["implement"], statuses: ["ready"] },
       budgets: {
         maxPolls: 1,
-        maxPassDurationMs: 600_000,
+        maxPollStartElapsedMs: 600_000,
         observationTimeoutMs: 5_000,
       },
       clock: createDeterministicClock(["2026-01-01T00:00:10.000Z"]).clock,
@@ -240,12 +243,27 @@ describe("DevSquadAdoWorkflowWatcher public surface", () => {
     );
     expect(
       packageEntryPoint.deriveDevSquadAdoWatcherOperationId({
+        step: "checkpoint",
         passId: "pass-1",
         workItemId: "137",
-        step: "checkpoint",
         ordinal: 0,
+        generation: {
+          fromWorkItemCommentId: "480",
+          fromPullRequest: null,
+          toWorkItemCommentId: "481",
+          toPullRequest: null,
+        },
       }),
-    ).toMatch(/^dsw1\.checkpoint\.[0-9a-f]{32}$/);
+    ).toMatch(/^dsw2\.checkpoint\.[0-9a-f]{32}$/);
+    expect(
+      packageEntryPoint.deriveDevSquadAdoWatcherOperationId({
+        step: "claim",
+        passId: "pass-1",
+        workItemId: "137",
+        ordinal: 0,
+        claimEpoch: "epoch-1",
+      }),
+    ).toMatch(/^dsw2\.claim\.[0-9a-f]{32}$/);
   });
 
   it("[TEST-025] exports every public watcher type from the package entry point", async () => {
@@ -268,6 +286,8 @@ describe("DevSquadAdoWorkflowWatcher public surface", () => {
       "DevSquadAdoWatchStopReason",
       "DevSquadAdoWatchValidatedPass",
       "DevSquadAdoWatchValidationResult",
+      "DevSquadAdoWatcherClaimStep",
+      "DevSquadAdoWatcherObservationGeneration",
       "DevSquadAdoWatcherObservationSeam",
       "DevSquadAdoWatcherOperationIdentity",
       "DevSquadAdoWatcherOperationStep",
@@ -290,7 +310,7 @@ describe("DevSquadAdoWorkflowWatcher public surface", () => {
     expect(OUTCOME_UNION_IS_EXACT).toBe(true);
     expect(STEP_UNION_IS_EXACT).toBe(true);
     expect(SEAM_UNION_IS_EXACT).toBe(true);
-    expect(REASON_CODES).toHaveLength(22);
+    expect(REASON_CODES).toHaveLength(25);
     expect(STOP_REASONS).toHaveLength(4);
 
     const source = await readModule("DevSquadAdoWorkflowWatcher.ts");

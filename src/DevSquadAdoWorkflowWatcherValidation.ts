@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import {
   canonicalJson,
   canonicalizeWorkItemId,
@@ -243,11 +244,11 @@ export const validateDevSquadAdoWorkflowWatchPassOptions = (
     MAX_POLLS_CEILING,
   );
   if (!maxPolls.ok) return maxPolls;
-  const maxPassDurationMs = positiveInteger(
-    options.budgets.maxPassDurationMs,
-    "budgets.maxPassDurationMs",
+  const maxPollStartElapsedMs = positiveInteger(
+    options.budgets.maxPollStartElapsedMs,
+    "budgets.maxPollStartElapsedMs",
   );
-  if (!maxPassDurationMs.ok) return maxPassDurationMs;
+  if (!maxPollStartElapsedMs.ok) return maxPollStartElapsedMs;
   const observationTimeoutMs = positiveInteger(
     options.budgets.observationTimeoutMs,
     "budgets.observationTimeoutMs",
@@ -347,7 +348,7 @@ export const validateDevSquadAdoWorkflowWatchPassOptions = (
     intakePhases: phases.value,
     intakeStatuses: statuses.value,
     maxPolls: maxPolls.value,
-    maxPassDurationMs: maxPassDurationMs.value,
+    maxPollStartElapsedMs: maxPollStartElapsedMs.value,
     observationTimeoutMs: observationTimeoutMs.value,
     leaseDurationMs,
     renewalThresholdMs,
@@ -359,29 +360,72 @@ export const validateDevSquadAdoWorkflowWatchPassOptions = (
 };
 
 /**
- * Derive the deterministic ledger operation identifier for one watcher step.
+ * Derive the ledger operation identifier for one watcher step.
  *
- * `operationId = "dsw1." + step + "." + sha256hex(canonicalJson(identity)).slice(0, 32)`
+ * ```text
+ * operationId = "dsw2." + step + "." + sha256hex(canonicalJson(identity)).slice(0, 32)
+ * ```
  *
  * The identity object is canonically serialized, which removes delimiter
- * ambiguity between long pass and work-item identifiers. Retrying a pass with
- * the same `passId` and candidate set reproduces every identifier exactly, so
- * an already-durable mutation replays instead of duplicating.
+ * ambiguity between long pass and work-item identifiers and keeps the result
+ * inside the ledger's 256-byte identifier bound.
+ *
+ * The two identity arms are deliberately scoped differently.
+ *
+ * A **claim-lifecycle** identifier (`claim`, `renew`, `release`) is scoped to a
+ * random `claimEpoch` minted per acquisition. The ledger folds the capability
+ * token into its idempotency digest and that token is freshly random every
+ * acquisition, so an epoch-free identifier would make a second acquisition
+ * under the same `passId` a permanent `idempotency-conflict` — poisoning the
+ * pass identity for that candidate forever. Scoping by epoch keeps capability
+ * tokens random *and* keeps the same `passId` replayable.
+ *
+ * A **checkpoint** identifier is scoped to the exact cursor advance it
+ * publishes. Retrying the same advance reproduces the identifier, so an
+ * already-durable mutation replays instead of duplicating; publishing a
+ * genuinely different advance derives a different identifier, so a later pass
+ * reusing the same `passId` for new work is never falsely rejected.
  */
 export const deriveDevSquadAdoWatcherOperationId = (
   input: DevSquadAdoWatcherOperationIdentity,
 ): string => {
-  const digest = sha256Hex(
-    canonicalJson({
-      v: 1,
-      passId: input.passId,
-      workItemId: input.workItemId,
-      step: input.step,
-      ordinal: input.ordinal,
-    }),
-  );
-  return `dsw1.${input.step}.${digest.slice(0, 32)}`;
+  const identity =
+    input.step === "checkpoint"
+      ? {
+          v: 2,
+          passId: input.passId,
+          workItemId: input.workItemId,
+          step: input.step,
+          ordinal: input.ordinal,
+          generation: {
+            fromWorkItemCommentId: input.generation.fromWorkItemCommentId,
+            fromPullRequest: input.generation.fromPullRequest,
+            toWorkItemCommentId: input.generation.toWorkItemCommentId,
+            toPullRequest: input.generation.toPullRequest,
+          },
+        }
+      : {
+          v: 2,
+          passId: input.passId,
+          workItemId: input.workItemId,
+          step: input.step,
+          ordinal: input.ordinal,
+          claimEpoch: input.claimEpoch,
+        };
+  const digest = sha256Hex(canonicalJson(identity));
+  return `dsw2.${input.step}.${digest.slice(0, 32)}`;
 };
+
+/**
+ * Mint the random identity of one claim acquisition attempt.
+ *
+ * This is an idempotency namespace, never a capability: it authorizes nothing,
+ * and the claim token it accompanies stays independently random. It is
+ * generated fresh per acquisition so that claim-lifecycle operation
+ * identifiers can never collide with a previous attempt's receipts.
+ */
+export const mintDevSquadAdoWatcherClaimEpoch = (): string =>
+  randomBytes(16).toString("base64url");
 
 /** Deterministic backoff inputs for the transition from poll `n` to `n + 1`. */
 export interface DevSquadAdoWatcherBackoffInput {

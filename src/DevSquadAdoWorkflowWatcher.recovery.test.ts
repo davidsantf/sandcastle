@@ -10,10 +10,7 @@ import {
   interruptPersistenceAt,
   makeLedgerTestRuntime,
 } from "./DevSquadAdoWorkflowLedgerTestSupport.js";
-import {
-  deriveDevSquadAdoWatcherOperationId,
-  runDevSquadAdoWorkflowWatchPass,
-} from "./DevSquadAdoWorkflowWatcher.js";
+import { runDevSquadAdoWorkflowWatchPass } from "./DevSquadAdoWorkflowWatcher.js";
 import type { RunDevSquadAdoWorkflowWatchPassOptions } from "./DevSquadAdoWorkflowWatcher.js";
 import {
   cleanupWatcherRepositories,
@@ -26,6 +23,7 @@ import {
   openWatcherLedger,
   seedWatcherRecord,
   setWatcherRecordSchemaVersion,
+  watcherCommentCheckpointOperationId,
   watcherRecordGenerationPath,
 } from "./DevSquadAdoWorkflowWatcherTestSupport.js";
 
@@ -45,7 +43,7 @@ const passOptions = (
   intakeRules: { phases: ["implement"], statuses: ["ready"] },
   budgets: {
     maxPolls: 1,
-    maxPassDurationMs: 600_000,
+    maxPollStartElapsedMs: 600_000,
     observationTimeoutMs: OBSERVATION_TIMEOUT_MS,
   },
   clock: createDeterministicClock([POLL_NOW]).clock,
@@ -250,6 +248,246 @@ describe("DevSquadAdoWorkflowWatcher candidate isolation", () => {
     }
   }, 120_000);
 
+  it("[TEST-019] fails a candidate closed when a non-empty window has lost its anchor", async () => {
+    const fixture = await createWatcherLedgerFixture(ledgerClock);
+    for (const workItemId of [137, 42]) {
+      await seedWatcherRecord(fixture.ledger, {
+        workItemId,
+        revision: 4,
+        phase: "implement",
+        status: "ready",
+        workItemCommentId: "480",
+      });
+    }
+
+    // Candidate 137 gets a window that no longer contains its persisted anchor.
+    // Treating that as "everything here is new" would re-deliver 481 and 482,
+    // which the record already accounts for.
+    const seam = createRecordingWatcherSeam({
+      comments: (input) =>
+        input.workItemId === "137"
+          ? { commentIds: ["481", "482"] }
+          : { commentIds: ["480", "481"] },
+    });
+    const outcome = await runDevSquadAdoWorkflowWatchPass(
+      passOptions({
+        ledger: fixture.ledger,
+        seam: seam.seam,
+        candidates: [137, 42],
+      }),
+    );
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.value.outcomes[0]).toMatchObject({
+      workItemId: "137",
+      kind: "failed",
+      reason: "observation-anchor-missing",
+      revision: null,
+      cursorChanges: [],
+    });
+    // The failure is isolated: the well-formed candidate still completes.
+    expect(outcome.value.outcomes[1]).toMatchObject({
+      workItemId: "42",
+      kind: "acted",
+    });
+    expect(outcome.value.signals.map((signal) => signal.workItemId)).toEqual([
+      "42",
+    ]);
+
+    const stalled = await fixture.ledger.readRecord(137);
+    expect(stalled).toMatchObject({
+      ok: true,
+      value: {
+        revision: 4,
+        observations: { workItemCommentId: "480" },
+        activeClaim: null,
+      },
+    });
+  }, 60_000);
+
+  it("[TEST-019] converts a throwing or rejecting ledger method into a typed outcome", async () => {
+    const fixture = await createWatcherLedgerFixture(ledgerClock);
+    for (const workItemId of [137, 42]) {
+      await seedWatcherRecord(fixture.ledger, {
+        workItemId,
+        revision: 4,
+        phase: "implement",
+        status: "ready",
+        workItemCommentId: "480",
+      });
+    }
+
+    const secret = "cred-9f3a-do-not-leak";
+    const faults = [
+      () => {
+        throw new Error(`synchronous ${secret}`);
+      },
+      async () => {
+        await Promise.resolve();
+        throw new Error(`rejected ${secret}`);
+      },
+      // A ledger that answers with something that is not a typed result is the
+      // same class of problem: the watcher cannot describe it without quoting
+      // a value it does not control.
+      async () => await Promise.resolve(undefined),
+      async () => await Promise.resolve({ ok: false, error: "boom" }),
+    ] as const;
+
+    for (const method of [
+      "readRecord",
+      "acquireClaim",
+      "renewClaim",
+      "checkpoint",
+    ] as const) {
+      for (const fault of faults) {
+        const faultingLedger = {
+          ...fixture.ledger,
+          [method]: fault,
+        } as unknown as DevSquadAdoWorkflowLedger;
+        const seam = createRecordingWatcherSeam({ comments: twoNewComments });
+        const outcome = await runDevSquadAdoWorkflowWatchPass(
+          passOptions({
+            ledger: faultingLedger,
+            seam: seam.seam,
+            candidates: [137, 42],
+            // Force a renewal before every checkpoint so `renewClaim` is
+            // reached at all.
+            lease: { leaseDurationMs: 60_000, renewalThresholdMs: 59_999 },
+          }),
+        );
+
+        // A faulting ledger method never escapes as a rejection and never fails
+        // the pass envelope.
+        expect(outcome.ok, method).toBe(true);
+        if (!outcome.ok) return;
+        for (const candidate of outcome.value.outcomes) {
+          expect(candidate, method).toMatchObject({
+            kind: "failed",
+            reason: "ledger-unavailable",
+            ledgerErrorKind: "ledger-fault",
+          });
+        }
+        // One candidate's fault never aborts the other.
+        expect(
+          outcome.value.outcomes.map((c) => c.workItemId),
+          method,
+        ).toEqual(["137", "42"]);
+
+        // No raw error text, message, or stack reaches the public result. Only
+        // the stable `ledger-fault` category does.
+        const serialized = JSON.stringify(outcome.value);
+        expect(serialized, method).not.toContain(secret);
+        expect(serialized, method).not.toContain("synchronous");
+        expect(serialized, method).not.toContain("Error:");
+        expect(serialized, method).not.toContain('"stack"');
+        expect(serialized, method).not.toContain("boom");
+      }
+    }
+  }, 180_000);
+
+  it("[TEST-011] releases the claim when the checkpoint rejects after a successful acquire", async () => {
+    const fixture = await createWatcherLedgerFixture(ledgerClock);
+    await seedWatcherRecord(fixture.ledger, {
+      workItemId: 137,
+      revision: 4,
+      phase: "implement",
+      status: "ready",
+      workItemCommentId: "480",
+    });
+
+    let acquired = 0;
+    let released = 0;
+    const faultingLedger: DevSquadAdoWorkflowLedger = {
+      ...fixture.ledger,
+      acquireClaim: async (input) => {
+        acquired += 1;
+        return await fixture.ledger.acquireClaim(input);
+      },
+      checkpoint: async () => {
+        await Promise.resolve();
+        throw new Error("checkpoint transport exploded");
+      },
+      releaseClaim: async (input) => {
+        released += 1;
+        return await fixture.ledger.releaseClaim(input);
+      },
+    };
+
+    const seam = createRecordingWatcherSeam({ comments: twoNewComments });
+    const outcome = await runDevSquadAdoWorkflowWatchPass(
+      passOptions({ ledger: faultingLedger, seam: seam.seam }),
+    );
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(acquired).toBe(1);
+    // The claim was held when the checkpoint faulted, so finalization — not an
+    // escaping throw — is what gets it released.
+    expect(released).toBe(1);
+    expect(outcome.value.outcomes[0]).toMatchObject({
+      kind: "failed",
+      reason: "ledger-unavailable",
+      ledgerErrorKind: "ledger-fault",
+      revision: null,
+    });
+    expect(outcome.value.signals).toEqual([]);
+
+    const durable = await fixture.ledger.readRecord(137);
+    expect(durable).toMatchObject({
+      ok: true,
+      value: {
+        observations: { workItemCommentId: "480" },
+        activeClaim: null,
+      },
+    });
+  }, 60_000);
+
+  it("[TEST-011] keeps a durable outcome when only the release rejects", async () => {
+    const fixture = await createWatcherLedgerFixture(ledgerClock);
+    await seedWatcherRecord(fixture.ledger, {
+      workItemId: 137,
+      revision: 4,
+      phase: "implement",
+      status: "ready",
+      workItemCommentId: "480",
+    });
+
+    const faultingLedger: DevSquadAdoWorkflowLedger = {
+      ...fixture.ledger,
+      releaseClaim: async () => {
+        await Promise.resolve();
+        throw new Error("release transport exploded");
+      },
+    };
+
+    const seam = createRecordingWatcherSeam({ comments: twoNewComments });
+    const outcome = await runDevSquadAdoWorkflowWatchPass(
+      passOptions({
+        ledger: faultingLedger,
+        seam: seam.seam,
+        lease: { leaseDurationMs: 60_000 },
+      }),
+    );
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    // Release is best-effort: an acknowledged cursor advance stays reported,
+    // and the lease expiry is what retires the claim the ledger would not drop.
+    expect(outcome.value.outcomes[0]).toMatchObject({
+      kind: "acted",
+      reason: "new-work-item-comment",
+    });
+    expect(outcome.value.signals).toHaveLength(1);
+    expect(JSON.stringify(outcome.value)).not.toContain("transport exploded");
+
+    const durable = await fixture.ledger.readRecord(137);
+    expect(durable).toMatchObject({
+      ok: true,
+      value: { observations: { workItemCommentId: "481" } },
+    });
+  }, 60_000);
+
   it("[TEST-020] surfaces an unsupported persisted schema without repairing it", async () => {
     const fixture = await createWatcherLedgerFixture(ledgerClock);
     await seedWatcherRecord(fixture.ledger, {
@@ -374,11 +612,11 @@ describe("DevSquadAdoWorkflowWatcher restart safety", () => {
 
     const final = await restarted.readRecord(137);
     expect(final).toEqual(advanced);
-    const checkpointOperationId = deriveDevSquadAdoWatcherOperationId({
+    const checkpointOperationId = watcherCommentCheckpointOperationId({
       passId: "pass-restart",
       workItemId: "137",
-      step: "checkpoint",
-      ordinal: 0,
+      from: "480",
+      to: "481",
     });
     expect(
       advanced.value.checkpoints.filter(
@@ -386,11 +624,11 @@ describe("DevSquadAdoWorkflowWatcher restart safety", () => {
       ),
     ).toHaveLength(1);
     expect(checkpointOperationId).toBe(
-      deriveDevSquadAdoWatcherOperationId({
+      watcherCommentCheckpointOperationId({
         passId: "pass-restart",
         workItemId: "137",
-        step: "checkpoint",
-        ordinal: 0,
+        from: "480",
+        to: "481",
       }),
     );
   }, 180_000);

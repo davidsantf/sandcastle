@@ -227,7 +227,7 @@ const outcome = await runDevSquadAdoWorkflowWatchPass({
   intakeRules: { phases: ["implement", "review"], statuses: ["ready"] },
   budgets: {
     maxPolls: 5,
-    maxPassDurationMs: 120_000,
+    maxPollStartElapsedMs: 120_000,
     observationTimeoutMs: 5_000,
   },
   clock: () => new Date(),
@@ -260,12 +260,18 @@ record carries a pull-request identifier; a candidate that needs it while the
 method is absent reports `pull-request-observation-unavailable`.
 
 The seam owns ordering. Entries must come back in the tracker's authoritative
-order, oldest first, and the seam either includes the supplied `since` cursor as
-the first entry or returns only entries strictly after it. The watcher never
-parses, sorts, or arithmetically compares identifier text; it anchors on the
-persisted cursor by exact comparison and treats everything after it as new. If
-the anchor is absent from the returned list, every returned entry is new — so an
-incorrect ordering contract can re-deliver events.
+order, oldest first, and the window is **anchor-inclusive**: whenever you are
+given a `since` anchor and have a non-empty window to return, that anchor must
+appear in it. Return the anchor alone, or an empty window, when nothing is new.
+
+The watcher never parses, sorts, or arithmetically compares identifier text; it
+locates the persisted cursor by exact comparison and treats everything after it
+as new. A non-empty window that omits the anchor is therefore undecidable — it
+looks identical to a window in which every entry is new — so rather than
+re-deliver the whole window the watcher fails that candidate closed with
+`failed` / `observation-anchor-missing`. Keeping an anchored entry retrievable
+for as long as it is a cursor is the seam's obligation; if the tracker really
+did drop it, the host must re-anchor the record deliberately.
 
 Only identifier fields are read. `commentIds`, `threadId`, and `commentId` are
 projected out and every other property of a returned entry is discarded before
@@ -280,20 +286,30 @@ reports `incomplete-pull-request-cursor` and records `pull-request-thread` in
 performs derives its operation identifier deterministically:
 
 ```text
-operationId = "dsw1." + step + "." + sha256hex({ v: 1, passId, workItemId, step, ordinal })
+operationId = "dsw2." + step + "." + sha256hex(canonicalJson(identity)).slice(0, 32)
 ```
 
-Retrying an ambiguous pass with the same `passId` and candidate set reproduces
-every identifier, so an already-durable checkpoint replays instead of
-duplicating. A random default would make that impossible, which is why the
-watcher does not generate one. Use `deriveDevSquadAdoWatcherOperationId()` to
-compute the identifiers a retry will reuse.
+The identity differs by step family, because the two families need opposite
+properties.
 
-Because capability tokens are freshly random on every acquisition, re-acquiring
-a claim under a pass identity that already acquired one is reported as a
-terminal `failed` / `idempotency-conflict` for that candidate rather than
-retried under a different identifier. Nothing is duplicated; either accept the
-outcome (no cursor advanced) or retry under a new `passId`.
+A **checkpoint** identifier is scoped to the exact cursor advance it publishes —
+the anchors it starts from and the cursors it makes durable. Retrying the same
+advance reproduces the identifier, so an already-durable checkpoint replays
+instead of duplicating. Publishing a genuinely different advance derives a
+different identifier, so reusing a `passId` for later work is never falsely
+rejected.
+
+A **claim-lifecycle** identifier (`claim`, `renew`, `release`) is scoped to a
+random claim epoch minted per acquisition. Capability tokens are freshly random
+on every acquisition and the ledger folds the token into its idempotency
+digest, so an identifier that ignored the acquisition would turn a second
+acquire under the same `passId` into a permanent `idempotency-conflict` that no
+retry could clear. Scoping by epoch keeps tokens cryptographically random and
+keeps the same `passId` retryable: a pass that acquired a claim and then failed
+before its checkpoint landed can simply be run again.
+
+Use `deriveDevSquadAdoWatcherOperationId()` to compute an identifier yourself;
+the epoch and generation arms are part of its public input type.
 
 ### Intake rules, budgets, leases, and backoff
 
@@ -304,7 +320,18 @@ advanced and reports `intake-suppressed` — suppression is an intake decision,
 not an observation decision.
 
 A pass stops at the first of: all candidates resolved, `maxPolls` reached,
-`maxPassDurationMs` reached, or cancellation, and reports which in `stopReason`.
+`maxPollStartElapsedMs` reached, or cancellation, and reports which in
+`stopReason`.
+
+`maxPollStartElapsedMs` bounds **scheduling, not duration**. It is checked once
+per poll, before that poll begins, and the first poll always starts. Work
+already in flight — candidate steps, seam observations, ledger mutations —
+always runs to completion, so a pass can overrun the value and a single poll is
+not bounded by it at all. Hard termination comes from `maxPolls`; a single
+observation is bounded by `observationTimeoutMs`; an immediate stop comes from
+`signal`. If you need a wall-clock ceiling on the whole call, impose it in the
+host with your own abort signal.
+
 The clock is read once per poll and that single reading drives every eligibility,
 lease, and timestamp decision in that poll. Between polls the watcher asks the
 injected `delay` for `min(baseIntervalMs * multiplier^(n-1), maxIntervalMs)`,
@@ -319,9 +346,18 @@ preserving the fencing value. An unexpired claim owned by someone else is a
 `skipped` / `claim-conflict`, never a fault, and the watcher never force-releases,
 deletes, or resets another owner's claim.
 
+A record is read before its observation and again as part of the acquisition,
+and the two are compared. If another owner advanced a cursor in that window, the
+selection in hand was computed from anchors that are no longer durable, so the
+watcher releases the claim without writing and reports `no-change` /
+`stale-observation`; a later poll re-observes from the advanced anchor. A cursor
+is never moved backwards.
+
 Cancellation is observed before each seam call, before each ledger mutation, and
 between polls. An aborted pass still releases every claim it acquired and still
-reports every outcome that was already acknowledged.
+reports every outcome that was already acknowledged. A seam call that fails
+because its signal aborted is reported as `cancelled`, not as an observation
+fault.
 
 ### Delivery model and the DevSquad boundary
 
@@ -331,9 +367,24 @@ cursor checkpoint is acknowledged as durable before its signal enters the result
 so a crash before the pass returns loses only signals whose cursors never
 advanced.
 
-Exactly-once applies to **ledger-mediated intake delivery only**. It makes no
+Delivery is **at-most-once, and never duplicating** — it is not lossless. The
+guarantee is that no observed event is delivered twice: a cursor advance is
+durable before the signal derived from it is reported. The converse does not
+hold. If a checkpoint is acknowledged as durable but the pass cannot confirm it
+(the process dies, or storage reports an indeterminate outcome and the budget
+ends first), the cursor has moved while the signal was never returned, and a
+later pass sees nothing new for that window. Hosts that cannot tolerate a lost
+signal must reconcile from the record, not from the signal stream.
+
+At-most-once applies to **ledger-mediated intake delivery only**. It makes no
 claim about external side effects: fencing protects ledger mutations, not
 anything the host does after reading a signal.
+
+An injected ledger that throws, rejects, or answers with something that is not a
+typed result is never allowed to escape. It resolves as `failed` /
+`ledger-unavailable` with `ledgerErrorKind: "ledger-fault"`, the candidate's
+claim is still released, and no message, stack, or foreign value reaches the
+result.
 
 The host keeps everything else. It chooses the candidate set (the watcher never
 discovers work items), initializes ledger records (a missing record is a stable

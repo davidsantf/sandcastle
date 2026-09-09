@@ -1,8 +1,10 @@
 import { randomBytes } from "node:crypto";
 import type {
   DevSquadAdoLedgerError,
+  DevSquadAdoLedgerResult,
   DevSquadAdoPullRequestCursor,
   DevSquadAdoWorkflowLedger,
+  DevSquadAdoWorkflowRecord,
 } from "./DevSquadAdoWorkflowLedger.js";
 import type {
   DevSquadAdoWatchCandidateOutcome,
@@ -13,6 +15,7 @@ import type {
   DevSquadAdoWatchReasonCode,
   DevSquadAdoWatchStopReason,
   DevSquadAdoWatchValidatedPass,
+  DevSquadAdoWatcherObservationGeneration,
   DevSquadAdoWatcherObservationSeam,
   RunDevSquadAdoWorkflowWatchPassOptions,
 } from "./DevSquadAdoWorkflowWatcher.js";
@@ -20,13 +23,19 @@ import { observeDevSquadAdoWatchCandidate } from "./DevSquadAdoWorkflowWatcherOb
 import {
   computeDevSquadAdoWatcherBackoffDelayMs,
   deriveDevSquadAdoWatcherOperationId,
+  mintDevSquadAdoWatcherClaimEpoch,
   validateDevSquadAdoWorkflowWatchPassOptions,
 } from "./DevSquadAdoWorkflowWatcherValidation.js";
+
+/** Stable redacted category reported when an injected ledger method faults. */
+const LEDGER_FAULT_KIND = "ledger-fault";
 
 interface HeldClaim {
   readonly claimToken: string;
   readonly ownerId: string;
   readonly fencingValue: number;
+  /** Random identity of this acquisition, shared by its renew and release. */
+  readonly claimEpoch: string;
   expiresAt: string;
 }
 
@@ -85,6 +94,55 @@ const isAborted = (signal: AbortSignal | undefined): boolean =>
   signal !== undefined && signal.aborted;
 
 /**
+ * One guarded ledger invocation.
+ *
+ * `fault` is deliberately payload-free. It is the outcome of an injected
+ * ledger that threw, rejected, or answered with something that is not a typed
+ * ledger result — none of which the watcher can describe without quoting a
+ * value it does not control.
+ */
+type LedgerOutcome<T> =
+  | { readonly status: "ok"; readonly value: T }
+  | { readonly status: "error"; readonly error: DevSquadAdoLedgerError }
+  | { readonly status: "fault" };
+
+/**
+ * Invoke one injected ledger method and normalize everything it can do.
+ *
+ * The ledger is caller-supplied and no more trusted than the observation seam.
+ * A synchronous throw, a rejected promise, or a malformed result would
+ * otherwise escape the pass untyped — taking with it a raw `Error`, its
+ * message and stack, and any claim the candidate was holding at the time. Each
+ * is converted here, at the single call boundary, into a typed outcome the
+ * candidate's normal resolution path can release a claim against.
+ *
+ * This is not a blanket `catch`: it wraps exactly one injected call and
+ * classifies its result, so a genuine typed ledger error still travels its own
+ * mapped path and keeps its own stable category.
+ */
+const callLedger = async <T>(
+  invoke: () => Promise<DevSquadAdoLedgerResult<T>>,
+): Promise<LedgerOutcome<T>> => {
+  let settled: DevSquadAdoLedgerResult<T>;
+  try {
+    settled = await invoke();
+  } catch {
+    return { status: "fault" };
+  }
+  if (typeof settled !== "object" || settled === null)
+    return { status: "fault" };
+  if (settled.ok === true) return { status: "ok", value: settled.value };
+  const error: unknown = settled.error;
+  if (
+    typeof error !== "object" ||
+    error === null ||
+    typeof (error as { readonly kind?: unknown }).kind !== "string"
+  )
+    return { status: "fault" };
+  return { status: "error", error: error as DevSquadAdoLedgerError };
+};
+
+/**
  * Take one clock reading, or report that the clock is unusable.
  *
  * The clock is caller-supplied and no more trusted than the observation seam,
@@ -135,8 +193,9 @@ const outcomeFor = (
  * Release a held claim on every exit path.
  *
  * Release failure never changes the reported outcome; the inclusive lease
- * expiry is the backstop. Cancellation never suppresses a release, because a
- * cancelled pass must still leave no watcher-held claim behind.
+ * expiry is the backstop, including when the injected ledger throws rather
+ * than answering. Cancellation never suppresses a release, because a cancelled
+ * pass must still leave no watcher-held claim behind.
  */
 const releaseClaim = async (
   context: PassContext,
@@ -145,24 +204,23 @@ const releaseClaim = async (
   const claim = state.claim;
   if (claim === null) return;
   state.claim = null;
-  try {
-    await context.ledger.releaseClaim({
+  await callLedger(() =>
+    context.ledger.releaseClaim({
       workItemId: state.workItemId,
       operationId: deriveDevSquadAdoWatcherOperationId({
+        step: "release",
         passId: context.validated.passId,
         workItemId: state.workItemId,
-        step: "release",
         ordinal: 0,
+        claimEpoch: claim.claimEpoch,
       }),
       authority: {
         ownerId: claim.ownerId,
         claimToken: claim.claimToken,
         fencingValue: claim.fencingValue,
       },
-    });
-  } catch {
-    /* Release is best-effort; the lease expiry is the backstop. */
-  }
+    }),
+  );
 };
 
 const resolveCandidate = async (
@@ -331,6 +389,37 @@ const isAmbiguous = (error: DevSquadAdoLedgerError): boolean =>
   error.kind === "contention" ||
   (error.kind === "storage" && error.outcome === "indeterminate");
 
+const pullRequestCursorMatches = (
+  left: DevSquadAdoPullRequestCursor | null,
+  right: DevSquadAdoPullRequestCursor | null,
+): boolean =>
+  left === null || right === null
+    ? left === right
+    : left.threadId === right.threadId && left.commentId === right.commentId;
+
+/**
+ * Decide whether an observation is still anchored to durable reality.
+ *
+ * Compares the record the observation was computed from against the record
+ * returned by the acquisition. Only the inputs the selection actually depended
+ * on are compared: the two cursor anchors, and the pull-request identity that
+ * decided which pull request was observed at all. Phase and status are
+ * deliberately excluded — they are read fresh from the claimed record and
+ * carried into the checkpoint precondition, so a foreign change to them still
+ * conflicts rather than silently passing.
+ */
+const observationAnchorsMatch = (
+  observed: DevSquadAdoWorkflowRecord,
+  claimed: DevSquadAdoWorkflowRecord,
+): boolean =>
+  observed.observations.workItemCommentId ===
+    claimed.observations.workItemCommentId &&
+  pullRequestCursorMatches(
+    observed.observations.pullRequest,
+    claimed.observations.pullRequest,
+  ) &&
+  observed.pullRequest.id === claimed.pullRequest.id;
+
 const reasonForChangedKinds = (
   changedKinds: readonly DevSquadAdoWatchObservationKind[],
 ): DevSquadAdoWatchReasonCode => {
@@ -419,22 +508,31 @@ const issueCheckpoint = async (
     now.getTime() + context.validated.renewalThresholdMs >= expiresAt
   ) {
     state.renewOrdinal += 1;
-    const renewed = await context.ledger.renewClaim({
-      workItemId: state.workItemId,
-      operationId: deriveDevSquadAdoWatcherOperationId({
-        passId: context.validated.passId,
+    const renewed = await callLedger(() =>
+      context.ledger.renewClaim({
         workItemId: state.workItemId,
-        step: "renew",
-        ordinal: state.renewOrdinal,
+        operationId: deriveDevSquadAdoWatcherOperationId({
+          step: "renew",
+          passId: context.validated.passId,
+          workItemId: state.workItemId,
+          ordinal: state.renewOrdinal,
+          claimEpoch: claim.claimEpoch,
+        }),
+        authority: {
+          ownerId: claim.ownerId,
+          claimToken: claim.claimToken,
+          fencingValue: claim.fencingValue,
+        },
+        leaseDurationMs: context.validated.leaseDurationMs,
       }),
-      authority: {
-        ownerId: claim.ownerId,
-        claimToken: claim.claimToken,
-        fencingValue: claim.fencingValue,
-      },
-      leaseDurationMs: context.validated.leaseDurationMs,
-    });
-    if (!renewed.ok) {
+    );
+    if (renewed.status === "fault") {
+      await resolveCandidate(context, state, "failed", "ledger-unavailable", {
+        ledgerErrorKind: LEDGER_FAULT_KIND,
+      });
+      return;
+    }
+    if (renewed.status === "error") {
       const mapped = mapClaimedMutationError(renewed.error);
       await resolveCandidate(context, state, mapped.kind, mapped.reason, {
         ledgerErrorKind: mapped.ledgerErrorKind,
@@ -451,23 +549,33 @@ const issueCheckpoint = async (
     return;
   }
 
-  const checkpointed = await context.ledger.checkpoint({
-    workItemId: state.workItemId,
-    operationId: pending.operationId,
-    authority: {
-      ownerId: claim.ownerId,
-      claimToken: claim.claimToken,
-      fencingValue: claim.fencingValue,
-    },
-    expected: {
-      revision: pending.expectedRevision,
-      phase: pending.phase,
-      status: pending.status,
-    },
-    patch: pending.patch,
-  });
+  const checkpointed = await callLedger(() =>
+    context.ledger.checkpoint({
+      workItemId: state.workItemId,
+      operationId: pending.operationId,
+      authority: {
+        ownerId: claim.ownerId,
+        claimToken: claim.claimToken,
+        fencingValue: claim.fencingValue,
+      },
+      expected: {
+        revision: pending.expectedRevision,
+        phase: pending.phase,
+        status: pending.status,
+      },
+      patch: pending.patch,
+    }),
+  );
 
-  if (!checkpointed.ok) {
+  if (checkpointed.status === "fault") {
+    // The claim is still held here, so resolution — not an escaping throw — is
+    // what gets it released.
+    await resolveCandidate(context, state, "failed", "ledger-unavailable", {
+      ledgerErrorKind: LEDGER_FAULT_KIND,
+    });
+    return;
+  }
+  if (checkpointed.status === "error") {
     if (isAmbiguous(checkpointed.error)) {
       state.pendingReason = "checkpoint-indeterminate";
       return;
@@ -508,8 +616,16 @@ const resumeCheckpoint = async (
     await resolveCandidate(context, state, "failed", "claim-expired");
     return;
   }
-  const read = await context.ledger.readRecord(state.workItemId);
-  if (!read.ok) {
+  const read = await callLedger(() =>
+    context.ledger.readRecord(state.workItemId),
+  );
+  if (read.status === "fault") {
+    await resolveCandidate(context, state, "failed", "ledger-unavailable", {
+      ledgerErrorKind: LEDGER_FAULT_KIND,
+    });
+    return;
+  }
+  if (read.status === "error") {
     const mapped = mapReadError(read.error);
     await resolveCandidate(context, state, mapped.kind, mapped.reason, {
       ledgerErrorKind: mapped.ledgerErrorKind,
@@ -547,8 +663,16 @@ const runCandidateStep = async (
     return;
   }
 
-  const read = await context.ledger.readRecord(state.workItemId);
-  if (!read.ok) {
+  const read = await callLedger(() =>
+    context.ledger.readRecord(state.workItemId),
+  );
+  if (read.status === "fault") {
+    await resolveCandidate(context, state, "failed", "ledger-unavailable", {
+      ledgerErrorKind: LEDGER_FAULT_KIND,
+    });
+    return;
+  }
+  if (read.status === "error") {
     const mapped = mapReadError(read.error);
     await resolveCandidate(context, state, mapped.kind, mapped.reason, {
       ledgerErrorKind: mapped.ledgerErrorKind,
@@ -586,6 +710,11 @@ const runCandidateStep = async (
     signal: context.signal,
   });
   if (!observed.ok) {
+    if (observed.reason === "cancelled") {
+      context.cancelled = true;
+      await resolveCandidate(context, state, "failed", "cancelled");
+      return;
+    }
     await resolveCandidate(context, state, "failed", observed.reason);
     return;
   }
@@ -622,19 +751,31 @@ const runCandidateStep = async (
     return;
   }
 
-  const acquired = await context.ledger.acquireClaim({
-    workItemId: state.workItemId,
-    operationId: deriveDevSquadAdoWatcherOperationId({
-      passId: context.validated.passId,
+  const claimEpoch = mintDevSquadAdoWatcherClaimEpoch();
+  const acquired = await callLedger(() =>
+    context.ledger.acquireClaim({
       workItemId: state.workItemId,
-      step: "claim",
-      ordinal: 0,
+      operationId: deriveDevSquadAdoWatcherOperationId({
+        step: "claim",
+        passId: context.validated.passId,
+        workItemId: state.workItemId,
+        ordinal: 0,
+        claimEpoch,
+      }),
+      ownerId: context.validated.ownerId,
+      claimToken: randomBytes(32).toString("base64url"),
+      leaseDurationMs: context.validated.leaseDurationMs,
     }),
-    ownerId: context.validated.ownerId,
-    claimToken: randomBytes(32).toString("base64url"),
-    leaseDurationMs: context.validated.leaseDurationMs,
-  });
-  if (!acquired.ok) {
+  );
+  if (acquired.status === "fault") {
+    // No claim was recorded locally, so there is nothing to release; if the
+    // ledger did publish one before faulting, its lease expiry retires it.
+    await resolveCandidate(context, state, "failed", "ledger-unavailable", {
+      ledgerErrorKind: LEDGER_FAULT_KIND,
+    });
+    return;
+  }
+  if (acquired.status === "error") {
     const mapped = mapAcquireError(acquired.error);
     await resolveCandidate(context, state, mapped.kind, mapped.reason, {
       ledgerErrorKind: mapped.ledgerErrorKind,
@@ -647,15 +788,40 @@ const runCandidateStep = async (
     claimToken: authority.claimToken,
     ownerId: authority.ownerId,
     fencingValue: authority.fencingValue,
+    claimEpoch,
     expiresAt: authority.expiresAt,
   };
+  state.renewOrdinal = 0;
   const claimed = acquired.value.record;
+
+  // The observation was anchored to the record read *before* the claim. Another
+  // owner can acquire, advance the cursor, and release inside that window, and
+  // the acquisition here would still succeed. Checkpointing the pre-claim
+  // selection would then write a cursor derived from anchors that are no longer
+  // durable — moving the cursor backwards and re-delivering everything between
+  // the two positions. The advance is only safe if the anchors it was computed
+  // from survived the acquisition unchanged.
+  if (!observationAnchorsMatch(record, claimed)) {
+    state.eligible = false;
+    state.skippedCursorKinds = [];
+    state.pendingReason = "stale-observation";
+    await releaseClaim(context, state);
+    return;
+  }
+
+  const generation: DevSquadAdoWatcherObservationGeneration = {
+    fromWorkItemCommentId: record.observations.workItemCommentId,
+    fromPullRequest: record.observations.pullRequest,
+    toWorkItemCommentId: selection.nextWorkItemCommentId,
+    toPullRequest: selection.nextPullRequestCursor,
+  };
   const checkpoint: PendingCheckpoint = {
     operationId: deriveDevSquadAdoWatcherOperationId({
+      step: "checkpoint",
       passId: context.validated.passId,
       workItemId: state.workItemId,
-      step: "checkpoint",
       ordinal: 0,
+      generation,
     }),
     expectedRevision: claimed.revision,
     patch: { observations },
@@ -733,15 +899,17 @@ export const runDevSquadAdoWorkflowWatchPassImplementation = async (
     }
     const now = readClock(options.clock);
     if (now === null) {
-      stopReason = "duration-budget-exhausted";
+      // The pass cannot establish that another poll is within budget, so it
+      // stops scheduling work and finalizes on the last usable reading.
+      stopReason = "poll-start-budget-exhausted";
       break;
     }
     lastReading = now;
     if (
       polls > 0 &&
-      now.getTime() - startedAtDate.getTime() >= validated.maxPassDurationMs
+      now.getTime() - startedAtDate.getTime() >= validated.maxPollStartElapsedMs
     ) {
-      stopReason = "duration-budget-exhausted";
+      stopReason = "poll-start-budget-exhausted";
       break;
     }
     polls += 1;

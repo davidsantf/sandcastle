@@ -23,6 +23,7 @@ import {
   makeWatcherRepository,
   openWatcherLedger,
   seedWatcherRecord,
+  watcherCommentCheckpointOperationId,
 } from "./DevSquadAdoWorkflowWatcherTestSupport.js";
 
 const LEDGER_NOW = "2026-01-01T00:00:00.000Z";
@@ -41,7 +42,7 @@ const passOptions = (
   intakeRules: { phases: ["implement"], statuses: ["ready"] },
   budgets: {
     maxPolls: 1,
-    maxPassDurationMs: 600_000,
+    maxPollStartElapsedMs: 600_000,
     observationTimeoutMs: OBSERVATION_TIMEOUT_MS,
   },
   clock: createDeterministicClock([POLL_NOW]).clock,
@@ -167,6 +168,177 @@ describe("DevSquadAdoWorkflowWatcher claim contention", () => {
       expect(durable.value.activeClaim).toBeNull();
       expect(durable.value.observations.workItemCommentId).toBe("481");
     }
+  }, 120_000);
+
+  it("[TEST-009] abandons an observation whose anchors moved between the read and the claim", async () => {
+    const fixture = await createWatcherLedgerFixture(ledgerClock);
+    await seedWatcherRecord(fixture.ledger, {
+      workItemId: 137,
+      revision: 4,
+      phase: "implement",
+      status: "ready",
+      workItemCommentId: "10",
+    });
+
+    // Owner B advances 10 -> 15 and releases inside the window between owner
+    // A's record read and A's own acquisition. A's claim then succeeds, but the
+    // selection A is holding was computed against anchor "10", which is no
+    // longer durable.
+    const checkpointPatches: (string | null | undefined)[] = [];
+    let interleaved = false;
+    let outcomeB: Awaited<
+      ReturnType<typeof runDevSquadAdoWorkflowWatchPass>
+    > | null = null;
+
+    const recordingLedger: DevSquadAdoWorkflowLedger = {
+      ...fixture.ledger,
+      checkpoint: async (input: CheckpointDevSquadAdoWorkflowInput) => {
+        checkpointPatches.push(input.patch.observations?.workItemCommentId);
+        return await fixture.ledger.checkpoint(input);
+      },
+    };
+    const interleavingLedger: DevSquadAdoWorkflowLedger = {
+      ...recordingLedger,
+      acquireClaim: async (input) => {
+        if (!interleaved) {
+          interleaved = true;
+          outcomeB = await runDevSquadAdoWorkflowWatchPass(
+            passOptions({
+              ledger: recordingLedger,
+              seam: createRecordingWatcherSeam({
+                comments: () => ({ commentIds: ["10", "15"] }),
+              }).seam,
+              passId: "pass-b",
+              ownerId: "watch-b",
+              lease: { leaseDurationMs: 60_000 },
+            }),
+          );
+        }
+        return await fixture.ledger.acquireClaim(input);
+      },
+    };
+
+    const seamA = createRecordingWatcherSeam({
+      comments: (_input, callIndex) =>
+        callIndex === 0
+          ? { commentIds: ["10", "11", "12"] }
+          : { commentIds: ["15"] },
+    });
+    const resultA = await runDevSquadAdoWorkflowWatchPass(
+      passOptions({
+        ledger: interleavingLedger,
+        seam: seamA.seam,
+        passId: "pass-a",
+        ownerId: "watch-a",
+        lease: { leaseDurationMs: 60_000 },
+        budgets: {
+          maxPolls: 2,
+          maxPollStartElapsedMs: 600_000,
+          observationTimeoutMs: OBSERVATION_TIMEOUT_MS,
+        },
+      }),
+    );
+
+    expect(resultA.ok).toBe(true);
+    expect(outcomeB).not.toBeNull();
+    const resultB = outcomeB as unknown as Awaited<
+      ReturnType<typeof runDevSquadAdoWorkflowWatchPass>
+    >;
+    expect(resultB.ok).toBe(true);
+    if (!resultA.ok || !resultB.ok) return;
+
+    // B delivered its own advance exactly once.
+    expect(resultB.value.signals).toHaveLength(1);
+    expect(resultB.value.outcomes[0]).toMatchObject({ kind: "acted" });
+
+    // A wrote nothing. Re-observing on the second poll against the durable
+    // anchor "15" finds no new activity, so no signal is produced for events
+    // that were already delivered to B.
+    expect(resultA.value.polls).toBe(2);
+    expect(resultA.value.outcomes[0]).toMatchObject({
+      kind: "no-change",
+      reason: "no-new-observations",
+    });
+    expect(resultA.value.signals).toEqual([]);
+
+    // The regression this guards: A must never write "12" over "15".
+    expect(checkpointPatches).toEqual(["15"]);
+    const durable = await fixture.ledger.readRecord(137);
+    expect(durable).toMatchObject({
+      ok: true,
+      value: {
+        observations: { workItemCommentId: "15" },
+        activeClaim: null,
+      },
+    });
+
+    // A re-observed from the advanced anchor rather than from its stale one.
+    expect(seamA.calls.map((call) => call.since)).toEqual(["10", "15"]);
+  }, 120_000);
+
+  it("[TEST-009] reports a stale observation with its own reason and releases the claim", async () => {
+    const fixture = await createWatcherLedgerFixture(ledgerClock);
+    await seedWatcherRecord(fixture.ledger, {
+      workItemId: 137,
+      revision: 4,
+      phase: "implement",
+      status: "ready",
+      workItemCommentId: "10",
+    });
+
+    let interleaved = false;
+    const interleavingLedger: DevSquadAdoWorkflowLedger = {
+      ...fixture.ledger,
+      acquireClaim: async (input) => {
+        if (!interleaved) {
+          interleaved = true;
+          await runDevSquadAdoWorkflowWatchPass(
+            passOptions({
+              ledger: fixture.ledger,
+              seam: createRecordingWatcherSeam({
+                comments: () => ({ commentIds: ["10", "15"] }),
+              }).seam,
+              passId: "pass-b",
+              ownerId: "watch-b",
+              lease: { leaseDurationMs: 60_000 },
+            }),
+          );
+        }
+        return await fixture.ledger.acquireClaim(input);
+      },
+    };
+
+    const outcome = await runDevSquadAdoWorkflowWatchPass(
+      passOptions({
+        ledger: interleavingLedger,
+        seam: createRecordingWatcherSeam({
+          comments: () => ({ commentIds: ["10", "11", "12"] }),
+        }).seam,
+        passId: "pass-a",
+        lease: { leaseDurationMs: 60_000 },
+      }),
+    );
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.value.outcomes[0]).toMatchObject({
+      kind: "no-change",
+      reason: "stale-observation",
+      revision: null,
+      cursorChanges: [],
+    });
+    expect(outcome.value.counts).toMatchObject({ eligible: 0, acted: 0 });
+    expect(outcome.value.signals).toEqual([]);
+
+    // The claim A briefly held is released rather than left to expire.
+    const durable = await fixture.ledger.readRecord(137);
+    expect(durable).toMatchObject({
+      ok: true,
+      value: {
+        observations: { workItemCommentId: "15" },
+        activeClaim: null,
+      },
+    });
   }, 120_000);
 
   it("[TEST-009][CC-005] rejects a superseded fencing value without advancing anything", async () => {
@@ -590,42 +762,103 @@ describe("DevSquadAdoWorkflowWatcher claim authority outcomes", () => {
 
 describe("DevSquadAdoWorkflowWatcher operation identity", () => {
   it("[TEST-012] derives stable, delimiter-safe, ASCII operation identifiers", () => {
+    const generation = {
+      fromWorkItemCommentId: "480",
+      fromPullRequest: null,
+      toWorkItemCommentId: "481",
+      toPullRequest: null,
+    } as const;
     const identity = {
+      step: "checkpoint",
       passId: "pass-1",
       workItemId: "137",
-      step: "checkpoint",
       ordinal: 0,
+      generation,
     } as const;
     const derived = deriveDevSquadAdoWatcherOperationId(identity);
     expect(derived).toBe(deriveDevSquadAdoWatcherOperationId({ ...identity }));
-    expect(derived).toMatch(/^dsw1\.checkpoint\.[0-9a-f]{32}$/);
+    expect(derived).toMatch(/^dsw2\.checkpoint\.[0-9a-f]{32}$/);
     expect(Buffer.byteLength(derived, "utf8")).toBe(derived.length);
     expect(derived.length).toBe(48);
     expect(derived.length).toBeLessThanOrEqual(256);
 
     for (const step of ["claim", "renew", "release"] as const) {
       const other = deriveDevSquadAdoWatcherOperationId({
-        ...identity,
         step,
+        passId: "pass-1",
+        workItemId: "137",
+        ordinal: 0,
+        claimEpoch: "epoch-1",
       });
-      expect(other.startsWith(`dsw1.${step}.`)).toBe(true);
-      expect(other.length).toBe(`dsw1.${step}.`.length + 32);
+      expect(other.startsWith(`dsw2.${step}.`)).toBe(true);
+      expect(other.length).toBe(`dsw2.${step}.`.length + 32);
       expect(other).not.toBe(derived);
     }
 
+    const renewIdentity = {
+      step: "renew",
+      passId: "pass-1",
+      workItemId: "137",
+      claimEpoch: "epoch-1",
+    } as const;
+    expect(
+      deriveDevSquadAdoWatcherOperationId({ ...renewIdentity, ordinal: 1 }),
+    ).not.toBe(
+      deriveDevSquadAdoWatcherOperationId({ ...renewIdentity, ordinal: 2 }),
+    );
+
+    // A claim-lifecycle identifier is scoped to its acquisition, so a second
+    // acquisition under the same pass identity never reuses the first one's
+    // ledger receipt — the whole reason the same `passId` stays replayable.
+    for (const step of ["claim", "renew", "release"] as const) {
+      const scoped = {
+        step,
+        passId: "pass-1",
+        workItemId: "137",
+        ordinal: step === "renew" ? 1 : 0,
+      } as const;
+      expect(
+        deriveDevSquadAdoWatcherOperationId({
+          ...scoped,
+          claimEpoch: "epoch-1",
+        }),
+      ).not.toBe(
+        deriveDevSquadAdoWatcherOperationId({
+          ...scoped,
+          claimEpoch: "epoch-2",
+        }),
+      );
+    }
+
+    // A checkpoint identifier is scoped to the advance it publishes: the same
+    // advance replays, a different advance is a different operation.
     expect(
       deriveDevSquadAdoWatcherOperationId({
         ...identity,
-        step: "renew",
-        ordinal: 1,
+        generation: { ...generation },
       }),
-    ).not.toBe(
+    ).toBe(derived);
+    expect(
       deriveDevSquadAdoWatcherOperationId({
         ...identity,
-        step: "renew",
-        ordinal: 2,
+        generation: { ...generation, toWorkItemCommentId: "482" },
       }),
-    );
+    ).not.toBe(derived);
+    expect(
+      deriveDevSquadAdoWatcherOperationId({
+        ...identity,
+        generation: { ...generation, fromWorkItemCommentId: "479" },
+      }),
+    ).not.toBe(derived);
+    expect(
+      deriveDevSquadAdoWatcherOperationId({
+        ...identity,
+        generation: {
+          ...generation,
+          toPullRequest: { threadId: "t1", commentId: "c1" },
+        },
+      }),
+    ).not.toBe(derived);
 
     // Canonical serialization removes delimiter ambiguity between a long pass
     // identifier with a short work item and the transposed pair.
@@ -657,10 +890,11 @@ describe("DevSquadAdoWorkflowWatcher operation identity", () => {
     const acquired = await fixture.ledger.acquireClaim({
       workItemId: 137,
       operationId: deriveDevSquadAdoWatcherOperationId({
+        step: "claim",
         passId: "pass-1",
         workItemId: "137",
-        step: "claim",
         ordinal: 0,
+        claimEpoch: "epoch-1",
       }),
       ownerId: "watch-a",
       claimToken,
@@ -676,10 +910,16 @@ describe("DevSquadAdoWorkflowWatcher operation identity", () => {
     const request: CheckpointDevSquadAdoWorkflowInput = {
       workItemId: 137,
       operationId: deriveDevSquadAdoWatcherOperationId({
+        step: "checkpoint",
         passId: "pass-1",
         workItemId: "137",
-        step: "checkpoint",
         ordinal: 0,
+        generation: {
+          fromWorkItemCommentId: "480",
+          fromPullRequest: null,
+          toWorkItemCommentId: "481",
+          toPullRequest: null,
+        },
       }),
       authority,
       expected: {
@@ -719,7 +959,7 @@ describe("DevSquadAdoWorkflowWatcher operation identity", () => {
     });
   }, 60_000);
 
-  it("[TEST-012] surfaces a reused claim identifier as a terminal idempotency conflict", async () => {
+  it("[TEST-012] keeps the same pass identity replayable after a durable acquire whose checkpoint never landed", async () => {
     const fixture = await createWatcherLedgerFixture(ledgerClock);
     await seedWatcherRecord(fixture.ledger, {
       workItemId: 137,
@@ -728,42 +968,154 @@ describe("DevSquadAdoWorkflowWatcher operation identity", () => {
       status: "ready",
       workItemCommentId: "480",
     });
-    // A prior attempt of the same pass already used this claim identifier with
-    // its own random capability token, so re-acquiring under the same pass
-    // identity is terminal rather than silently retried under a new identifier.
-    const priorAttempt = await fixture.ledger.acquireClaim({
-      workItemId: 137,
-      operationId: deriveDevSquadAdoWatcherOperationId({
-        passId: "pass-1",
-        workItemId: "137",
-        step: "claim",
-        ordinal: 0,
-      }),
-      ownerId: "watch-a",
-      claimToken: Buffer.alloc(32, 9).toString("base64url"),
-      leaseDurationMs: 1,
-    });
-    expect(priorAttempt).toMatchObject({ ok: true });
 
-    const seam = createRecordingWatcherSeam({ comments: twoNewComments });
-    const outcome = await runDevSquadAdoWorkflowWatchPass(
+    // First attempt: the claim is acquired durably, then the checkpoint never
+    // reaches storage. The claim is released on the way out, so nothing but the
+    // acquisition receipt survives.
+    const acquireOperationIds: string[] = [];
+    const neverCheckpointsLedger: DevSquadAdoWorkflowLedger = {
+      ...fixture.ledger,
+      acquireClaim: async (input) => {
+        acquireOperationIds.push(input.operationId);
+        return await fixture.ledger.acquireClaim(input);
+      },
+      checkpoint: async () => ({
+        ok: false,
+        error: { kind: "storage", outcome: "unchanged" },
+      }),
+    };
+
+    const firstSeam = createRecordingWatcherSeam({ comments: twoNewComments });
+    const first = await runDevSquadAdoWorkflowWatchPass(
       passOptions({
-        ledger: fixture.ledger,
-        seam: seam.seam,
-        clock: createDeterministicClock(["2026-01-01T01:00:00.000Z"]).clock,
+        ledger: neverCheckpointsLedger,
+        seam: firstSeam.seam,
+      }),
+    );
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    expect(first.value.outcomes[0]).toMatchObject({ kind: "failed" });
+
+    const afterFirst = await fixture.ledger.readRecord(137);
+    expect(afterFirst).toMatchObject({
+      ok: true,
+      value: {
+        observations: { workItemCommentId: "480" },
+        activeClaim: null,
+      },
+    });
+
+    // Retrying the *same* pass identity must be able to acquire again. The
+    // ledger folds the random capability token into its idempotency digest, so
+    // an acquisition identifier that ignored the acquisition attempt would make
+    // this second acquire a permanent `idempotency-conflict` — poisoning the
+    // pass identity for this candidate with no cursor ever advanced.
+    const retrySeam = createRecordingWatcherSeam({ comments: twoNewComments });
+    const retried = await runDevSquadAdoWorkflowWatchPass(
+      passOptions({
+        ledger: {
+          ...fixture.ledger,
+          acquireClaim: async (input) => {
+            acquireOperationIds.push(input.operationId);
+            return await fixture.ledger.acquireClaim(input);
+          },
+        },
+        seam: retrySeam.seam,
       }),
     );
 
-    expect(outcome.ok).toBe(true);
-    if (!outcome.ok) return;
-    expect(outcome.value.outcomes[0]).toMatchObject({
-      kind: "failed",
-      reason: "idempotency-conflict",
+    expect(retried.ok).toBe(true);
+    if (!retried.ok) return;
+    expect(retried.value.outcomes[0]).toMatchObject({
+      kind: "acted",
+      reason: "new-work-item-comment",
     });
+    expect(retried.value.signals).toHaveLength(1);
+
+    // Both acquisitions ran under one pass identity and one work item, and each
+    // still carried its own operation identifier.
+    expect(acquireOperationIds).toHaveLength(2);
+    expect(acquireOperationIds[0]).not.toBe(acquireOperationIds[1]);
+    for (const operationId of acquireOperationIds)
+      expect(operationId).toMatch(/^dsw2\.claim\.[0-9a-f]{32}$/);
+
     const durable = await fixture.ledger.readRecord(137);
     expect(durable).toMatchObject({
       ok: true,
-      value: { observations: { workItemCommentId: "480" } },
+      value: {
+        observations: { workItemCommentId: "481" },
+        activeClaim: null,
+      },
+    });
+  }, 60_000);
+
+  it("[TEST-012] scopes every claim-lifecycle identifier to its own acquisition", async () => {
+    const fixture = await createWatcherLedgerFixture(ledgerClock);
+    await seedWatcherRecord(fixture.ledger, {
+      workItemId: 137,
+      revision: 4,
+      phase: "implement",
+      status: "ready",
+      workItemCommentId: "480",
+    });
+
+    const claimIds: string[] = [];
+    const renewIds: string[] = [];
+    const releaseIds: string[] = [];
+    const recordingLedger: DevSquadAdoWorkflowLedger = {
+      ...fixture.ledger,
+      acquireClaim: async (input) => {
+        claimIds.push(input.operationId);
+        return await fixture.ledger.acquireClaim(input);
+      },
+      renewClaim: async (input) => {
+        renewIds.push(input.operationId);
+        return await fixture.ledger.renewClaim(input);
+      },
+      releaseClaim: async (input) => {
+        releaseIds.push(input.operationId);
+        return await fixture.ledger.releaseClaim(input);
+      },
+    };
+
+    // Two passes under one pass identity: the first advances 480 -> 481, the
+    // second advances 481 -> 482. Both acquire, renew, and release.
+    for (const commentIds of [
+      ["480", "481"],
+      ["481", "482"],
+    ]) {
+      const seam = createRecordingWatcherSeam({
+        comments: () => ({ commentIds }),
+      });
+      const outcome = await runDevSquadAdoWorkflowWatchPass(
+        passOptions({
+          ledger: recordingLedger,
+          seam: seam.seam,
+          // A one-millisecond renewal headroom forces a renewal before every
+          // checkpoint, so the renew identifiers are exercised too.
+          lease: { leaseDurationMs: 60_000, renewalThresholdMs: 59_999 },
+        }),
+      );
+      expect(outcome.ok).toBe(true);
+      if (!outcome.ok) return;
+      expect(outcome.value.outcomes[0]).toMatchObject({ kind: "acted" });
+    }
+
+    expect(claimIds).toHaveLength(2);
+    expect(renewIds).toHaveLength(2);
+    expect(releaseIds).toHaveLength(2);
+    for (const ids of [claimIds, renewIds, releaseIds])
+      expect(new Set(ids).size).toBe(ids.length);
+
+    // Every identifier the two passes issued is distinct, so no receipt from
+    // the first acquisition can ever collide with the second.
+    const all = [...claimIds, ...renewIds, ...releaseIds];
+    expect(new Set(all).size).toBe(all.length);
+
+    const durable = await fixture.ledger.readRecord(137);
+    expect(durable).toMatchObject({
+      ok: true,
+      value: { observations: { workItemCommentId: "482" } },
     });
   }, 60_000);
 });
@@ -805,7 +1157,7 @@ describe("DevSquadAdoWorkflowWatcher claim lifecycle", () => {
         seam: seam.seam,
         budgets: {
           maxPolls: 3,
-          maxPassDurationMs: 600_000,
+          maxPollStartElapsedMs: 600_000,
           observationTimeoutMs: OBSERVATION_TIMEOUT_MS,
         },
         lease: { leaseDurationMs: 60_000, renewalThresholdMs: 20_000 },
@@ -831,11 +1183,11 @@ describe("DevSquadAdoWorkflowWatcher claim lifecycle", () => {
       checkpointCalls[0]?.operationId,
     );
     expect(checkpointCalls[1]?.operationId).toBe(
-      deriveDevSquadAdoWatcherOperationId({
+      watcherCommentCheckpointOperationId({
         passId: "pass-1",
         workItemId: "137",
-        step: "checkpoint",
-        ordinal: 0,
+        from: "480",
+        to: "481",
       }),
     );
     expect(checkpointCalls[1]?.patch).toEqual(checkpointCalls[0]?.patch);
@@ -857,14 +1209,7 @@ describe("DevSquadAdoWorkflowWatcher claim lifecycle", () => {
     // Only the second poll is inside the renewal threshold of the inclusive
     // expiry, and renewal preserves the fence.
     expect(renewCalls).toHaveLength(1);
-    expect(renewCalls[0]?.operationId).toBe(
-      deriveDevSquadAdoWatcherOperationId({
-        passId: "pass-1",
-        workItemId: "137",
-        step: "renew",
-        ordinal: 1,
-      }),
-    );
+    expect(renewCalls[0]?.operationId).toMatch(/^dsw2\.renew\.[0-9a-f]{32}$/);
     expect(renewCalls[0]?.authority.fencingValue).toBe(
       checkpointCalls[0]?.authority.fencingValue,
     );
@@ -917,7 +1262,7 @@ describe("DevSquadAdoWorkflowWatcher claim lifecycle", () => {
         seam: seam.seam,
         budgets: {
           maxPolls: 3,
-          maxPassDurationMs: 600_000,
+          maxPollStartElapsedMs: 600_000,
           observationTimeoutMs: OBSERVATION_TIMEOUT_MS,
         },
       }),
@@ -946,11 +1291,11 @@ describe("DevSquadAdoWorkflowWatcher claim lifecycle", () => {
       durable.value.checkpoints.filter(
         (checkpoint) =>
           checkpoint.operationId ===
-          deriveDevSquadAdoWatcherOperationId({
+          watcherCommentCheckpointOperationId({
             passId: "pass-1",
             workItemId: "137",
-            step: "checkpoint",
-            ordinal: 0,
+            from: "480",
+            to: "481",
           }),
       ),
     ).toHaveLength(1);
@@ -980,7 +1325,7 @@ describe("DevSquadAdoWorkflowWatcher claim lifecycle", () => {
         seam: seam.seam,
         budgets: {
           maxPolls: 2,
-          maxPassDurationMs: 600_000,
+          maxPollStartElapsedMs: 600_000,
           observationTimeoutMs: OBSERVATION_TIMEOUT_MS,
         },
       }),
@@ -1051,7 +1396,7 @@ describe("DevSquadAdoWorkflowWatcher claim lifecycle", () => {
         candidates: [137, 42, 9001],
         budgets: {
           maxPolls: 3,
-          maxPassDurationMs: 600_000,
+          maxPollStartElapsedMs: 600_000,
           observationTimeoutMs: OBSERVATION_TIMEOUT_MS,
         },
         signal: controller.signal,
@@ -1417,7 +1762,7 @@ describe("DevSquadAdoWorkflowWatcher success criteria", () => {
           seam: seam.seam,
           budgets: {
             maxPolls: exit === "budget-exhaustion" ? 2 : 1,
-            maxPassDurationMs: 600_000,
+            maxPollStartElapsedMs: 600_000,
             observationTimeoutMs: OBSERVATION_TIMEOUT_MS,
           },
           ...(exit === "cancellation" ? { signal: controller.signal } : {}),

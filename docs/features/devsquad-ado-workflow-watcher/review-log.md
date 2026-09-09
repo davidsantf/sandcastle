@@ -322,3 +322,170 @@ surface, and no success-shaped fallback. Conformance documentation is truthful �
 SC-002's written bar is now the bar that actually runs, and the anchor-retention
 obligation is stated as an assumption with a named owner rather than left
 implicit. Cleared for PR; approval remains the human reviewer's act.
+
+---
+
+## Deep review (three-perspective) — 2026-09-08
+
+**Reviewers**: adversarial advocate / skeptic / architect, run independently over
+the three committed slice-14 commits (`5755b77`, `98722a5`, `b0520fc`).
+**Outcome**: the perspectives disagreed. The earlier DevSquad review had passed,
+but evidence-backed blockers from the skeptic and the architect were accepted and
+fixed; the advocate's position that the slice was release-ready was not.
+
+### Status
+
+**Status**: BLOCKERS REMEDIATED — 4 blockers, 5 coupled medium findings, all fixed.
+
+### B1 — Claim-lifecycle replay contradiction (correctness, accepted)
+
+`Pass.ts` derived a stable claim `operationId` from `passId` while supplying a
+freshly random `claimToken`. The slice-13 request digest includes the token
+(`NormalizedAcquireInput.claimToken` feeds `requestDigest("acquire-claim", ...)`),
+so retrying the same `passId` after a durable acquire produced a permanent
+`idempotency-conflict` for that candidate — with no cursor ever advanced and no
+retry able to clear it. ADR-0026 promised the same `passId` would be replayable
+and that a conflict is never resolved by changing identifier; the README told
+hosts to rotate `passId`. Both could not be true.
+
+**Resolution**: claim-lifecycle identifiers (`claim`, `renew`, `release`) are now
+scoped to a random per-acquisition `claimEpoch`; checkpoint identifiers are scoped
+to the observation generation they publish. Tokens stay cryptographically random.
+Prefix `dsw1.` → `dsw2.`, identity `v: 1` → `v: 2`, and
+`DevSquadAdoWatcherOperationIdentity` is now a discriminated union so the exported
+derivation API states which scope applies to which step. Renew and release digests
+are covered, not only acquire. See W023.
+
+### B2 — Stale observation cursor regression (correctness, accepted)
+
+The order was read → observe → claim, with the checkpoint written against the
+post-claim revision but the pre-claim anchors. A second watcher could advance the
+cursor and release inside that window; the first watcher then acquired
+legitimately and would have overwritten the cursor **backwards**, re-delivering
+every event between the two positions. No fence was violated, so fencing did not
+close it.
+
+**Resolution**: anchors and pull-request identity from the pre-claim read are
+compared against the record returned by the acquisition. On mismatch the claim is
+released, nothing is written, and the candidate reports `no-change` /
+`stale-observation`, re-observing on a later poll. See W024.
+
+### B3 — Untyped ledger escapes and stranded claims (correctness, accepted)
+
+Injected ledger methods were awaited unguarded, so a throw or rejection escaped
+the pass as a raw `Error` — carrying its message and stack out through a public
+API documented as returning typed, redacted results — and abandoned any claim the
+candidate was holding, because the release path lives on candidate resolution.
+
+**Resolution**: all five ledger calls route through one classifier that maps a
+throw, a rejection, or a non-typed result to `failed` / `ledger-unavailable` with
+`ledgerErrorKind: "ledger-fault"`. Typed ledger errors keep their existing mapped
+paths, so this is not a blanket catch. See W025.
+
+### B4 — Misnamed duration guarantee (honesty, accepted)
+
+`maxPassDurationMs` was only checked between polls while candidate work and
+ledger calls ran unbounded inside a poll, so the name promised a bound the
+implementation never enforced.
+
+**Resolution**: the honest contract was chosen over the nominal one. The option is
+now `maxPollStartElapsedMs` and the stop reason `poll-start-budget-exhausted`,
+documented as bounding poll starts rather than pass duration. A strict bound was
+rejected on the record: enforcing it means abandoning in-flight ledger mutations,
+which trades a soft guarantee for stranded claims and indeterminate writes.
+Termination remains guaranteed by `maxPolls`, `observationTimeoutMs`, and the
+caller's abort signal. INV-011, SC-005, FR-047, FR-048, the ADR and the README are
+amended. See W026.
+
+### Coupled medium findings (all fixed, W027)
+
+| Finding                                                               | Resolution                                                                                |
+| --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Missing anchor in a non-empty window silently re-delivered the window | Seam contract narrowed to anchor-inclusive; fail closed with `observation-anchor-missing` |
+| `changedKinds` and `skippedCursorKinds` could name the same kind      | A kind is skipped only when no persistable cursor exists for it                           |
+| SC-004 / ADR claimed lossless exactly-once delivery                   | Restated as at-most-once and never duplicating, with the loss case named                  |
+| W015 / TEST-023 traceability and stale pass-identity spec wording     | FR-057 row split out; "or the watcher derives" removed                                    |
+| Mid-observation cancellation diagnosed as `observation-failed`        | Reported as `cancelled` when the signal is already aborted                                |
+
+### Verification after remediation
+
+| Command                                                  | Result                                |
+| -------------------------------------------------------- | ------------------------------------- |
+| `npx vitest run src/DevSquadAdoWorkflowWatcher*.test.ts` | PASS — 73 passed / 5 files            |
+| `npx vitest run src/DevSquadAdoWorkflowLedger*.test.ts`  | PASS — 64 passed, 2 skipped / 5 files |
+| `npm run typecheck`                                      | PASS — exit 0                         |
+| `node scripts/check-public-types-effect-free.mjs`        | PASS — public declaration Effect-free |
+| `npx prettier --check <touched files>`                   | PASS                                  |
+| `git diff --check`                                       | PASS — no whitespace errors           |
+
+Seven new tests were added: two for B1 (retry after an unlanded checkpoint;
+claim-lifecycle identifier disjointness), two for B2 (two-owner interleaving
+10 → 15 with no 15 → 12 regression and no duplicate signal; `stale-observation`
+reason and claim release), and three for B3 (all four mutating methods across
+throw / reject / untyped-result shapes; checkpoint rejection after acquire;
+release rejection preserving an acknowledged outcome), plus one for the anchor-loss
+contract. No secret, claim token, message, or stack appears in any result
+projection.
+
+The 24 unrelated pre-existing Windows failures (Docker/Podman/POSIX-path suites)
+are unchanged; none of those files reference any module touched here.
+
+---
+
+## Independent remediation verification — 2026-09-08
+
+**Reviewer**: `devsquad.review`, clean context, read-only. Verified the uncommitted
+slice-14 remediation against `HEAD` (`b0520fc`) by inspecting source, tests, docs,
+and the ledger digest/replay path, and by re-running the suites.
+
+**Status**: PASSED_WITH_FINDINGS — B1–B4 confirmed fixed; 3 Major, 2 Minor open.
+
+### Blocker verification
+
+| ID  | Verdict   | Independent evidence                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| --- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| B1  | CONFIRMED | `Validation.ts:401-424` splits the identity union; `claimEpoch` minted per acquisition at `Pass.ts:754` and reused by renew (`:515`) and release (`:210`). `Storage.ts:1247` folds `NormalizedAcquireInput` (token included) into the digest, so `findReceipt` (`:639-654`) can no longer collide. `concurrency.test.ts:962` drives a real ledger through acquire → unlanded checkpoint → same-`passId` retry and asserts the retry `acted`. |
+| B2  | CONFIRMED | `observationAnchorsMatch` (`Pass.ts:396-406`) compares both cursor anchors and `pullRequest.id` from the pre-claim read against `acquireClaim`'s returned record; mismatch releases without writing (`Pass.ts:803-810`). `concurrency.test.ts:173` asserts `checkpointPatches === ["15"]`, i.e. `12` is never written over `15`, and no duplicate signal.                                                                                    |
+| B3  | CONFIRMED | All five ledger calls route through `callLedger` (`Pass.ts:207, 511, 552, 619, 666, 755`); no unguarded `context.ledger.*` remains. Clock via `readClock`, backoff delay in try/catch (`Pass.ts:947`), seam delay in `armTimeout`. `recovery.test.ts:309` covers 4 methods × 4 fault shapes and asserts the secret, `Error:`, and `"stack"` are absent from the serialized result.                                                           |
+| B4  | CONFIRMED | Rename complete in code and on the public surface; corrected repo-wide search finds no `maxPassDurationMs`, `duration-budget-exhausted`, or `dsw1` outside historical records. Gate is poll-start only (`Pass.ts:908-914`), first poll always starts. Stop reason exercised at `bounds.test.ts:190, 510, 815, 830`.                                                                                                                          |
+
+### Reproduced validation
+
+| Command                                                  | Result                                |
+| -------------------------------------------------------- | ------------------------------------- |
+| `npx vitest run src/DevSquadAdoWorkflowWatcher*.test.ts` | PASS — 73 passed / 5 files            |
+| `npx vitest run src/DevSquadAdoWorkflowLedger*.test.ts`  | PASS — 64 passed, 2 skipped / 5 files |
+| `npm run typecheck`                                      | PASS — exit 0                         |
+| `node scripts/check-public-types-effect-free.mjs`        | PASS                                  |
+| `git diff --check`                                       | PASS                                  |
+
+`prettier --check .` flags 9 files, none of them touched by this change set
+(pre-existing on the base commit).
+
+### Open findings
+
+- **R1 (Major)** `plan.md:31` still states the watcher will "Terminate inside the
+  caller-declared poll **and duration budget**" — the exact promise B4 removed
+  from INV-011, SC-005, ADR-0026, and the README. The plan's Responsibilities
+  section is normative and was in scope for W026.
+- **R2 (Major)** `plan.md:667` still states "**Exactly-once** applies to
+  ledger-mediated intake delivery only". Contradicts INV-006 (renamed
+  "Non-duplicating intake"), SC-004, ADR-0026:117, and the README. The plan's
+  "Architectural assumptions" section was never edited by the remediation;
+  `tasks.md:267` enumerates SC-004, INV-006, the ADR, and the README, and omits
+  `plan.md` — the traceable root cause.
+- **R3 (Major)** FR-034's new disjointness clause (`spec.md:154`) and the TEST-022
+  claim (`spec.md:318`) that "`cursorChanges` and `skippedCursorKinds` never name
+  the same kind" have no covering test. The only incomplete-entry fixture in the
+  suite (`DevSquadAdoWorkflowWatcher.test.ts:761`) is the _all_-incomplete case.
+  The mixed case that the new backward scan implements
+  (`Observation.ts:313-324` — advance to the newest complete entry and do _not_
+  report the kind as skipped) is unexercised. Behaviour is correct by inspection.
+- **R4 (Minor)** CC-021–CC-024 carry no `[CC-0xx]` tag in any test title, breaking
+  the convention held by CC-001–CC-020. `tasks.md:243, 249, 255, 265` do map them,
+  which limits the impact to test-title traceability.
+- **R5 (Minor)** Residual "duration budget" phrasing at `spec.md:312` (TEST-016)
+  and `plan.md:52`; same root cause as R1.
+
+No correctness, security, or regression finding. Approval remains the human
+reviewer's act.

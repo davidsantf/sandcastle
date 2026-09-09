@@ -16,8 +16,10 @@ const CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u;
 export type DevSquadAdoWatcherObservationFailure =
   | "observation-failed"
   | "observation-timeout"
+  | "observation-anchor-missing"
   | "pull-request-observation-unavailable"
-  | "invalid-observation-identifier";
+  | "invalid-observation-identifier"
+  | "cancelled";
 
 /** Projected, cursor-anchored view of one candidate's new external activity. */
 export interface DevSquadAdoWatcherObservationSelection {
@@ -183,22 +185,29 @@ const projectPullRequestEntries = (
  * Select entries newer than the persisted anchor using the seam's ordering.
  *
  * The anchor is compared by exact equality only; no identifier is parsed,
- * ordered, or arithmetically compared. When the anchor is absent from the
- * returned list, the seam returned post-cursor entries only and every entry is
- * new.
+ * ordered, or arithmetically compared.
+ *
+ * The seam's window is anchor-inclusive, so exactly three cases are
+ * well-defined: an empty window has nothing new, an absent anchor makes every
+ * entry new, and a located anchor makes everything after it new. A non-empty
+ * window that omits a supplied anchor is the fourth case, and it is
+ * **undecidable**: the watcher cannot tell "all of these are new" from "your
+ * anchor aged out of the window". Treating it as the former silently
+ * re-delivers the whole window, so it is reported as anchor loss and the
+ * candidate fails closed instead.
  */
 const selectNewEntries = <T>(
   anchor: T | null,
   entries: readonly T[],
   equals: (anchor: T, entry: T) => boolean,
-): readonly T[] => {
-  if (entries.length === 0) return [];
-  if (anchor === null) return entries;
-  const last = entries[entries.length - 1] as T;
-  if (equals(anchor, last)) return [];
+):
+  | { readonly ok: true; readonly value: readonly T[] }
+  | { readonly ok: false; readonly reason: "anchor-missing" } => {
+  if (entries.length === 0) return { ok: true, value: [] };
+  if (anchor === null) return { ok: true, value: entries };
   const index = entries.findIndex((entry) => equals(anchor, entry));
-  if (index >= 0) return entries.slice(index + 1);
-  return entries;
+  if (index < 0) return { ok: false, reason: "anchor-missing" };
+  return { ok: true, value: entries.slice(index + 1) };
 };
 
 /**
@@ -213,6 +222,12 @@ export const observeDevSquadAdoWatchCandidate = async (
   request: DevSquadAdoWatcherObservationRequest,
 ): Promise<DevSquadAdoWatcherObservationOutcome> => {
   const record = request.record;
+  // A cancelled pass is reported as cancellation rather than as an observation
+  // fault: a seam that rejects because its signal aborted is not a broken seam,
+  // and diagnosing it as `observation-failed` sends operators hunting a
+  // transport problem that never happened.
+  const aborted = (): boolean => request.signal?.aborted === true;
+
   const workItemOutcome = await raceObservation(
     () =>
       request.seam.observeWorkItemComments({
@@ -223,9 +238,15 @@ export const observeDevSquadAdoWatchCandidate = async (
     request,
   );
   if (workItemOutcome.kind === "timeout")
-    return { ok: false, reason: "observation-timeout" };
+    return {
+      ok: false,
+      reason: aborted() ? "cancelled" : "observation-timeout",
+    };
   if (workItemOutcome.kind === "rejected")
-    return { ok: false, reason: "observation-failed" };
+    return {
+      ok: false,
+      reason: aborted() ? "cancelled" : "observation-failed",
+    };
   const commentIds = projectWorkItemComments(workItemOutcome.value);
   if (commentIds === null)
     return { ok: false, reason: "invalid-observation-identifier" };
@@ -247,46 +268,60 @@ export const observeDevSquadAdoWatchCandidate = async (
       request,
     );
     if (pullRequestOutcome.kind === "timeout")
-      return { ok: false, reason: "observation-timeout" };
+      return {
+        ok: false,
+        reason: aborted() ? "cancelled" : "observation-timeout",
+      };
     if (pullRequestOutcome.kind === "rejected")
-      return { ok: false, reason: "observation-failed" };
+      return {
+        ok: false,
+        reason: aborted() ? "cancelled" : "observation-failed",
+      };
     const projected = projectPullRequestEntries(pullRequestOutcome.value);
     if (projected === null)
       return { ok: false, reason: "invalid-observation-identifier" };
     pullRequestEntries = projected;
   }
 
-  const newWorkItemCommentIds = selectNewEntries(
+  const selectedWorkItemComments = selectNewEntries(
     record.observations.workItemCommentId,
     commentIds,
     (anchor, entry) => anchor === entry,
   );
-  const newPullRequestEntries = selectNewEntries(
+  if (!selectedWorkItemComments.ok)
+    return { ok: false, reason: "observation-anchor-missing" };
+  const newWorkItemCommentIds = selectedWorkItemComments.value;
+
+  const selectedPullRequestEntries = selectNewEntries(
     record.observations.pullRequest,
     pullRequestEntries,
     (anchor, entry) =>
       anchor.threadId === entry.threadId &&
       anchor.commentId === entry.commentId,
-  ) as readonly ProjectedPullRequestEntry[];
+  );
+  if (!selectedPullRequestEntries.ok)
+    return { ok: false, reason: "observation-anchor-missing" };
+  const newPullRequestEntries =
+    selectedPullRequestEntries.value as readonly ProjectedPullRequestEntry[];
 
+  // A kind is "skipped" only when nothing at all could be persisted for it.
+  // Advancing to the newest complete entry and *also* reporting the kind as
+  // skipped would make `cursorChanges` and `skippedCursorKinds` overlap and
+  // claim two contradictory things about one kind in one outcome.
   const skippedCursorKinds: DevSquadAdoWatchObservationKind[] = [];
   let nextPullRequestCursor: DevSquadAdoPullRequestCursor | null = null;
-  if (newPullRequestEntries.length > 0) {
-    const last = newPullRequestEntries[
-      newPullRequestEntries.length - 1
-    ] as ProjectedPullRequestEntry;
-    if (last.commentId === null) skippedCursorKinds.push("pull-request-thread");
-    for (let index = newPullRequestEntries.length - 1; index >= 0; index--) {
-      const entry = newPullRequestEntries[index] as ProjectedPullRequestEntry;
-      if (entry.commentId !== null) {
-        nextPullRequestCursor = {
-          threadId: entry.threadId,
-          commentId: entry.commentId,
-        };
-        break;
-      }
+  for (let index = newPullRequestEntries.length - 1; index >= 0; index--) {
+    const entry = newPullRequestEntries[index] as ProjectedPullRequestEntry;
+    if (entry.commentId !== null) {
+      nextPullRequestCursor = {
+        threadId: entry.threadId,
+        commentId: entry.commentId,
+      };
+      break;
     }
   }
+  if (newPullRequestEntries.length > 0 && nextPullRequestCursor === null)
+    skippedCursorKinds.push("pull-request-thread");
 
   return {
     ok: true,

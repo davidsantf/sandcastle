@@ -85,15 +85,21 @@ export interface DevSquadAdoWatcherPullRequestObservation {
  * Read-oriented seam through which every external observation passes.
  *
  * Entries must be returned in the tracker's authoritative order, oldest first.
- * The seam either includes the supplied `since` cursor as the first entry or
- * returns only entries strictly after it. The watcher reads only the
- * identifier fields declared above and discards every other property.
+ * The watcher reads only the identifier fields declared above and discards
+ * every other property.
  *
- * The anchored entry must stay retrievable for as long as it is a cursor: the
- * watcher compares anchors by equality alone and never parses or orders an
- * identifier, so a response that can no longer contain the anchor is
- * indistinguishable from a post-cursor window and every entry is treated as
- * new. Honouring that obligation is what keeps delivery non-duplicating.
+ * The window is **anchor-inclusive**: whenever a `since` anchor is supplied and
+ * the returned window is non-empty, the anchor itself must appear in it, and
+ * only entries after it are treated as new. A seam with nothing new to report
+ * may return either the anchor alone or an empty window.
+ *
+ * That rule is what makes anchor loss detectable. The watcher compares anchors
+ * by equality alone and never parses or orders an identifier, so a non-empty
+ * window that omits the anchor is indistinguishable from a window in which
+ * every entry is new. Rather than re-deliver the whole window, the watcher
+ * fails that candidate closed with `observation-anchor-missing`; keeping an
+ * anchored entry retrievable for as long as it is a cursor is the seam's
+ * obligation.
  */
 export interface DevSquadAdoWatcherObservationSeam {
   /** Required: observe opaque work-item comment identifiers. */
@@ -119,12 +125,30 @@ export interface DevSquadAdoWatchIntakeRules {
   readonly statuses: readonly string[];
 }
 
-/** Caller-declared bounds that guarantee pass termination. */
+/**
+ * Caller-declared bounds that guarantee pass termination.
+ *
+ * Termination is guaranteed by `maxPolls` — the only hard bound — together
+ * with the per-observation timeout and cooperative cancellation. The elapsed
+ * bound governs scheduling, not wall-clock duration; see
+ * {@link DevSquadAdoWatchBudgets.maxPollStartElapsedMs}.
+ */
 export interface DevSquadAdoWatchBudgets {
   /** Maximum polls performed by the pass; positive integer up to 10,000. */
   readonly maxPolls: number;
-  /** Maximum pass duration in milliseconds, measured on the injected clock. */
-  readonly maxPassDurationMs: number;
+  /**
+   * Elapsed-time ceiling, in milliseconds, for *starting* another poll.
+   *
+   * Read once per poll from the injected clock, before the poll begins. Work
+   * already in flight — candidate steps, seam observations, ledger mutations —
+   * always runs to completion, so a pass can and does overrun this value. It
+   * bounds how long the pass keeps scheduling new work, never how long the
+   * pass takes. The first poll always starts.
+   *
+   * For a bound on any single observation use `observationTimeoutMs`; for a
+   * hard stop use `maxPolls` or `signal`.
+   */
+  readonly maxPollStartElapsedMs: number;
   /** Per-observation timeout in milliseconds, enforced via injected delay. */
   readonly observationTimeoutMs: number;
 }
@@ -198,23 +222,26 @@ export type DevSquadAdoWatchReasonCode =
   | "claim-expired"
   | "claim-authorization"
   | "stale-fencing"
+  | "stale-observation"
   | "revision-conflict"
   | "state-conflict"
   | "idempotency-conflict"
   | "checkpoint-indeterminate"
   | "observation-failed"
   | "observation-timeout"
+  | "observation-anchor-missing"
   | "pull-request-observation-unavailable"
   | "invalid-observation-identifier"
   | "ledger-recovery"
   | "ledger-capacity"
+  | "ledger-unavailable"
   | "cancelled";
 
 /** Stable reason a bounded pass stopped. */
 export type DevSquadAdoWatchStopReason =
   | "candidates-resolved"
   | "poll-budget-exhausted"
-  | "duration-budget-exhausted"
+  | "poll-start-budget-exhausted"
   | "cancelled";
 
 /** Token-free claim metadata under which a candidate step ran. */
@@ -334,8 +361,8 @@ export interface DevSquadAdoWatchValidatedPass {
   readonly intakeStatuses: readonly string[];
   /** Maximum polls performed by the pass. */
   readonly maxPolls: number;
-  /** Maximum pass duration in milliseconds. */
-  readonly maxPassDurationMs: number;
+  /** Elapsed-time ceiling in milliseconds for starting another poll. */
+  readonly maxPollStartElapsedMs: number;
   /** Per-observation timeout in milliseconds. */
   readonly observationTimeoutMs: number;
   /** Resolved claim lease duration in milliseconds. */
@@ -372,17 +399,72 @@ export type DevSquadAdoWatcherOperationStep =
   | "checkpoint"
   | "release";
 
-/** Stable identity from which a watcher operation identifier is derived. */
-export interface DevSquadAdoWatcherOperationIdentity {
-  /** Caller-supplied stable pass identity. */
-  readonly passId: string;
-  /** Canonical ledger work-item identifier, never the caller's raw input. */
-  readonly workItemId: string;
-  /** Mutation step being identified. */
-  readonly step: DevSquadAdoWatcherOperationStep;
-  /** Zero for one-shot steps; the one-based renewal sequence for `renew`. */
-  readonly ordinal: number;
+/** Claim-lifecycle steps, whose identity is scoped to one claim epoch. */
+export type DevSquadAdoWatcherClaimStep = "claim" | "renew" | "release";
+
+/**
+ * The exact cursor advance one checkpoint publishes.
+ *
+ * Both ends are recorded: the persisted anchors the advance was derived from
+ * and the cursors it makes durable. Two attempts at the same advance produce
+ * the same generation and therefore the same operation identifier; an advance
+ * from different anchors, or to different cursors, is a different operation.
+ */
+export interface DevSquadAdoWatcherObservationGeneration {
+  /** Persisted work-item comment anchor the advance starts from. */
+  readonly fromWorkItemCommentId: string | null;
+  /** Persisted pull-request anchor the advance starts from. */
+  readonly fromPullRequest: DevSquadAdoPullRequestCursor | null;
+  /** Work-item comment cursor this advance persists, when it advances one. */
+  readonly toWorkItemCommentId: string | null;
+  /** Pull-request cursor this advance persists, when it advances one. */
+  readonly toPullRequest: DevSquadAdoPullRequestCursor | null;
 }
+
+/**
+ * Stable identity from which a watcher operation identifier is derived.
+ *
+ * The two arms differ because the two families of step need opposite
+ * properties. A claim-lifecycle identifier must be **unique per acquisition**:
+ * the ledger folds the capability token into its idempotency digest, and that
+ * token is freshly random on every acquisition, so reusing one identifier
+ * across acquisitions can only ever produce a permanent `idempotency-conflict`
+ * that no retry can clear. A checkpoint identifier must instead be **stable
+ * per cursor advance**, so retrying an ambiguous mutation replays the original
+ * outcome rather than duplicating it.
+ */
+export type DevSquadAdoWatcherOperationIdentity =
+  | {
+      /** Claim-lifecycle step being identified. */
+      readonly step: DevSquadAdoWatcherClaimStep;
+      /** Caller-supplied stable pass identity. */
+      readonly passId: string;
+      /** Canonical ledger work-item identifier, never the caller's raw input. */
+      readonly workItemId: string;
+      /** Zero for one-shot steps; the one-based renewal sequence for `renew`. */
+      readonly ordinal: number;
+      /**
+       * Random identity of one acquisition attempt.
+       *
+       * Minted immediately before `acquireClaim` and reused by every `renew`
+       * and `release` of that same claim. It is an idempotency namespace, not
+       * a capability: it grants nothing, authorizes nothing, and is never a
+       * claim token.
+       */
+      readonly claimEpoch: string;
+    }
+  | {
+      /** Checkpoint step being identified. */
+      readonly step: "checkpoint";
+      /** Caller-supplied stable pass identity. */
+      readonly passId: string;
+      /** Canonical ledger work-item identifier, never the caller's raw input. */
+      readonly workItemId: string;
+      /** Zero for the single checkpoint a candidate step publishes. */
+      readonly ordinal: number;
+      /** The exact cursor advance being published. */
+      readonly generation: DevSquadAdoWatcherObservationGeneration;
+    };
 
 /**
  * Run exactly one bounded, offline, deterministic watch pass.
@@ -390,10 +472,12 @@ export interface DevSquadAdoWatcherOperationIdentity {
  * Every external observation is obtained through the injected seam, every
  * mutation goes through the injected ledger under a fenced claim, and the pass
  * terminates at the first of: all candidates resolved, poll budget reached,
- * duration budget reached, or cancellation.
+ * poll-start elapsed budget reached, or cancellation.
  *
  * Resolves `ok: false` only for option validation and seam-contract failures
- * detected before any observation or ledger operation.
+ * detected before any observation or ledger operation. An injected ledger
+ * method that throws or rejects never escapes: it resolves as a typed,
+ * redacted `failed` / `ledger-unavailable` candidate outcome.
  */
 export const runDevSquadAdoWorkflowWatchPass: (
   options: RunDevSquadAdoWorkflowWatchPassOptions,

@@ -2,7 +2,6 @@ import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  deriveDevSquadAdoWatcherOperationId,
   runDevSquadAdoWorkflowWatchPass,
   validateDevSquadAdoWorkflowWatchPassOptions,
 } from "./DevSquadAdoWorkflowWatcher.js";
@@ -22,6 +21,7 @@ import {
   createWatcherLedgerFixture,
   readWatcherLedgerArtifacts,
   seedWatcherRecord,
+  watcherCommentCheckpointOperationId,
 } from "./DevSquadAdoWorkflowWatcherTestSupport.js";
 
 const LEDGER_NOW = "2026-01-01T00:00:00.000Z";
@@ -85,7 +85,7 @@ const passOptions = (
   intakeRules: { phases: ["implement"], statuses: ["ready"] },
   budgets: {
     maxPolls: 1,
-    maxPassDurationMs: 60_000,
+    maxPollStartElapsedMs: 60_000,
     observationTimeoutMs: OBSERVATION_TIMEOUT_MS,
   },
   clock: createDeterministicClock([POLL_NOW]).clock,
@@ -150,7 +150,7 @@ describe("DevSquadAdoWorkflowWatcher validation", () => {
         overrides: {
           budgets: {
             maxPolls: 0,
-            maxPassDurationMs: 60_000,
+            maxPollStartElapsedMs: 60_000,
             observationTimeoutMs: OBSERVATION_TIMEOUT_MS,
           },
         },
@@ -161,18 +161,18 @@ describe("DevSquadAdoWorkflowWatcher validation", () => {
         overrides: {
           budgets: {
             maxPolls: 1,
-            maxPassDurationMs: 0,
+            maxPollStartElapsedMs: 0,
             observationTimeoutMs: OBSERVATION_TIMEOUT_MS,
           },
         },
-        field: "budgets.maxPassDurationMs",
+        field: "budgets.maxPollStartElapsedMs",
       },
       {
         label: "non-finite observation timeout",
         overrides: {
           budgets: {
             maxPolls: 1,
-            maxPassDurationMs: 60_000,
+            maxPollStartElapsedMs: 60_000,
             observationTimeoutMs: Number.POSITIVE_INFINITY,
           },
         },
@@ -369,28 +369,33 @@ describe("DevSquadAdoWorkflowWatcher validation", () => {
 });
 
 describe("DevSquadAdoWorkflowWatcher observation anchor rule", () => {
-  it("[TEST-004] selects only post-anchor entries and treats a missing anchor as an all-new window", () => {
+  it("[TEST-004] selects only post-anchor entries and fails closed when the anchor is gone", () => {
     const equals = (anchor: string, entry: string): boolean => anchor === entry;
 
     expect(
       selectDevSquadAdoWatcherNewEntries("b", ["a", "b", "c"], equals),
-    ).toEqual(["c"]);
+    ).toEqual({ ok: true, value: ["c"] });
     expect(
       selectDevSquadAdoWatcherNewEntries("c", ["a", "b", "c"], equals),
-    ).toEqual([]);
+    ).toEqual({ ok: true, value: [] });
     expect(
       selectDevSquadAdoWatcherNewEntries(null, ["a", "b"], equals),
-    ).toEqual(["a", "b"]);
-    expect(selectDevSquadAdoWatcherNewEntries("b", [], equals)).toEqual([]);
+    ).toEqual({ ok: true, value: ["a", "b"] });
+    expect(selectDevSquadAdoWatcherNewEntries("b", [], equals)).toEqual({
+      ok: true,
+      value: [],
+    });
 
-    // An absent anchor is the seam's documented "post-cursor entries only"
-    // response, so every entry is new. The same shape occurs if the tracker
-    // deletes the anchored entry, which is why anchor retention is recorded
-    // as a seam obligation in the spec assumptions rather than inferred here:
-    // no identifier is parsed or ordered, so the watcher cannot tell the two
-    // apart.
+    // The seam's window is anchor-inclusive, so a non-empty window that does
+    // not contain the anchor is undecidable: the watcher cannot tell "all of
+    // these are new" from "the anchored entry aged out". Reporting every entry
+    // as new would silently re-deliver the whole window, so this fails closed
+    // instead and the candidate reports `observation-anchor-missing`.
     expect(selectDevSquadAdoWatcherNewEntries("b", ["a", "c"], equals)).toEqual(
-      ["a", "c"],
+      {
+        ok: false,
+        reason: "anchor-missing",
+      },
     );
   });
 });
@@ -493,11 +498,11 @@ describe("DevSquadAdoWorkflowWatcher watch pass", () => {
       durable.value.checkpoints.some(
         (checkpoint) =>
           checkpoint.operationId ===
-          deriveDevSquadAdoWatcherOperationId({
+          watcherCommentCheckpointOperationId({
             passId: "pass-1",
             workItemId: "137",
-            step: "checkpoint",
-            ordinal: 0,
+            from: "480",
+            to: "481",
           }),
       ),
     ).toBe(true);
@@ -538,7 +543,7 @@ describe("DevSquadAdoWorkflowWatcher watch pass", () => {
         candidates: [137, 42],
         budgets: {
           maxPolls: 3,
-          maxPassDurationMs: 600_000,
+          maxPollStartElapsedMs: 600_000,
           observationTimeoutMs: OBSERVATION_TIMEOUT_MS,
         },
       }),
@@ -678,7 +683,7 @@ describe("DevSquadAdoWorkflowWatcher watch pass", () => {
       workItemCommentId: "481",
     });
     const seam = createRecordingWatcherSeam({
-      comments: () => ({ commentIds: ["482"] }),
+      comments: () => ({ commentIds: ["481", "482"] }),
     });
 
     const outcome = await runDevSquadAdoWorkflowWatchPass(
@@ -1031,7 +1036,7 @@ describe("DevSquadAdoWorkflowWatcher success criteria", () => {
     expect(await fixture.ledger.readRecord(137)).toEqual(before);
   }, 600_000);
 
-  it("[SC-004] delivers exactly one intake signal per observed event across passes", async () => {
+  it("[SC-004] delivers an observed event at most once across passes", async () => {
     const fixture = await createWatcherLedgerFixture(ledgerClock);
     await seedWatcherRecord(fixture.ledger, {
       workItemId: 137,

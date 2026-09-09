@@ -30,7 +30,7 @@ const passOptions = (
   intakeRules: { phases: ["implement"], statuses: ["ready"] },
   budgets: {
     maxPolls: 1,
-    maxPassDurationMs: 600_000,
+    maxPollStartElapsedMs: 600_000,
     observationTimeoutMs: OBSERVATION_TIMEOUT_MS,
   },
   clock: createDeterministicClock([POLL_NOW]).clock,
@@ -122,7 +122,7 @@ describe("DevSquadAdoWorkflowWatcher budgets", () => {
         seam: seam.seam,
         budgets: {
           maxPolls: 3,
-          maxPassDurationMs: 600_000,
+          maxPollStartElapsedMs: 600_000,
           observationTimeoutMs: OBSERVATION_TIMEOUT_MS,
         },
         clock: clock.clock,
@@ -176,7 +176,7 @@ describe("DevSquadAdoWorkflowWatcher budgets", () => {
         seam: seam.seam,
         budgets: {
           maxPolls: 10,
-          maxPassDurationMs: 5_000,
+          maxPollStartElapsedMs: 5_000,
           observationTimeoutMs: OBSERVATION_TIMEOUT_MS,
         },
         clock: clock.clock,
@@ -187,7 +187,7 @@ describe("DevSquadAdoWorkflowWatcher budgets", () => {
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
     expect(outcome.value.polls).toBe(1);
-    expect(outcome.value.stopReason).toBe("duration-budget-exhausted");
+    expect(outcome.value.stopReason).toBe("poll-start-budget-exhausted");
     expect(outcome.value.startedAt).toBe("2026-01-01T00:00:00.000Z");
     expect(outcome.value.completedAt).toBe("2026-01-01T00:00:06.000Z");
     expect(delaySource.backoffs()).toHaveLength(1);
@@ -217,7 +217,7 @@ describe("DevSquadAdoWorkflowWatcher budgets", () => {
         seam: seam.seam,
         budgets: {
           maxPolls: 2,
-          maxPassDurationMs: 600_000,
+          maxPollStartElapsedMs: 600_000,
           observationTimeoutMs: OBSERVATION_TIMEOUT_MS,
         },
         clock: clock.clock,
@@ -494,7 +494,7 @@ describe("DevSquadAdoWorkflowWatcher injected callable failures", () => {
         clock: failingClock,
         budgets: {
           maxPolls: 3,
-          maxPassDurationMs: 600_000,
+          maxPollStartElapsedMs: 600_000,
           observationTimeoutMs: OBSERVATION_TIMEOUT_MS,
         },
       }),
@@ -507,7 +507,7 @@ describe("DevSquadAdoWorkflowWatcher injected callable failures", () => {
     // An unreadable clock is fail-closed in exactly the way an unusable
     // reading already is: the pass stops rather than deciding on time it
     // cannot read.
-    expect(outcome.value.stopReason).toBe("duration-budget-exhausted");
+    expect(outcome.value.stopReason).toBe("poll-start-budget-exhausted");
     expect(outcome.value.outcomes[0]).toMatchObject({
       workItemId: "137",
       kind: "failed",
@@ -699,7 +699,7 @@ describe("DevSquadAdoWorkflowWatcher cancellation", () => {
         seam: seam.seam,
         budgets: {
           maxPolls: 5,
-          maxPassDurationMs: 600_000,
+          maxPollStartElapsedMs: 600_000,
           observationTimeoutMs: OBSERVATION_TIMEOUT_MS,
         },
         clock: createDeterministicClock([POLL_NOW]).clock,
@@ -769,7 +769,7 @@ describe("DevSquadAdoWorkflowWatcher success criteria", () => {
     const matrix: readonly {
       readonly label: string;
       readonly maxPolls: number;
-      readonly maxPassDurationMs: number;
+      readonly maxPollStartElapsedMs: number;
       readonly clock: readonly string[];
       readonly abortAfterPoll: number | null;
       readonly stopReason: string;
@@ -778,7 +778,7 @@ describe("DevSquadAdoWorkflowWatcher success criteria", () => {
       {
         label: "single poll",
         maxPolls: 1,
-        maxPassDurationMs: 600_000,
+        maxPollStartElapsedMs: 600_000,
         clock: ["2026-01-01T00:00:00.000Z"],
         abortAfterPoll: null,
         stopReason: "poll-budget-exhausted",
@@ -787,7 +787,7 @@ describe("DevSquadAdoWorkflowWatcher success criteria", () => {
       {
         label: "three polls",
         maxPolls: 3,
-        maxPassDurationMs: 600_000,
+        maxPollStartElapsedMs: 600_000,
         clock: ["2026-01-01T00:00:00.000Z"],
         abortAfterPoll: null,
         stopReason: "poll-budget-exhausted",
@@ -796,7 +796,7 @@ describe("DevSquadAdoWorkflowWatcher success criteria", () => {
       {
         label: "ten polls",
         maxPolls: 10,
-        maxPassDurationMs: 600_000,
+        maxPollStartElapsedMs: 600_000,
         clock: ["2026-01-01T00:00:00.000Z"],
         abortAfterPoll: null,
         stopReason: "poll-budget-exhausted",
@@ -805,20 +805,20 @@ describe("DevSquadAdoWorkflowWatcher success criteria", () => {
       {
         label: "duration budget on the second poll",
         maxPolls: 10,
-        maxPassDurationMs: 1_000,
+        maxPollStartElapsedMs: 1_000,
         clock: [
           "2026-01-01T00:00:00.000Z",
           "2026-01-01T00:00:00.000Z",
           "2026-01-01T00:00:05.000Z",
         ],
         abortAfterPoll: null,
-        stopReason: "duration-budget-exhausted",
+        stopReason: "poll-start-budget-exhausted",
         polls: 1,
       },
       {
         label: "duration budget on the fourth poll",
         maxPolls: 10,
-        maxPassDurationMs: 3_000,
+        maxPollStartElapsedMs: 3_000,
         clock: [
           "2026-01-01T00:00:00.000Z",
           "2026-01-01T00:00:00.000Z",
@@ -827,13 +827,13 @@ describe("DevSquadAdoWorkflowWatcher success criteria", () => {
           "2026-01-01T00:00:09.000Z",
         ],
         abortAfterPoll: null,
-        stopReason: "duration-budget-exhausted",
+        stopReason: "poll-start-budget-exhausted",
         polls: 3,
       },
       {
         label: "abort after the first poll",
         maxPolls: 10,
-        maxPassDurationMs: 600_000,
+        maxPollStartElapsedMs: 600_000,
         clock: ["2026-01-01T00:00:00.000Z"],
         abortAfterPoll: 1,
         stopReason: "cancelled",
@@ -842,7 +842,7 @@ describe("DevSquadAdoWorkflowWatcher success criteria", () => {
       {
         label: "abort after the second poll",
         maxPolls: 10,
-        maxPassDurationMs: 600_000,
+        maxPollStartElapsedMs: 600_000,
         clock: ["2026-01-01T00:00:00.000Z"],
         abortAfterPoll: 2,
         stopReason: "cancelled",
@@ -874,7 +874,7 @@ describe("DevSquadAdoWorkflowWatcher success criteria", () => {
           seam: seam.seam,
           budgets: {
             maxPolls: scenario.maxPolls,
-            maxPassDurationMs: scenario.maxPassDurationMs,
+            maxPollStartElapsedMs: scenario.maxPollStartElapsedMs,
             observationTimeoutMs: OBSERVATION_TIMEOUT_MS,
           },
           clock: createDeterministicClock([...scenario.clock]).clock,

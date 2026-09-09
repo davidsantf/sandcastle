@@ -21,6 +21,41 @@ import type {
   DevSquadAdoWatcherWorkItemObservation,
   DevSquadAdoWatcherWorkItemObservationInput,
 } from "./DevSquadAdoWorkflowWatcher.js";
+import { deriveDevSquadAdoWatcherOperationId } from "./DevSquadAdoWorkflowWatcher.js";
+
+/** Identity of one work-item-comment-only cursor advance. */
+export interface WatcherCommentAdvance {
+  /** Caller-supplied stable pass identity. */
+  readonly passId: string;
+  /** Canonical ledger work-item identifier. */
+  readonly workItemId: string;
+  /** Persisted comment anchor the advance starts from. */
+  readonly from: string | null;
+  /** Comment cursor the advance persists. */
+  readonly to: string;
+}
+
+/**
+ * Derive the checkpoint operation identifier for one comment-only advance.
+ *
+ * Checkpoint identity is scoped to the advance it publishes, so a test that
+ * asserts on the identifier has to name both ends of that advance.
+ */
+export const watcherCommentCheckpointOperationId = (
+  advance: WatcherCommentAdvance,
+): string =>
+  deriveDevSquadAdoWatcherOperationId({
+    step: "checkpoint",
+    passId: advance.passId,
+    workItemId: advance.workItemId,
+    ordinal: 0,
+    generation: {
+      fromWorkItemCommentId: advance.from,
+      fromPullRequest: null,
+      toWorkItemCommentId: advance.to,
+      toPullRequest: null,
+    },
+  });
 
 /** One recorded observation-seam invocation. */
 export interface RecordedSeamCall {

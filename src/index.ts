@@ -285,6 +285,8 @@ export type {
   DevSquadAdoWatchStopReason,
   DevSquadAdoWatchValidatedPass,
   DevSquadAdoWatchValidationResult,
+  DevSquadAdoWatcherClaimStep,
+  DevSquadAdoWatcherObservationGeneration,
   DevSquadAdoWatcherObservationSeam,
   DevSquadAdoWatcherOperationIdentity,
   DevSquadAdoWatcherOperationStep,
