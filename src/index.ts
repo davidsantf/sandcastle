@@ -261,3 +261,38 @@ export type {
   ReleaseDevSquadAdoWorkflowClaimInput,
   RenewDevSquadAdoWorkflowClaimInput,
 } from "./DevSquadAdoWorkflowLedger.js";
+
+export {
+  deriveDevSquadAdoWatcherOperationId,
+  runDevSquadAdoWorkflowWatchPass,
+  validateDevSquadAdoWorkflowWatchPassOptions,
+} from "./DevSquadAdoWorkflowWatcher.js";
+export type {
+  DevSquadAdoWatchBackoffConfig,
+  DevSquadAdoWatchBudgets,
+  DevSquadAdoWatchCandidateOutcome,
+  DevSquadAdoWatchCandidateOutcomeKind,
+  DevSquadAdoWatchClaimMetadata,
+  DevSquadAdoWatchError,
+  DevSquadAdoWatchIntakeRules,
+  DevSquadAdoWatchIntakeSignal,
+  DevSquadAdoWatchLeaseConfig,
+  DevSquadAdoWatchObservationKind,
+  DevSquadAdoWatchPassCounts,
+  DevSquadAdoWatchPassOutcome,
+  DevSquadAdoWatchPassResult,
+  DevSquadAdoWatchReasonCode,
+  DevSquadAdoWatchStopReason,
+  DevSquadAdoWatchValidatedPass,
+  DevSquadAdoWatchValidationResult,
+  DevSquadAdoWatcherObservationSeam,
+  DevSquadAdoWatcherOperationIdentity,
+  DevSquadAdoWatcherOperationStep,
+  DevSquadAdoWatcherPullRequestObservation,
+  DevSquadAdoWatcherPullRequestObservationEntry,
+  DevSquadAdoWatcherPullRequestObservationInput,
+  DevSquadAdoWatcherSeamMethodName,
+  DevSquadAdoWatcherWorkItemObservation,
+  DevSquadAdoWatcherWorkItemObservationInput,
+  RunDevSquadAdoWorkflowWatchPassOptions,
+} from "./DevSquadAdoWorkflowWatcher.js";

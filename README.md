@@ -173,6 +173,182 @@ policy. DevSquad/the host remains responsible for lifecycle decisions and all
 external ADO or GitHub actions. `listResumableRecords()` therefore returns every
 valid initialized record; the host decides which ones should resume.
 
+## Bounded DevSquad/ADO workflow watch passes
+
+`runDevSquadAdoWorkflowWatchPass()` runs **one bounded observation pass** over a
+caller-supplied candidate set. It reads ledger records, asks an injected seam
+what is new, advances opaque observation cursors through fenced ledger
+checkpoints, and returns token-free per-candidate outcomes plus at most one
+intake signal per candidate. It is not a daemon: a pass always terminates, and
+composing it into a loop is the host's job.
+
+```typescript
+import {
+  runDevSquadAdoWorkflowWatchPass,
+  openDevSquadAdoWorkflowLedger,
+} from "@ai-hero/sandcastle";
+
+const opened = await openDevSquadAdoWorkflowLedger({
+  repositoryRoot: "/host/repos/example",
+});
+if (!opened.ok) throw new Error(opened.error.kind);
+
+const outcome = await runDevSquadAdoWorkflowWatchPass({
+  ledger: opened.value,
+  // The host owns transport, credentials, and ordering.
+  seam: {
+    observeWorkItemComments: async ({
+      workItemId,
+      sinceCommentId,
+      signal,
+    }) => ({
+      commentIds: await tracker.listCommentIds(
+        workItemId,
+        sinceCommentId,
+        signal,
+      ),
+    }),
+    observePullRequestActivity: async ({
+      pullRequestId,
+      sinceCursor,
+      signal,
+    }) => ({
+      entries: await tracker.listThreadActivity(
+        pullRequestId,
+        sinceCursor,
+        signal,
+      ),
+    }),
+  },
+  passId: "nightly-2026-01-01-01", // stable across an ambiguous retry
+  ownerId: "coordinator-a",
+  candidates: [137, 42],
+  // Exact-match sets. There is no wildcard and no Sandcastle phase table.
+  intakeRules: { phases: ["implement", "review"], statuses: ["ready"] },
+  budgets: {
+    maxPolls: 5,
+    maxPassDurationMs: 120_000,
+    observationTimeoutMs: 5_000,
+  },
+  clock: () => new Date(),
+  delay: (ms, signal) =>
+    new Promise((resolve) => {
+      const timer = setTimeout(resolve, ms);
+      signal?.addEventListener(
+        "abort",
+        () => {
+          clearTimeout(timer);
+          resolve();
+        },
+        { once: true },
+      );
+    }),
+});
+
+if (!outcome.ok) throw new Error(outcome.error.kind);
+for (const signal of outcome.value.signals) {
+  // The host decides what a signal means and what runs next.
+  await devsquad.enqueue(signal.workItemId, signal.phase, signal.status);
+}
+```
+
+### The observation seam
+
+The seam exposes exactly two read methods. `observeWorkItemComments` is
+required. `observePullRequestActivity` is required only for candidates whose
+record carries a pull-request identifier; a candidate that needs it while the
+method is absent reports `pull-request-observation-unavailable`.
+
+The seam owns ordering. Entries must come back in the tracker's authoritative
+order, oldest first, and the seam either includes the supplied `since` cursor as
+the first entry or returns only entries strictly after it. The watcher never
+parses, sorts, or arithmetically compares identifier text; it anchors on the
+persisted cursor by exact comparison and treats everything after it as new. If
+the anchor is absent from the returned list, every returned entry is new — so an
+incorrect ordering contract can re-deliver events.
+
+Only identifier fields are read. `commentIds`, `threadId`, and `commentId` are
+projected out and every other property of a returned entry is discarded before
+it can reach durable state, results, errors, or diagnostics. A pull-request
+entry without a usable `commentId` is never persisted as a cursor; the candidate
+reports `incomplete-pull-request-cursor` and records `pull-request-thread` in
+`skippedCursorKinds`. The seam is never invoked to write.
+
+### Pass identity and replay parity
+
+`passId` is **required and caller-supplied**. Every ledger mutation the watcher
+performs derives its operation identifier deterministically:
+
+```text
+operationId = "dsw1." + step + "." + sha256hex({ v: 1, passId, workItemId, step, ordinal })
+```
+
+Retrying an ambiguous pass with the same `passId` and candidate set reproduces
+every identifier, so an already-durable checkpoint replays instead of
+duplicating. A random default would make that impossible, which is why the
+watcher does not generate one. Use `deriveDevSquadAdoWatcherOperationId()` to
+compute the identifiers a retry will reuse.
+
+Because capability tokens are freshly random on every acquisition, re-acquiring
+a claim under a pass identity that already acquired one is reported as a
+terminal `failed` / `idempotency-conflict` for that candidate rather than
+retried under a different identifier. Nothing is duplicated; either accept the
+outcome (no cursor advanced) or retry under a new `passId`.
+
+### Intake rules, budgets, leases, and backoff
+
+Intake rules are exact-match sets. Admitting every status means listing every
+status. Unknown phase names are accepted without objection when the caller lists
+them, and a record whose phase or status is not admitted still has its cursor
+advanced and reports `intake-suppressed` — suppression is an intake decision,
+not an observation decision.
+
+A pass stops at the first of: all candidates resolved, `maxPolls` reached,
+`maxPassDurationMs` reached, or cancellation, and reports which in `stopReason`.
+The clock is read once per poll and that single reading drives every eligibility,
+lease, and timestamp decision in that poll. Between polls the watcher asks the
+injected `delay` for `min(baseIntervalMs * multiplier^(n-1), maxIntervalMs)`,
+truncated to an integer; defaults are 1,000 ms, 2, and 30,000 ms. There is no
+randomness unless you inject `backoff.jitter`.
+
+Claims are acquired only when the watcher intends to mutate. The default lease is
+60,000 ms (raise it up to the 24-hour ceiling with `lease.leaseDurationMs`), and
+the default renewal threshold is one third of the lease. Before mutating under a
+held claim the watcher renews when `now + renewalThresholdMs >= expiresAt`,
+preserving the fencing value. An unexpired claim owned by someone else is a
+`skipped` / `claim-conflict`, never a fault, and the watcher never force-releases,
+deletes, or resets another owner's claim.
+
+Cancellation is observed before each seam call, before each ledger mutation, and
+between polls. An aborted pass still releases every claim it acquired and still
+reports every outcome that was already acknowledged.
+
+### Delivery model and the DevSquad boundary
+
+Intake signals are **returned in the pass result**. There is no callback, queue,
+retry, or transport: host code never runs inside a claimed step. A candidate's
+cursor checkpoint is acknowledged as durable before its signal enters the result,
+so a crash before the pass returns loses only signals whose cursors never
+advanced.
+
+Exactly-once applies to **ledger-mediated intake delivery only**. It makes no
+claim about external side effects: fencing protects ledger mutations, not
+anything the host does after reading a signal.
+
+The host keeps everything else. It chooses the candidate set (the watcher never
+discovers work items), initializes ledger records (a missing record is a stable
+`skipped` / `record-not-found`), defines what phases and statuses mean, decides
+whether a transition is legal, schedules execution, and performs every external
+tracker write and pull-request action.
+
+Note that every ledger mutation advances the record revision, including claim
+acquisition, renewal, and release. A candidate outcome therefore reports
+`sourceRevision` (the revision the decision was derived from) alongside
+`revision` (the revision the cursor checkpoint was accepted at); they are not
+adjacent. Candidate outcomes and ledger errors are reduced to stable categories —
+`ledgerErrorKind` carries the ledger's own category and never raw JSON, artifact
+contents, or an operating-system message.
+
 ## Sandbox Providers
 
 Sandcastle uses a `SandboxProvider` to create isolated environments. The `sandbox` option on `run()`, `interactive()`, and `createSandbox()` accepts any provider, including `noSandbox()` — opt in to running the agent directly on the host when container isolation is undesired. Built-in providers:
