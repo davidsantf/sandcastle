@@ -28,7 +28,7 @@ The implementation follows [ADR-0026](../../adr/0026-devsquad-ado-workflow-watch
 - Acquire, renew, and release ledger claims around its own mutations only.
 - Persist opaque cursors through fenced, revision-checked, idempotent checkpoints.
 - Emit intake signals only when caller intake rules match the record's exact phase and status.
-- Terminate inside the caller-declared poll and duration budget, or on cancellation.
+- Terminate inside the caller-declared poll budget, or on cancellation. The poll-start elapsed budget gates when a new poll may begin, not total elapsed time; work already in flight always completes.
 - Report stable outcome kinds, reason codes, counts, and stop reasons.
 
 ### Explicit non-responsibilities
@@ -49,7 +49,7 @@ It will not define a phase allowlist, phase order, transition table, terminal st
 | `src/DevSquadAdoWorkflowWatcherPass.ts`               | Poll loop, per-candidate step machine, claim lifecycle, checkpointing, cancellation, stop reasons, counts.                               |
 | `src/DevSquadAdoWorkflowWatcher.test.ts`              | Validation, seam contract, happy path, replay, determinism, intake rules, missing record, PR cursor completeness, public surface.        |
 | `src/DevSquadAdoWorkflowWatcher.concurrency.test.ts`  | Claim conflict, fencing, renewal, release hygiene, idempotency, revision/state conflicts.                                                |
-| `src/DevSquadAdoWorkflowWatcher.bounds.test.ts`       | Poll budget, duration budget, deterministic backoff, cancellation points, observation timeout.                                           |
+| `src/DevSquadAdoWorkflowWatcher.bounds.test.ts`       | Poll budget, poll-start elapsed budget, deterministic backoff, cancellation points, observation timeout.                                 |
 | `src/DevSquadAdoWorkflowWatcher.recovery.test.ts`     | Corrupt and unsupported-schema isolation, candidate isolation, capacity categories, restart safety.                                      |
 | `src/DevSquadAdoWorkflowWatcher.dependencies.test.ts` | Static offline dependency assertion and Effect-free public contract assertion.                                                           |
 | `src/DevSquadAdoWorkflowWatcherTestSupport.ts`        | Recording seam fake, deterministic clock, recording delay source, ledger fixture and seeding helpers.                                    |
@@ -664,7 +664,7 @@ npm test -- DevSquadAdoWorkflowWatcher
 - The injected seam returns identifiers in the tracker's authoritative order and honours the `since` contract.
 - The watcher's injected clock and the ledger's clock are the same time basis in tests.
 - Claims are short-lived; a host reacting to a signal reacquires if it intends to mutate.
-- Exactly-once applies to ledger-mediated intake delivery only, never to external side effects.
+- Intake delivery is at-most-once and never duplicating, and applies to ledger-mediated delivery only, never to external side effects. A checkpoint that becomes durable without its acknowledgement being observed advances the cursor while its signal is never returned, so hosts reconcile completeness from the durable record rather than from the signal stream.
 - A pass examines at most 1,000 candidates, inside ledger schema-v1 capacity bounds.
 
 ### Discarded alternatives

@@ -170,7 +170,7 @@ describe("DevSquadAdoWorkflowWatcher claim contention", () => {
     }
   }, 120_000);
 
-  it("[TEST-009] abandons an observation whose anchors moved between the read and the claim", async () => {
+  it("[TEST-009][CC-022] abandons an observation whose anchors moved between the read and the claim", async () => {
     const fixture = await createWatcherLedgerFixture(ledgerClock);
     await seedWatcherRecord(fixture.ledger, {
       workItemId: 137,
@@ -276,7 +276,7 @@ describe("DevSquadAdoWorkflowWatcher claim contention", () => {
     expect(seamA.calls.map((call) => call.since)).toEqual(["10", "15"]);
   }, 120_000);
 
-  it("[TEST-009] reports a stale observation with its own reason and releases the claim", async () => {
+  it("[TEST-009][CC-022] reports a stale observation with its own reason and releases the claim", async () => {
     const fixture = await createWatcherLedgerFixture(ledgerClock);
     await seedWatcherRecord(fixture.ledger, {
       workItemId: 137,
@@ -959,7 +959,7 @@ describe("DevSquadAdoWorkflowWatcher operation identity", () => {
     });
   }, 60_000);
 
-  it("[TEST-012] keeps the same pass identity replayable after a durable acquire whose checkpoint never landed", async () => {
+  it("[TEST-012][CC-021] keeps the same pass identity replayable after a durable acquire whose checkpoint never landed", async () => {
     const fixture = await createWatcherLedgerFixture(ledgerClock);
     await seedWatcherRecord(fixture.ledger, {
       workItemId: 137,

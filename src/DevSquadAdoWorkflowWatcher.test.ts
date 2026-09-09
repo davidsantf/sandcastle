@@ -792,6 +792,94 @@ describe("DevSquadAdoWorkflowWatcher watch pass", () => {
     ]);
   }, 60_000);
 
+  it("[TEST-022][CC-019] advances to the newest complete pull-request entry without also reporting the kind as skipped", async () => {
+    // FR-034 disjointness: a window that mixes complete and incomplete entries
+    // must still publish a cursor (the newest *complete* entry), and must not
+    // name `pull-request-thread` in both `cursorChanges` and
+    // `skippedCursorKinds`. The all-incomplete case above is the only one where
+    // the kind is legitimately skipped.
+    const cases: readonly {
+      readonly label: string;
+      readonly entries: readonly {
+        readonly threadId: string;
+        readonly commentId?: string;
+      }[];
+      readonly expectedCursor: {
+        readonly threadId: string;
+        readonly commentId: string;
+      };
+    }[] = [
+      {
+        label: "newest entry incomplete, older new entry complete",
+        entries: [
+          { threadId: "thread-12", commentId: "comment-29" },
+          { threadId: "thread-13", commentId: "comment-30" },
+          { threadId: "thread-14" },
+        ],
+        expectedCursor: { threadId: "thread-13", commentId: "comment-30" },
+      },
+      {
+        label: "incomplete entry followed by a newer complete entry",
+        entries: [
+          { threadId: "thread-12", commentId: "comment-29" },
+          { threadId: "thread-13" },
+          { threadId: "thread-14", commentId: "comment-31" },
+        ],
+        expectedCursor: { threadId: "thread-14", commentId: "comment-31" },
+      },
+    ];
+
+    for (const testCase of cases) {
+      const fixture = await createWatcherLedgerFixture(ledgerClock);
+      await seedWatcherRecord(fixture.ledger, {
+        workItemId: 137,
+        revision: 4,
+        phase: "implement",
+        status: "ready",
+        workItemCommentId: "480",
+        pullRequestId: "481",
+        pullRequestCursor: { threadId: "thread-12", commentId: "comment-29" },
+      });
+      const seam = createRecordingWatcherSeam({
+        comments: () => ({ commentIds: ["480"] }),
+        pullRequest: () => ({ entries: testCase.entries }),
+      });
+
+      const outcome = await runDevSquadAdoWorkflowWatchPass(
+        passOptions({ ledger: fixture.ledger, seam: seam.seam }),
+      );
+
+      expect(outcome.ok, testCase.label).toBe(true);
+      if (!outcome.ok) return;
+      const candidate = outcome.value
+        .outcomes[0] as DevSquadAdoWatchCandidateOutcome;
+      expect(candidate, testCase.label).toMatchObject({
+        workItemId: "137",
+        kind: "acted",
+        reason: "new-pull-request-activity",
+        cursorChanges: ["pull-request-thread"],
+        skippedCursorKinds: [],
+      });
+
+      // The disjointness clause itself: no kind may appear in both lists.
+      const overlap = candidate.cursorChanges.filter((kind) =>
+        candidate.skippedCursorKinds.includes(kind),
+      );
+      expect(overlap, testCase.label).toEqual([]);
+
+      const durable = await fixture.ledger.readRecord(137);
+      expect(durable.ok, testCase.label).toBe(true);
+      if (!durable.ok) return;
+      expect(durable.value.observations.pullRequest, testCase.label).toEqual(
+        testCase.expectedCursor,
+      );
+      // Claim acquire/checkpoint/release each publish a revision, so assert
+      // advancement rather than a bookkeeping-sensitive absolute value.
+      expect(durable.value.revision, testCase.label).toBeGreaterThan(4);
+      expect(outcome.value.signals.length, testCase.label).toBe(1);
+    }
+  }, 60_000);
+
   it("[TEST-003] reports a stable failure when a pull-request record has no observation method", async () => {
     const fixture = await createWatcherLedgerFixture(ledgerClock);
     await seedWatcherRecord(fixture.ledger, {

@@ -248,7 +248,7 @@ describe("DevSquadAdoWorkflowWatcher candidate isolation", () => {
     }
   }, 120_000);
 
-  it("[TEST-019] fails a candidate closed when a non-empty window has lost its anchor", async () => {
+  it("[TEST-019][CC-023] fails a candidate closed when a non-empty window has lost its anchor", async () => {
     const fixture = await createWatcherLedgerFixture(ledgerClock);
     for (const workItemId of [137, 42]) {
       await seedWatcherRecord(fixture.ledger, {
@@ -306,7 +306,7 @@ describe("DevSquadAdoWorkflowWatcher candidate isolation", () => {
     });
   }, 60_000);
 
-  it("[TEST-019] converts a throwing or rejecting ledger method into a typed outcome", async () => {
+  it("[TEST-019][CC-024] converts a throwing or rejecting ledger method into a typed outcome", async () => {
     const fixture = await createWatcherLedgerFixture(ledgerClock);
     for (const workItemId of [137, 42]) {
       await seedWatcherRecord(fixture.ledger, {

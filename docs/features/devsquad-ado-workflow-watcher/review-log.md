@@ -489,3 +489,80 @@ and the ledger digest/replay path, and by re-running the suites.
 
 No correctness, security, or regression finding. Approval remains the human
 reviewer's act.
+
+---
+
+## Final recovery review — 2026-09-09 (pre-PR, branch `users/davidsant/symmetrical-train`)
+
+**Context**: slice 14 was recovered onto a continuation branch after the previous
+working tree was lost. The four preserved commits (`5755b77`, `98722a5`,
+`b0520fc`, `f337506`) were verified intact and re-validated from a clean
+`npm ci`. This turn closes the findings the previous section left open.
+
+### Correction to the previous section's premise
+
+The "Independent remediation verification" section above describes slice 14 as
+"entirely uncommitted working-tree content". That was accurate when written; it
+is **no longer true**. Slice 14 is now four commits on
+`users/davidsant/symmetrical-train`, whose merge-base with
+`users/davidsant/ubiquitous-train` is `9ff6e8e` — the exact tip of the base
+branch. The earlier text is retained as a historical record, not as a current
+claim.
+
+### Open findings from the previous turn — resolved
+
+| ID  | Severity | Status | Resolution                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| --- | -------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R1  | Major    | Fixed  | `plan.md` §Watcher responsibilities no longer promises termination "inside the caller-declared poll **and duration budget**". It now states the poll-budget guarantee and records that the poll-start elapsed budget gates when a poll may begin, not total elapsed time — matching INV-011, SC-005, FR-047/FR-048, ADR-0026, and the README.                                                                                                                                                                                                                                                        |
+| R2  | Major    | Fixed  | `plan.md` §Architectural assumptions no longer claims "Exactly-once applies to ledger-mediated intake delivery only". Restated as at-most-once and never duplicating, naming the loss case (durable checkpoint whose acknowledgement is never observed) and directing hosts to reconcile from the durable record. Now consistent with INV-006, SC-004, and ADR-0026:117.                                                                                                                                                                                                                             |
+| R3  | Major    | Fixed  | New test `[TEST-022][CC-019] advances to the newest complete pull-request entry without also reporting the kind as skipped` (`DevSquadAdoWorkflowWatcher.test.ts`). Table-drives both mixed shapes — newest entry incomplete with an older complete entry, and an incomplete entry followed by a newer complete one — asserting the durable cursor lands on the newest **complete** entry, `skippedCursorKinds` is empty, and `cursorChanges ∩ skippedCursorKinds = ∅`. **Mutation-verified**: restricting the backward scan in `Observation.ts:312-324` to the last entry only makes the test fail. |
+| R4  | Minor    | Fixed  | `[CC-021]`…`[CC-024]` tags added to the five owning test titles, restoring the convention held by CC-001–CC-020: CC-021 → replayable pass identity; CC-022 → both stale-observation tests; CC-023 → anchor lost from a non-empty window; CC-024 → faulting injected ledger method.                                                                                                                                                                                                                                                                                                                   |
+| R5  | Minor    | Fixed  | Residual "duration budget" phrasing removed from `spec.md` TEST-016 and `plan.md` §New source files. A repo-wide search now finds `duration budget` / `maxPassDurationMs` / `duration-budget-exhausted` only inside this log's historical records.                                                                                                                                                                                                                                                                                                                                                   |
+
+W-s2 and W-s3 remain **deferred** and are unchanged: both are documentation or
+spec-decision items, non-blocking, and accurately labelled as deferred rather
+than fixed.
+
+### Final validation evidence (this branch, clean `npm ci`)
+
+| Command                                           | Result                                                      |
+| ------------------------------------------------- | ----------------------------------------------------------- |
+| `npx vitest run src/DevSquadAdoWorkflowWatcher`   | **PASS — 74 passed / 5 files, 0 skipped** (25.9s)           |
+| `npx vitest run src/DevSquadAdoWorkflowLedger`    | **PASS — 64 passed, 2 skipped / 5 files** (slice 13 intact) |
+| `npm run typecheck` (`tsgo --noEmit`)             | **PASS — exit 0**                                           |
+| `npx tsup` (ESM + DTS)                            | **PASS — ESM and DTS build success**                        |
+| `node scripts/check-public-types-effect-free.mjs` | **PASS — no Effect references in public `.d.ts`**           |
+| `npx prettier --check <slice-14 files>`           | **PASS — all matched files use Prettier code style**        |
+| `git diff --check` (base…HEAD)                    | **PASS — no whitespace errors**                             |
+| `.only` / `.skip` / `.todo` in watcher tests      | 0                                                           |
+| `tasks.md` checkboxes                             | 28/28 checked, 0 unchecked                                  |
+
+Test count moved 73 → 74; the single new test is R3's.
+
+### Stacked-base delta
+
+`git merge-base users/davidsant/symmetrical-train origin/users/davidsant/ubiquitous-train`
+= `9ff6e8e`, identical to the base tip. `git diff --stat <base>...HEAD` is
+**additive only across 18 paths** — 13 new slice-14 files plus `README.md`,
+`src/index.ts`, the changeset, the ADR, and the feature docs. No base-branch
+commit or file is duplicated, and no file outside the ADO watcher slice is
+touched.
+
+### Pre-existing environmental failures (unchanged, not a slice-14 defect)
+
+`npm test` (full suite) still fails on this Windows host for the reasons already
+documented above: `podman` absent from PATH, POSIX-only paths and `cp` in the
+sandbox/worktree suites, and Docker image builds. No failing file references any
+slice-14 symbol, and every slice-14 change is additive, so the slice cannot
+reach them. Expected to pass on the Linux CI runner.
+
+### Verdict
+
+**PASSED — Critical 0, Major 0, Minor 0 open.** All five findings left open by
+the previous turn are closed: three were documentation-truthfulness defects
+(R1, R2, R5) where the plan still promised guarantees the implementation had
+deliberately withdrawn, one was a genuine coverage gap on FR-034's disjointness
+clause (R3), and one was traceability hygiene (R4). No production source file
+changed in this turn — the only `src/` edits are test additions and test-title
+tags — so the validated behaviour of the preserved commits is unaltered.
+Cleared for PR; approval remains the human reviewer's act.

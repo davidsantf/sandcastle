@@ -309,7 +309,7 @@ Every test below is deterministic and uses injected observations, an injected cl
 - **TEST-013 — Optimistic conflicts:** `revision-conflict` and `state-conflict` end the candidate step without mutation. Covers CC-006.
 - **TEST-014 — Intake rules:** Suppressed intake still advances cursors; unknown-but-admitted phases are accepted. Covers CC-007, CC-008.
 - **TEST-015 — Missing record:** `record-not-found` skip without initialization. Covers CC-009.
-- **TEST-016 — Bounded polling and backoff:** Poll count, duration budget, and deterministic delay schedule are enforced. Covers CC-011.
+- **TEST-016 — Bounded polling and backoff:** Poll count, poll-start elapsed budget, and deterministic delay schedule are enforced. Covers CC-011.
 - **TEST-017 — Cancellation:** Abort before seam call, before mutation, and between polls each stop promptly with released claims. Covers CC-012.
 - **TEST-018 — Observation timeout:** Non-settling observation converts to a per-candidate timeout outcome. Covers CC-013.
 - **TEST-019 — Candidate isolation:** Seam rejection, ledger failure, a faulting injected ledger method, and a lost observation anchor each leave the other candidates unaffected. Covers CC-017, CC-023, CC-024, INV-014, INV-016.
