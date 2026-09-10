@@ -19,6 +19,7 @@ export type DevSquadAdoWatcherObservationFailure =
   | "observation-anchor-missing"
   | "pull-request-observation-unavailable"
   | "invalid-observation-identifier"
+  | "invalid-observation-window"
   | "cancelled";
 
 /** Projected, cursor-anchored view of one candidate's new external activity. */
@@ -70,23 +71,39 @@ type RaceOutcome<T> =
   | { readonly kind: "timeout" };
 
 const raceObservation = async <T>(
-  invoke: () => Promise<T>,
+  invoke: (signal: AbortSignal) => Promise<T>,
   request: DevSquadAdoWatcherObservationRequest,
 ): Promise<RaceOutcome<T>> => {
+  const child = new AbortController();
+  const timer = new AbortController();
+  let cancel!: () => void;
+  const cancelled = new Promise<RaceOutcome<T>>((resolve) => {
+    cancel = () => {
+      child.abort();
+      timer.abort();
+      resolve({ kind: "timeout" });
+    };
+  });
+  request.signal?.addEventListener("abort", cancel, { once: true });
+  if (request.signal?.aborted) {
+    cancel();
+    request.signal.removeEventListener("abort", cancel);
+    return { kind: "timeout" };
+  }
   let work: Promise<T>;
   try {
-    work = Promise.resolve(invoke());
+    work = Promise.resolve(invoke(child.signal));
   } catch {
+    child.abort();
+    timer.abort();
+    request.signal?.removeEventListener("abort", cancel);
     return { kind: "rejected" };
   }
-  let settled = false;
   const observed: Promise<RaceOutcome<T>> = work.then(
     (value) => {
-      settled = true;
       return { kind: "value", value } as const;
     },
     () => {
-      settled = true;
       return { kind: "rejected" } as const;
     },
   );
@@ -94,12 +111,6 @@ const raceObservation = async <T>(
   // The timeout is armed on its own signal so a settled observation can retire
   // it immediately instead of leaving the host's timer pending for the whole
   // configured timeout.
-  const timeoutSignal = new AbortController();
-  const forwardAbort = (): void => timeoutSignal.abort();
-  if (request.signal !== undefined) {
-    if (request.signal.aborted) timeoutSignal.abort();
-    else request.signal.addEventListener("abort", forwardAbort, { once: true });
-  }
 
   // The delay is caller-supplied and no more trusted than the seam itself, so
   // a synchronous throw is treated exactly like a rejected delay: the bound
@@ -108,7 +119,7 @@ const raceObservation = async <T>(
   const armTimeout = (): Promise<RaceOutcome<T>> => {
     try {
       return Promise.resolve(
-        request.delay(request.observationTimeoutMs, timeoutSignal.signal),
+        request.delay(request.observationTimeoutMs, timer.signal),
       ).then(
         () => ({ kind: "timeout" }) as const,
         () => ({ kind: "timeout" }) as const,
@@ -119,12 +130,11 @@ const raceObservation = async <T>(
   };
 
   try {
-    const winner = await Promise.race([observed, armTimeout()]);
-    if (winner.kind !== "timeout") return winner;
-    return settled ? await observed : winner;
+    return await Promise.race([observed, armTimeout(), cancelled]);
   } finally {
-    timeoutSignal.abort();
-    request.signal?.removeEventListener("abort", forwardAbort);
+    child.abort();
+    timer.abort();
+    request.signal?.removeEventListener("abort", cancel);
   }
 };
 
@@ -140,45 +150,97 @@ interface ProjectedPullRequestEntry {
   readonly commentId: string | null;
 }
 
+const MAX_WINDOW_ENTRIES = 1_000;
+const MAX_WINDOW_BYTES = 1_048_576;
+type Projection<T> =
+  | { readonly value: readonly T[] }
+  | {
+      readonly reason:
+        | "invalid-observation-identifier"
+        | "invalid-observation-window";
+    };
+const invalidIdentifier = { reason: "invalid-observation-identifier" } as const;
+const invalidWindow = { reason: "invalid-observation-window" } as const;
+
+// Reading only identifier-bearing fields avoids unrelated payload accessors.
+// An unreadable collection or entry is a malformed window, not a raw exception.
+const projectWindow = <T>(project: () => Projection<T>): Projection<T> => {
+  try {
+    return project();
+  } catch {
+    return invalidWindow;
+  }
+};
+
 const projectWorkItemComments = (
   response: DevSquadAdoWatcherWorkItemObservation,
-): readonly string[] | null => {
-  if (typeof response !== "object" || response === null) return null;
+): Projection<string> => {
+  if (typeof response !== "object" || response === null) return invalidWindow;
   const ids: unknown = response.commentIds;
-  if (!Array.isArray(ids)) return null;
+  if (!Array.isArray(ids)) return invalidWindow;
+  const length = ids.length;
+  if (
+    !Number.isSafeInteger(length) ||
+    length < 0 ||
+    length > MAX_WINDOW_ENTRIES
+  )
+    return invalidWindow;
   const projected: string[] = [];
-  for (const entry of ids as readonly unknown[]) {
-    if (!isIdentifier(entry)) return null;
+  const seen = new Set<string>();
+  let bytes = 0;
+  for (let index = 0; index < length; index++) {
+    if (ids.length !== length || projected.length >= MAX_WINDOW_ENTRIES)
+      return invalidWindow;
+    const entry: unknown = ids[index];
+    if (ids.length !== length) return invalidWindow;
+    if (!isIdentifier(entry)) return invalidIdentifier;
+    bytes += Buffer.byteLength(entry, "utf8");
+    if (bytes > MAX_WINDOW_BYTES || seen.has(entry)) return invalidWindow;
+    seen.add(entry);
     projected.push(entry);
   }
-  return projected;
+  return { value: projected };
 };
 
 const projectPullRequestEntries = (
   response: DevSquadAdoWatcherPullRequestObservation,
-): readonly ProjectedPullRequestEntry[] | null => {
-  if (typeof response !== "object" || response === null) return null;
+): Projection<ProjectedPullRequestEntry> => {
+  if (typeof response !== "object" || response === null) return invalidWindow;
   const entries: unknown = response.entries;
-  if (!Array.isArray(entries)) return null;
+  if (!Array.isArray(entries)) return invalidWindow;
+  const length = entries.length;
+  if (
+    !Number.isSafeInteger(length) ||
+    length < 0 ||
+    length > MAX_WINDOW_ENTRIES
+  )
+    return invalidWindow;
   const projected: ProjectedPullRequestEntry[] = [];
-  for (const entry of entries as readonly unknown[]) {
-    if (typeof entry !== "object" || entry === null) return null;
+  const seen = new Set<string>();
+  let bytes = 0;
+  for (let index = 0; index < length; index++) {
+    if (entries.length !== length || projected.length >= MAX_WINDOW_ENTRIES)
+      return invalidWindow;
+    const entry: unknown = entries[index];
+    if (entries.length !== length) return invalidWindow;
+    if (typeof entry !== "object" || entry === null) return invalidIdentifier;
     const threadId: unknown = (entry as Record<string, unknown>).threadId;
-    if (!isIdentifier(threadId)) return null;
+    if (entries.length !== length) return invalidWindow;
+    if (!isIdentifier(threadId)) return invalidIdentifier;
     const rawCommentId: unknown = (entry as Record<string, unknown>).commentId;
-    if (rawCommentId === undefined || rawCommentId === null) {
-      projected.push({ threadId, commentId: null });
-      continue;
-    }
-    if (typeof rawCommentId !== "string") return null;
-    if (rawCommentId.trim().length === 0) {
-      projected.push({ threadId, commentId: null });
-      continue;
-    }
-    if (!isIdentifier(rawCommentId)) return null;
-    projected.push({ threadId, commentId: rawCommentId });
+    if (entries.length !== length) return invalidWindow;
+    const commentId = rawCommentId ?? null;
+    if (commentId !== null && !isIdentifier(commentId))
+      return invalidIdentifier;
+    bytes +=
+      Buffer.byteLength(threadId, "utf8") +
+      (commentId === null ? 0 : Buffer.byteLength(commentId as string, "utf8"));
+    const key = JSON.stringify([threadId, commentId]);
+    if (bytes > MAX_WINDOW_BYTES || seen.has(key)) return invalidWindow;
+    seen.add(key);
+    projected.push({ threadId, commentId: commentId as string | null });
   }
-  return projected;
+  return { value: projected };
 };
 
 /**
@@ -229,11 +291,11 @@ export const observeDevSquadAdoWatchCandidate = async (
   const aborted = (): boolean => request.signal?.aborted === true;
 
   const workItemOutcome = await raceObservation(
-    () =>
+    (signal) =>
       request.seam.observeWorkItemComments({
         workItemId: record.workItemId,
         sinceCommentId: record.observations.workItemCommentId,
-        signal: request.signal,
+        signal,
       }),
     request,
   );
@@ -247,23 +309,31 @@ export const observeDevSquadAdoWatchCandidate = async (
       ok: false,
       reason: aborted() ? "cancelled" : "observation-failed",
     };
-  const commentIds = projectWorkItemComments(workItemOutcome.value);
-  if (commentIds === null)
-    return { ok: false, reason: "invalid-observation-identifier" };
+  if (aborted()) return { ok: false, reason: "cancelled" };
+  const comments = projectWindow(() =>
+    projectWorkItemComments(workItemOutcome.value),
+  );
+  if ("reason" in comments) return { ok: false, reason: comments.reason };
+  const commentIds = comments.value;
 
   let pullRequestEntries: readonly ProjectedPullRequestEntry[] = [];
   const pullRequestId = record.pullRequest.id;
   if (pullRequestId !== null) {
-    const observePullRequestActivity = request.seam.observePullRequestActivity;
+    let observePullRequestActivity;
+    try {
+      observePullRequestActivity = request.seam.observePullRequestActivity;
+    } catch {
+      return { ok: false, reason: "observation-failed" };
+    }
     if (typeof observePullRequestActivity !== "function")
       return { ok: false, reason: "pull-request-observation-unavailable" };
     const pullRequestOutcome = await raceObservation(
-      () =>
-        observePullRequestActivity({
+      (signal) =>
+        observePullRequestActivity.call(request.seam, {
           workItemId: record.workItemId,
           pullRequestId,
-          sinceCursor: record.observations.pullRequest,
-          signal: request.signal,
+          sinceCursor: structuredClone(record.observations.pullRequest),
+          signal,
         }),
       request,
     );
@@ -277,10 +347,12 @@ export const observeDevSquadAdoWatchCandidate = async (
         ok: false,
         reason: aborted() ? "cancelled" : "observation-failed",
       };
-    const projected = projectPullRequestEntries(pullRequestOutcome.value);
-    if (projected === null)
-      return { ok: false, reason: "invalid-observation-identifier" };
-    pullRequestEntries = projected;
+    const projected = projectWindow(() =>
+      projectPullRequestEntries(pullRequestOutcome.value),
+    );
+    if (aborted()) return { ok: false, reason: "cancelled" };
+    if ("reason" in projected) return { ok: false, reason: projected.reason };
+    pullRequestEntries = projected.value;
   }
 
   const selectedWorkItemComments = selectNewEntries(

@@ -55,11 +55,58 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
 const isCallable = (value: unknown): value is (...args: never[]) => unknown =>
   typeof value === "function";
 
-const isAbortSignal = (value: unknown): value is AbortSignal =>
-  typeof value === "object" &&
-  value !== null &&
-  typeof (value as AbortSignal).aborted === "boolean" &&
-  isCallable((value as AbortSignal).addEventListener);
+class InputFieldError extends Error {
+  constructor(
+    readonly field: string,
+    reason = "must be readable",
+  ) {
+    super(reason);
+  }
+}
+
+const readInputField = <T>(field: string, read: () => T): T => {
+  try {
+    return read();
+  } catch {
+    throw new InputFieldError(field);
+  }
+};
+
+const snapshotSignal = (
+  signal: AbortSignal | undefined,
+): AbortSignal | undefined => {
+  if (signal === undefined) return undefined;
+  if (typeof signal !== "object" || signal === null)
+    throw new InputFieldError("signal", "must be an AbortSignal");
+  const aborted = readInputField("signal", () => signal.aborted);
+  const add = readInputField("signal", () => signal.addEventListener);
+  const remove = readInputField("signal", () => signal.removeEventListener);
+  if (typeof aborted !== "boolean" || !isCallable(add) || !isCallable(remove))
+    throw new InputFieldError("signal", "must be an AbortSignal");
+  const addBound = add.bind(signal);
+  const removeBound = remove.bind(signal);
+  let unreadable = false;
+  return new Proxy(new AbortController().signal, {
+    get(_target, key) {
+      if (key === "addEventListener") return addBound;
+      if (key === "removeEventListener") return removeBound;
+      if (key === "aborted") {
+        // Cancellation stays live. Losing the required state after preflight
+        // fails closed as cancellation, without leaking an accessor exception.
+        try {
+          const current = signal.aborted;
+          if (typeof current !== "boolean") unreadable = true;
+          return unreadable || current;
+        } catch {
+          unreadable = true;
+          return true;
+        }
+      }
+      const value: unknown = Reflect.get(signal, key, signal);
+      return typeof value === "function" ? value.bind(signal) : value;
+    },
+  });
+};
 
 const boundedText = (
   value: unknown,
@@ -111,17 +158,29 @@ const exactSet = (
   | { readonly ok: true; readonly value: readonly string[] }
   | { readonly ok: false; readonly error: DevSquadAdoWatchError } => {
   if (!Array.isArray(value)) return invalid(field, "must be an array");
-  if (value.length === 0) return invalid(field, "must not be empty");
   const seen = new Set<string>();
   const result: string[] = [];
-  for (let index = 0; index < value.length; index++) {
-    const entryField = `${field}[${String(index)}]`;
-    const entry = boundedText(value[index], entryField, 256);
-    if (!entry.ok) return entry;
-    if (seen.has(entry.value))
-      return invalid(entryField, "duplicates an earlier entry");
-    seen.add(entry.value);
-    result.push(entry.value);
+  try {
+    const length = value.length;
+    if (!Number.isSafeInteger(length) || length < 0)
+      return invalid(field, "must have a valid array length");
+    if (length === 0) return invalid(field, "must not be empty");
+    for (let index = 0; index < length; index++) {
+      if (value.length !== length)
+        return invalid(field, "must not change during validation");
+      const entryField = `${field}[${String(index)}]`;
+      const raw: unknown = value[index];
+      if (value.length !== length)
+        return invalid(field, "must not change during validation");
+      const entry = boundedText(raw, entryField, 256);
+      if (!entry.ok) return entry;
+      if (seen.has(entry.value))
+        return invalid(entryField, "duplicates an earlier entry");
+      seen.add(entry.value);
+      result.push(entry.value);
+    }
+  } catch {
+    return invalid(field, "must be readable");
   }
   return { ok: true, value: result };
 };
@@ -140,16 +199,32 @@ export const canonicalizeDevSquadAdoWatchCandidates = (
   | { readonly ok: false; readonly error: DevSquadAdoWatchError } => {
   if (!Array.isArray(candidates))
     return invalid("candidates", "must be an array");
-  if (candidates.length === 0)
-    return invalid("candidates", "must not be empty");
-  if (candidates.length > MAX_CANDIDATES)
-    return invalid("candidates", `must not exceed ${String(MAX_CANDIDATES)}`);
+  let entries: unknown[];
+  try {
+    const length = candidates.length;
+    if (!Number.isSafeInteger(length) || length < 0)
+      return invalid("candidates", "must have a valid array length");
+    if (length === 0) return invalid("candidates", "must not be empty");
+    if (length > MAX_CANDIDATES)
+      return invalid("candidates", `must not exceed ${String(MAX_CANDIDATES)}`);
+    entries = [];
+    for (let index = 0; index < length; index++) {
+      if (candidates.length !== length || entries.length >= MAX_CANDIDATES)
+        return invalid("candidates", "must not change during validation");
+      const entry: unknown = candidates[index];
+      if (candidates.length !== length)
+        return invalid("candidates", "must not change during validation");
+      entries.push(entry);
+    }
+  } catch {
+    return invalid("candidates", "must be readable");
+  }
   const seen = new Set<string>();
   const canonical: string[] = [];
-  for (let index = 0; index < candidates.length; index++) {
+  for (let index = 0; index < entries.length; index++) {
     const field = `candidates[${String(index)}]`;
     const parsed = canonicalizeWorkItemId(
-      candidates[index] as DevSquadAdoWorkItemId,
+      entries[index] as DevSquadAdoWorkItemId,
     );
     if (!parsed.ok) {
       const error = parsed.error;
@@ -177,7 +252,7 @@ export const canonicalizeDevSquadAdoWatchCandidates = (
  * clock is never invoked here so a scripted test clock stays aligned with the
  * "one reading per poll" contract.
  */
-export const validateDevSquadAdoWorkflowWatchPassOptions = (
+const validateOptions = (
   options: RunDevSquadAdoWorkflowWatchPassOptions,
 ): DevSquadAdoWatchValidationResult => {
   if (!isObject(options)) return invalid("options", "must be an object");
@@ -192,7 +267,12 @@ export const validateDevSquadAdoWorkflowWatchPassOptions = (
     "releaseClaim",
     "checkpoint",
   ] as const) {
-    const candidate = (ledger as Record<string, unknown>)[method];
+    let candidate: unknown;
+    try {
+      candidate = (ledger as Record<string, unknown>)[method];
+    } catch {
+      return invalid(`ledger.${method}`, "must be readable");
+    }
     if (candidate === undefined)
       return invalid(`ledger.${method}`, "is missing");
     if (!isCallable(candidate))
@@ -202,14 +282,24 @@ export const validateDevSquadAdoWorkflowWatchPassOptions = (
   const seam: unknown = options.seam;
   if (!isObject(seam) && typeof seam !== "function")
     return invalid("seam", "must be an object");
-  const observeWorkItemComments = (seam as Record<string, unknown>)
-    .observeWorkItemComments;
+  let observeWorkItemComments: unknown;
+  try {
+    observeWorkItemComments = (seam as Record<string, unknown>)
+      .observeWorkItemComments;
+  } catch {
+    return invalid("seam.observeWorkItemComments", "must be readable");
+  }
   if (observeWorkItemComments === undefined)
     return seamContract("observeWorkItemComments", "missing");
   if (!isCallable(observeWorkItemComments))
     return seamContract("observeWorkItemComments", "not-a-function");
-  const observePullRequestActivity = (seam as Record<string, unknown>)
-    .observePullRequestActivity;
+  let observePullRequestActivity: unknown;
+  try {
+    observePullRequestActivity = (seam as Record<string, unknown>)
+      .observePullRequestActivity;
+  } catch {
+    return invalid("seam.observePullRequestActivity", "must be readable");
+  }
   if (
     observePullRequestActivity !== undefined &&
     !isCallable(observePullRequestActivity)
@@ -338,8 +428,17 @@ export const validateDevSquadAdoWorkflowWatchPassOptions = (
 
   if (!isCallable(options.clock)) return invalid("clock", "must be a function");
   if (!isCallable(options.delay)) return invalid("delay", "must be a function");
-  if (options.signal !== undefined && !isAbortSignal(options.signal))
-    return invalid("signal", "must be an AbortSignal");
+  if (options.signal !== undefined) {
+    const signal = options.signal;
+    if (
+      typeof signal !== "object" ||
+      signal === null ||
+      typeof signal.aborted !== "boolean" ||
+      !isCallable(signal.addEventListener) ||
+      !isCallable(signal.removeEventListener)
+    )
+      return invalid("signal", "must be an AbortSignal");
+  }
 
   const value: DevSquadAdoWatchValidatedPass = {
     passId: passId.value,
@@ -357,6 +456,109 @@ export const validateDevSquadAdoWorkflowWatchPassOptions = (
     maxIntervalMs,
   };
   return { ok: true, value };
+};
+
+/** Snapshot only required configuration fields before validation and use. */
+export const prepareDevSquadAdoWorkflowWatchPassOptions = (
+  input: RunDevSquadAdoWorkflowWatchPassOptions,
+):
+  | {
+      readonly ok: true;
+      readonly value: DevSquadAdoWatchValidatedPass;
+      readonly options: RunDevSquadAdoWorkflowWatchPassOptions;
+    }
+  | { readonly ok: false; readonly error: DevSquadAdoWatchError } => {
+  if (!isObject(input)) return invalid("options", "must be an object");
+  // This catch surrounds input inspection only, never execution of the pass.
+  let options: RunDevSquadAdoWorkflowWatchPassOptions;
+  try {
+    const intake = readInputField("intakeRules", () => input.intakeRules);
+    const budgets = readInputField("budgets", () => input.budgets);
+    const lease = readInputField("lease", () => input.lease);
+    const backoff = readInputField("backoff", () => input.backoff);
+    options = {
+      ledger: readInputField("ledger", () => input.ledger),
+      seam: readInputField("seam", () => input.seam),
+      passId: readInputField("passId", () => input.passId),
+      ownerId: readInputField("ownerId", () => input.ownerId),
+      candidates: readInputField("candidates", () => input.candidates),
+      clock: readInputField("clock", () => input.clock),
+      delay: readInputField("delay", () => input.delay),
+      signal: snapshotSignal(readInputField("signal", () => input.signal)),
+      intakeRules: isObject(intake)
+        ? {
+            phases: readInputField("intakeRules.phases", () => intake.phases),
+            statuses: readInputField(
+              "intakeRules.statuses",
+              () => intake.statuses,
+            ),
+          }
+        : intake,
+      budgets: isObject(budgets)
+        ? {
+            maxPolls: readInputField(
+              "budgets.maxPolls",
+              () => budgets.maxPolls,
+            ),
+            maxPollStartElapsedMs: readInputField(
+              "budgets.maxPollStartElapsedMs",
+              () => budgets.maxPollStartElapsedMs,
+            ),
+            observationTimeoutMs: readInputField(
+              "budgets.observationTimeoutMs",
+              () => budgets.observationTimeoutMs,
+            ),
+          }
+        : budgets,
+      lease:
+        typeof lease === "object" && lease !== null && !Array.isArray(lease)
+          ? {
+              leaseDurationMs: readInputField(
+                "lease.leaseDurationMs",
+                () => lease.leaseDurationMs,
+              ),
+              renewalThresholdMs: readInputField(
+                "lease.renewalThresholdMs",
+                () => lease.renewalThresholdMs,
+              ),
+            }
+          : lease,
+      backoff:
+        typeof backoff === "object" &&
+        backoff !== null &&
+        !Array.isArray(backoff)
+          ? {
+              baseIntervalMs: readInputField(
+                "backoff.baseIntervalMs",
+                () => backoff.baseIntervalMs,
+              ),
+              multiplier: readInputField(
+                "backoff.multiplier",
+                () => backoff.multiplier,
+              ),
+              maxIntervalMs: readInputField(
+                "backoff.maxIntervalMs",
+                () => backoff.maxIntervalMs,
+              ),
+              jitter: readInputField("backoff.jitter", () => backoff.jitter),
+            }
+          : backoff,
+    };
+  } catch (error) {
+    if (error instanceof InputFieldError)
+      return invalid(error.field, error.message);
+    throw error;
+  }
+  const result = validateOptions(options);
+  return result.ok ? { ...result, options } : result;
+};
+
+/** Validate required configuration without invoking injected dependencies. */
+export const validateDevSquadAdoWorkflowWatchPassOptions = (
+  options: RunDevSquadAdoWorkflowWatchPassOptions,
+): DevSquadAdoWatchValidationResult => {
+  const result = prepareDevSquadAdoWorkflowWatchPassOptions(options);
+  return result.ok ? { ok: true, value: result.value } : result;
 };
 
 /**

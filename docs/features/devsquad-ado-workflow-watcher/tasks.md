@@ -1,11 +1,15 @@
 # DevSquad/ADO Workflow Watcher Tasks
 
+**Historical third-review follow-up (2026-09-10; superseded by final turn 4):** Critical RC14-008 independently FAILED. Its history-acknowledgement remediation and 19 new bounded public-pass regressions were implemented; W038 was then unchecked and FAILED pending independent re-review. The failure and remediation history remain in `review-log.md`.
+
 Decomposition of [spec.md](spec.md) and [plan.md](plan.md) under [ADR-0026](../../adr/0026-devsquad-ado-workflow-watcher.md), preserving ADR-0021, ADR-0022, ADR-0024, and ADR-0025.
+
+**Current status (2026-09-10): W038 COMPLETED TECHNICAL ONLY; final fresh independent turn 4 PASSED, no blockers (0 Critical, 0 Major, 1 nonblocking Minor TB001).** W029-W037 prerequisites are complete. All five guardians completed, and the separate security specialist found no vulnerabilities. RC14-008 is independently closed; all earlier findings are closed/preserved in the final closure matrix in `review-log.md`. TB001's older-test internal guard/object-identity coupling is acknowledged, not a required fix. Earlier failed/pending states and superseded PASS verdicts remain historical. Technical conformance does not grant governance acceptance or merge readiness: ADR-0025/0026 remain Proposed; parent publication is separate, #20 must merge before #21, and slice 15 remains blocked until the creator explicitly decides.
 
 ## Scope and Conventions
 
 - **Ordering is the plan's vertical sequence.** Phases 2–9 map one-to-one onto the plan's eight implementation slices. Do not reorder; each phase depends on the durable behavior of the previous one.
-- **No separate test tasks.** Every task is TDD RED→GREEN: the named tests are written first and must pass as part of that task's acceptance.
+- **Tests travel with implementation.** Every implementation/remediation task is TDD RED→GREEN; W029 is approved artifact execution and W038 is the final independent verification gate, not substitutes for behavioral tests.
 - **Tracer bullet.** W008 (Phase 5) is the first end-to-end vertical: one candidate travels read → observe → claim → checkpoint → intake signal → release. Phases 2–4 exist only because that vertical cannot compile or assert without contracts, identity derivation, and observation projection.
 - **`[P]`** marks tasks that may run in parallel with their siblings inside the same phase.
 - **Board scope.** This is a local stacked roadmap slice. No GitHub or Azure DevOps work items are created for these tasks.
@@ -46,20 +50,20 @@ Blocking prerequisite for every later phase. Nothing here is exported from the p
   - Declare `DevSquadAdoWatchPassOutcome`, `DevSquadAdoWatchError`, `DevSquadAdoWatcherSeamMethodName`, the seam interfaces (`DevSquadAdoWatcherObservationSeam` and its four input/observation/entry types), pass options (`RunDevSquadAdoWorkflowWatchPassOptions`, intake rules, budgets, lease, backoff), and the result envelope (`DevSquadAdoWatchCandidateOutcomeKind`, `DevSquadAdoWatchReasonCode`, `DevSquadAdoWatchStopReason`, claim metadata, candidate outcome, intake signal, counts, pass result).
   - Declare the `runDevSquadAdoWorkflowWatchPass` signature returning `Promise<DevSquadAdoWatchPassOutcome>`; the implementation lands in later phases.
   - Reuse `DevSquadAdoWorkItemId` and `DevSquadAdoPullRequestCursor` from the ledger module; introduce no duplicate identifier or cursor type.
-  - Acceptance: type-level assertions confirm the reason-code union is exactly the plan's 18 members, the stop-reason union is exactly four members, and no declaration references `effect`.
+  - Acceptance target after recovery: the reason-code union is exactly the plan's 27 members (25 previously, plus `invalid-observation-window` and `claim-cleanup-unconfirmed`), the stop-reason union is exactly four members, every candidate has cleanup, cleanup counts are exported, and no declaration references `effect`. Pending W034/W037; the historical checkmark does not prove the new target.
   - Traceability: FR-001, FR-002, FR-005, FR-006; INV-009.
   - Verify: `npm run typecheck`
 
 - [x] **W003** Implement option and seam structural validation in `src/DevSquadAdoWorkflowWatcherValidation.ts`
   - Export `validateDevSquadAdoWorkflowWatchPassOptions` returning a discriminated validation result; validation runs to completion before any seam call or ledger operation and reports the first failure with a stable field path.
-  - Enforce every row of the plan's validation table: ledger method callability (`readRecord`, `acquireClaim`, `renewClaim`, `releaseClaim`, `checkpoint`); seam presence/callability; `passId` 1–120 UTF-8 bytes NFC control-character-free; `ownerId` 1–256 bytes; candidates nonempty, canonicalized, deduplicated, ≤ 1,000; intake phases/statuses nonempty distinct nonblank ≤ 256 bytes; `maxPolls` positive safe integer ≤ 10,000; positive `maxPollStartElapsedMs` and `observationTimeoutMs`; `leaseDurationMs` ≤ 86,400,000 default 60,000; `renewalThresholdMs` strictly below the lease, default `max(1, trunc(lease / 3))`; backoff defaults 1,000 / 2 / 30,000 with `maxIntervalMs >= baseIntervalMs`; callable `jitter`, `clock`, `delay`; `signal` an `AbortSignal` when present.
+  - Enforce every row of the plan's validation table: ledger/seam callability; pass/owner identifier bounds; candidates 1–1,000 inclusive with every duplicate canonical identity rejected; exact intake sets; safe integer `maxPolls` 1–10,000; positive safe duration budgets; lease ≤ 86,400,000 default 60,000; positive renewal threshold strictly below lease (default one-third); valid backoff defaults 1,000 / 2 / 30,000; callable jitter/clock/delay. Signal requires boolean `aborted` and callable add/remove event listeners before any injected side effects. Full regression matrix is pending W031/W036.
   - Emit `kind: "seam-contract"` with the offending method name and `"missing" | "not-a-function"`; emit `kind: "validation"` with `field` and `reason` for everything else.
   - Acceptance (RED→GREEN in `src/DevSquadAdoWorkflowWatcher.test.ts`): TEST-001 covering CC-015 (blank owner, duplicate candidates, `maxPolls = 0`, malformed intake rules → stable field paths, zero side effects) and TEST-002 covering CC-016 (seam without `observeWorkItemComments` → `seam-contract` error naming the method, zero ledger mutations).
   - Traceability: FR-003, FR-004, FR-009; CC-015, CC-016.
   - Verify: `npm test -- DevSquadAdoWorkflowWatcher`
 
 - [x] **W004** Implement canonical candidate ordering in `src/DevSquadAdoWorkflowWatcherValidation.ts`
-  - Canonicalize each candidate through the ledger's work-item rules, deduplicate on the canonical identifier, and sort by UTF-8 byte comparison; ordering is total, locale-independent, and independent of input order.
+  - Canonicalize candidates through ledger rules, reject every duplicate canonical identifier, and sort valid candidates by UTF-8 byte comparison. Never sort observation IDs; their opaque order is supplied by the seam.
   - Acceptance: ordering unit assertions over shuffled, mixed `string | number`, and multi-byte identifier inputs produce one identical canonical sequence.
   - Traceability: FR-004, FR-016; INV-003. Feeds TEST-006.
   - Verify: `npm test -- DevSquadAdoWorkflowWatcher`
@@ -88,10 +92,11 @@ Blocking prerequisite for every later phase. Nothing here is exported from the p
 
 - [x] **W007** Implement seam invocation, projection, and new-event selection in `src/DevSquadAdoWorkflowWatcherObservation.ts`
   - Invoke `observeWorkItemComments` with `sinceCommentId` from the record; invoke `observePullRequestActivity` only when `record.pullRequest.id !== null`, and report `pull-request-observation-unavailable` when the optional method is absent.
-  - Race each observation against `delay(observationTimeoutMs, signal)` → `observation-timeout`; convert seam rejections into `observation-failed` retaining no message, stack, or URL.
-  - Project responses to identifiers only (`commentIds`, `{ threadId, commentId }`); discard every other property at projection. Each identifier must be a nonblank string ≤ 1,024 UTF-8 bytes without control characters, else `invalid-observation-identifier`.
-  - Apply the anchor rule per kind: empty entries → no new events; null anchor → all entries; anchor equals last entry → no new events; anchor at index `i` → `entries[i+1..]`; anchor absent → all entries. Next cursor is the last new entry. Equality is exact string comparison (work-item comments) or exact `threadId`/`commentId` pair comparison (pull requests). No identifier is parsed, ordered, or arithmetically compared.
-  - A pull-request entry with a missing, null, or blank `commentId` is never persisted; when it is the last entry the last persistable entry becomes the next cursor and `pull-request-thread` is recorded in `skippedCursorKinds`.
+  - Fresh parent abort gate before each seam, including WI success that aborts before PR. Each observation gets a dedicated child AbortController passed to the seam and linked to the parent; timeout/abort cancels seam/timer, every terminal path removes listeners and quarantines late settlements. Liveness assumes valid settling delay; noncooperating dependencies cannot be forcibly stopped.
+  - Project identifiers only. Each ID must be nonblank, control-character-free and ≤ 1,024 UTF-8 bytes. Before iteration/copy enforce ≤ 1,000 entries per window; before retaining each entry validate identity uniqueness and accumulate ≤ 1,048,576 aggregate identifier bytes (PR sums thread and nonnull comment). Malformed/duplicate/oversized windows fail the entire candidate as `invalid-observation-window`; individual invalid identifiers remain `invalid-observation-identifier`. No silent deduplication/truncation or oversized full projection.
+  - Anchor rule: empty → no new events; null anchor → all; anchor at index `i` → suffix after `i`; persisted anchor absent in nonempty window → `failed` / `observation-anchor-missing`, no cursor advance. WI identity is exact comment ID; PR identity exact thread/comment pair after only null/undefined normalization. Opaque identifiers are never sorted or numerically compared.
+  - Missing/undefined/null PR comment is incomplete; blank comment is invalid. Mixed new entries advance to the newest COMPLETE pair, marking PR skipped only if none is persistable. `cursorChanges` and `skippedCursorKinds` are disjoint.
+  - Recovery verification of this corrected contract is pending W031–W033; this historical task does not claim those tests pass.
   - Acceptance (RED→GREEN): TEST-003 in `src/DevSquadAdoWorkflowWatcher.test.ts` (CC-003 — only observation methods invoked, at most once per candidate per poll per kind), TEST-018 in `src/DevSquadAdoWorkflowWatcher.bounds.test.ts` (CC-013 — non-settling seam with `observationTimeoutMs = 5000` yields `failed`/`observation-timeout` and the pass continues), TEST-022 in `src/DevSquadAdoWorkflowWatcher.test.ts` (CC-019 — incomplete thread/comment pair not persisted, stable reason).
   - Traceability: FR-009–FR-015, FR-020–FR-024, FR-052; INV-002, INV-010.
   - Verify: `npm test -- DevSquadAdoWorkflowWatcher`
@@ -104,8 +109,8 @@ Blocking prerequisite for every later phase. Nothing here is exported from the p
   - Implement steps 2, 4–7, 9, 11–13 of the plan's candidate step algorithm for one candidate in one poll: `readRecord` → observe → project/select → acquire claim (fresh 32-byte `node:crypto` `randomBytes` base64url token, derived `claim` operation ID, configured lease) → `checkpoint` with `expected = { revision, phase, status }` and a patch carrying only advanced cursors → intake decision → release with the derived `release` operation ID.
   - `record-not-found` → `skipped`/`record-not-found`; the watcher never initializes a record.
   - Intake decision is exact-match on both sets: phase ∈ `intakeRules.phases` **and** status ∈ `intakeRules.statuses` → append one signal citing `sourceRevision` and resolve `acted`; otherwise resolve `intake-suppressed`/`intake-rules-unmatched` with the cursor left advanced.
-  - The signal is appended only after the checkpoint response is accepted; at most one signal per candidate per pass. Release failure never changes the reported outcome.
-  - Acceptance (RED→GREEN in `src/DevSquadAdoWorkflowWatcher.test.ts`): TEST-004/CC-001 (record `137` rev 4 cursor `480`, observations `[480, 481]` → one signal citing rev 4, cursor `481` durable at rev 5 before the pass reports); TEST-005/CC-002 (rerun unchanged → `no-change`, zero signals, zero checkpoints, revision still 5); TEST-014/CC-007 and CC-008 (`awaiting-approval` with rules `[implement, review]` → cursor advanced and `intake-suppressed`; `custom-security-gate` listed in rules → signal emitted, no allowlist error); TEST-015/CC-009 (candidate `999` uninitialized → `skipped`/`record-not-found`, no record created on disk).
+  - Append at most one signal per candidate only after a fully validated checkpoint acknowledgement. Cleanup failure promotes nonfailed outcomes per FR-060 but preserves acknowledged revision/cursors and returned signal; no rollback or retraction.
+  - Acceptance target (W034/W035 verify recovery): TEST-004/CC-001 starts rev 4 cursor `480`, observes `[480, 481]`, acquires rev 5, checkpoints cursor `481` at rev 6, releases rev 7; signal sourceRevision 4, outcome revision 6, cleanup acceptedRevision 7. TEST-005/CC-002 rerun leaves then-current rev 7 unchanged with no acquire/checkpoint/release and cleanup not-required. Retain TEST-014 exact phase/status admission/suppression and TEST-015 missing-record coverage.
   - Traceability: FR-018, FR-019, FR-025–FR-028, FR-032–FR-036, FR-040–FR-046; INV-006, INV-007, INV-009.
   - Verify: `npm test -- DevSquadAdoWorkflowWatcher`
 
@@ -117,15 +122,15 @@ Blocking prerequisite for every later phase. Nothing here is exported from the p
   - Implement the plan's loop verbatim: single `startedAt` reading as the pass-start basis; one clock reading per poll driving every eligibility, lease, and timestamp decision in that poll; pending/resolved candidate state; sequential evaluation in canonical order with no concurrency.
   - Stop at the first of `candidates-resolved`, `poll-budget-exhausted`, `poll-start-budget-exhausted`, `cancelled`; the elapsed check applies from the second poll onward and gates poll starts only. Between polls, request `backoffFor(polls)` from the injected delay source.
   - Eligibility step 8: no new events in any kind leaves the candidate **pending** with `no-new-observations` (or `incomplete-pull-request-cursor` when the only observed activity was unpersistable), re-examined next poll.
-  - Finalizer: release every still-held claim; report still-pending candidates as `failed`/`checkpoint-indeterminate` when holding a claim, otherwise `no-change` with the last pending reason. Report pass-level counts (examined, eligible, acted, noChange, suppressed, skipped, failed), poll count, `startedAt`/`completedAt`, and the stop reason.
+  - Finalizer: report unresolved claimed checkpoints as `failed`/`checkpoint-indeterminate`, then run exactly-once cleanup for validated authority and attach cleanup to every candidate. `acted` counts returned signals, `suppressed` acknowledged suppressed cursor advances, `failed` final failures (may overlap); cleanupReleased/Failed/Indeterminate/NotRequired partition all candidates. Preserve timestamps, poll count and stop reason.
   - Acceptance (RED→GREEN): TEST-006/CC-010 in `src/DevSquadAdoWorkflowWatcher.test.ts` (three shuffled input orders → identical outcomes, reason codes, and recorded seam call order); TEST-007 (clock fake asserts exactly one reading per poll drives eligibility, lease, and timestamps); TEST-016/CC-011 in `src/DevSquadAdoWorkflowWatcher.bounds.test.ts` (`maxPolls = 3` with no eligible candidate → exactly 3 polls, exactly 2 recorded delays, `poll-budget-exhausted`, plus a duration-budget case).
   - Traceability: FR-006, FR-016, FR-017, FR-047–FR-050; INV-003, INV-011.
   - Verify: `npm test -- DevSquadAdoWorkflowWatcher`
 
 - [x] **W010** Implement cooperative cancellation gates in `src/DevSquadAdoWorkflowWatcherPass.ts`
-  - Observe cancellation at exactly three classes of point: before each seam call (propagating `signal` to the seam), before each ledger mutation (acquire, renew, checkpoint, release — except a release already in flight, which completes), and between polls both before the delay and through the delay's own `signal`.
-  - On abort, resolve a claim-holding candidate as `failed`/`cancelled`, release every held claim, report every already-acknowledged outcome, and return `ok: true` with `stopReason: "cancelled"`.
-  - Acceptance (RED→GREEN in `src/DevSquadAdoWorkflowWatcher.bounds.test.ts`): TEST-017/CC-012 — abort before a seam call, before a mutation, and between polls each stop promptly with released claims and acknowledged outcomes preserved.
+  - Fresh cancellation gates before each seam and non-cleanup mutation, plus between polls. Child observation signals receive parent abort; mandatory release for validated authority still runs once after abort.
+  - On abort preserve acknowledged outcomes/signals, attach truthful cleanup and final failure promotion, and return `ok: true` / `stopReason: "cancelled"`. Never claim abort forcibly terminates a noncooperating seam, ledger, or delay.
+  - Acceptance (RED→GREEN in `src/DevSquadAdoWorkflowWatcher.bounds.test.ts`): TEST-017/CC-012 — cancellation under cooperating dependencies preserves acknowledged outcomes and attempts cleanup once for validated authority; a released result requires a validated release acknowledgement. Expanded failures are pending W034.
   - Traceability: FR-051, FR-053; INV-012.
   - Verify: `npm test -- DevSquadAdoWorkflowWatcher`
 
@@ -150,7 +155,7 @@ Blocking prerequisite for every later phase. Nothing here is exported from the p
 - [x] **W013** Implement the renewal guard, indeterminate-checkpoint hold, and release finalizer in `src/DevSquadAdoWorkflowWatcherPass.ts`
   - Step 10: before any mutation under a held claim, renew when `now + renewalThresholdMs >= Date.parse(expiresAt)`, using the next one-based `renew` ordinal and preserving the fencing value.
   - Step 11 ambiguity: `contention`, or `storage` with `outcome: "indeterminate"`, leaves the candidate **pending while holding its claim** and retries on a later poll with the **same** checkpoint operation identifier. If the pass budget ends first, report `failed`/`checkpoint-indeterminate` and release the claim.
-  - Release on every exit path: success, candidate failure, cancellation, and budget exhaustion.
+  - Attempt release exactly once per previously validated authority on success, candidate failure, cancellation and budget exhaustion; retain evidence until response validation and report FR-060 cleanup. Zero release without validated authority, no retry/reacquire/guess. Verification of ambiguous/rejected/malformed cleanup is pending W034.
   - Acceptance (RED→GREEN in `src/DevSquadAdoWorkflowWatcher.concurrency.test.ts`): TEST-010/CC-014 (indeterminate checkpoint forces a multi-poll hold; renewal occurs before inclusive expiry with unchanged fencing and the checkpoint operation ID reused verbatim); TEST-011 (claims released on success, on candidate failure, and on cancellation, plus a negative assertion that no force-release path exists).
   - Traceability: FR-027–FR-029, FR-035; INV-012.
   - Verify: `npm test -- DevSquadAdoWorkflowWatcher`
@@ -168,7 +173,7 @@ Blocking prerequisite for every later phase. Nothing here is exported from the p
   - Verify: `npm test -- DevSquadAdoWorkflowWatcher`
 
 - [x] **W015** Add restart-safety assertions for interrupted passes in `src/DevSquadAdoWorkflowWatcher.recovery.test.ts`
-  - Interrupt a pass after a checkpoint acknowledgement and after an unacknowledged mutation attempt; reopen the ledger and assert only acknowledged outcomes are durable, never partial ones, and that a retried pass with the same `passId` replays its checkpoint rather than duplicating it.
+  - Interrupt after checkpoint acknowledgement and after an unacknowledged mutation attempt; reopening must preserve acknowledged outcomes and may also reveal a complete durable-but-unacknowledged checkpoint. Never expose a partial aggregate. An exact retry replays without duplication; host reconciliation handles any lost intake signal.
   - Acceptance: TEST-023 green; durable revision and cursor after replay equal the single-pass result.
   - Traceability: FR-057; INV-007, INV-008. TEST-023 is the sole owner of FR-057 and shares INV-007 with TEST-004 and INV-008 with TEST-012; the FR-054–FR-058 coverage row names it for FR-057 only.
   - Verify: `npm test -- DevSquadAdoWorkflowWatcher`
@@ -198,7 +203,7 @@ Blocking prerequisite for every later phase. Nothing here is exported from the p
 
 - [x] **W019** [P] Document the watch pass in `README.md`
   - Cover: the bounded single-pass model; the two-method observation seam and its ordering/`since` contract; required caller-supplied `passId` and why replay parity depends on it; exact-match intake rules with no wildcard; budgets, lease defaults (60,000 ms lease, one-third renewal threshold), and deterministic backoff; the returned-signal delivery model; and the DevSquad lifecycle boundary (host owns candidates, record initialization, phase meaning, and every tracker write).
-  - State explicitly that exactly-once applies to ledger-mediated intake delivery only, never to external side effects.
+  - State at-most-once batched intake, never exactly-once downstream execution. Durable-but-unacknowledged checkpoints or host crashes may lose signals; the host reconciles durable cursors against intake processing. Document mandatory cleanup and cooperative liveness assumptions.
   - Acceptance: `npm run format:check` passes; no code sample imports `effect` or a transport client.
 
 - [x] **W020** [P] Add one minor changeset at `.changeset/devsquad-ado-workflow-watcher.md`
@@ -250,13 +255,13 @@ Blockers raised by the three-perspective deep review of this slice. Each is a co
   - Traceability: FR-036a; INV-015.
 
 - [x] **W025** Guard every injected ledger call in `src/DevSquadAdoWorkflowWatcherPass.ts`
-  - Route `readRecord`, `acquireClaim`, `renewClaim`, `checkpoint`, and `releaseClaim` through one classifier that converts a synchronous throw, a rejection, or a non-typed result into `failed` / `ledger-unavailable` with `ledgerErrorKind: "ledger-fault"`. Typed ledger errors keep their existing mapped paths; there is no blanket handler.
+  - Route all five ledger methods through guarded method-specific runtime validation of complete relevant successes and known error variants; unknown/malformed results become `ledger-fault`, never arbitrary category text. Non-cleanup faults are `ledger-unavailable`; release faults follow FR-060 cleanup. The prior shallow classifier is insufficient; W030 owns the pending correction.
   - A fault while a claim is held still resolves the candidate, so the release path still runs.
   - Acceptance (RED→GREEN in `src/DevSquadAdoWorkflowWatcher.recovery.test.ts`): TEST-019/CC-024 across all four mutating methods and both fault shapes; TEST-011 for checkpoint-rejection-after-acquire (claim released, cursor unchanged) and for release-rejection (acknowledged outcome preserved). No raw message or stack appears in the serialized result.
   - Traceability: FR-059; INV-016.
 
 - [x] **W026** Make the duration contract honest across code and docs
-  - Rename `budgets.maxPassDurationMs` → `budgets.maxPollStartElapsedMs` and stop reason `duration-budget-exhausted` → `poll-start-budget-exhausted`; document that the bound gates poll starts, that in-flight work always completes, and that termination is guaranteed by `maxPolls`, `observationTimeoutMs`, and the caller's abort signal.
+  - Rename `budgets.maxPassDurationMs` → `budgets.maxPollStartElapsedMs` and stop reason `duration-budget-exhausted` → `poll-start-budget-exhausted`. The bound gates scheduling, not duration; ledger operations/delays must settle and observation timeout assumes valid delay. Abort requests cooperation, not an unconditional runtime or physical-request ceiling.
   - Rationale: the value was only ever checked between polls, so advertising it as a pass duration was a promise the implementation never made. A strict bound would require abandoning in-flight ledger mutations, which trades a soft guarantee for stranded claims and indeterminate writes.
   - Amend INV-011, SC-005, FR-047, FR-048, the ADR priority list and termination section, and the README.
   - Traceability: FR-047, FR-048; INV-011; SC-005.
@@ -291,4 +296,101 @@ Blockers raised by the three-perspective deep review of this slice. Each is a co
 | INV-001–INV-016   | W007–W017, W023–W026               | TEST-003–TEST-024                      |
 | CC-001–CC-024     | W003, W007–W017, W023–W026         | TEST-001–TEST-025                      |
 
-Every conformance case CC-001–CC-024 and every required test TEST-001–TEST-025 is claimed by exactly one owning task; no task is complete until its named tests pass.
+The preceding table records baseline traceability, not fresh proof. The recovery mapping below supplies missing conformance and explicit owners; tests must assert behavior, not merely enumerate reason codes.
+
+---
+
+## Phase 12: Approved PR21 Recovery
+
+Current status (2026-09-10): W029-W037 are complete and W038 is completed TECHNICAL only by the final fresh independent turn-4 PASS, with no blockers and nonblocking TB001 acknowledged. The first failed review (2 Critical, 3 Major, 2 documentation findings), second failed review and third RC14-008 failure remain visibly historical in `review-log.md`; final closure does not erase those results or authorize publication/ADR acceptance.
+
+Execute in order. No production or test edits are part of W029. DevSquad retains lifecycle/specification/planning ownership; Sandcastle remains the offline execution/coordination boundary. No factory, live client, discovery/filtering orchestration, outbox, or ADR-0025 change.
+
+- [x] **W029** Apply approved specification/planning recovery amendments to existing artifacts
+  - Amend spec/plan/tasks/review-log and Proposed ADR-0026 only; replace contradictory W007, post-cursor windows, revision examples, release-success promises, unconditional termination and reason-union count.
+  - Mark every old approval superseded, preserving historical evidence. Add pending conformance and explicit traceability without claiming newly passing tests.
+  - Acceptance: inspect the complete artifact diff; no production/test/ADR-0025 changes, no new planning file, no commits/pushes; `git diff --check`.
+  - Traceability: R14-006/007 plus approved lifecycle/traceability corrections.
+
+- [x] **W030** Validate every ledger response at runtime
+  - RC14-001/002/003 follow-up: independent pre-invocation snapshots and adapter copies, no shared pending patch/authority, reject in-place request mutation, enforce checkpoint accepted = expected + 1 even on replay and outcome/record consistency when latest = accepted. Preserve valid older replay, wrap only watcher-used methods, and sanitize unreadable method accessors.
+  - Implement method-specific read/acquire/renew/checkpoint/release validation of full latest public record and original success metadata, request work-item/owner/token/fencing/outcome/checkpoint consistency, and every known error variant's required fields.
+  - RED→GREEN TEST-026/CC-024/029: `{ok:true,value:{}}`, malformed/missing nested payloads, wrong identity/owner/token/fence/outcome/revision, arbitrary error kind and malformed known errors; throws/rejections; exact replay acceptedRevision below latest record; durable mutation followed by malformed acknowledgement.
+  - Assert no untyped escape or secret leak, malformed acquire creates no authority/release, malformed acknowledgement emits no unacknowledged cursor changes/signal. Do not alter ledger semantics or reject legitimate replay just because latest state advanced.
+  - Traceability: R14-001; FR-059; INV-016. Verify focused recovery tests and `npm run typecheck`.
+
+- [x] **W031** Enforce fresh parent abort and complete signal preflight
+  - Validate boolean aborted and both listener methods before any injected side effects.
+  - RED→GREEN TEST-027/CC-025: missing/noncallable listener methods, nonboolean aborted, pre-aborted signal, and WI seam returning valid data while aborting parent before PR invocation; assert zero forbidden calls and correct cancelled stop.
+  - Traceability: R14-002; FR-003/051. Verify focused validation/bounds tests.
+
+- [x] **W032** Reject duplicate and oversized observation windows
+  - RC14-003/005 follow-up: narrowly guard identifier projection; malformed envelopes/collections and accessor failures are `invalid-observation-window`, individual invalid identifiers retain their distinct reason. Two-candidate isolation and unused-payload getter regressions cover the public pass.
+  - Check inclusive 1,000-entry length before copy/iteration, accumulate inclusive 1,048,576 UTF-8 identifier bytes and uniqueness before entry retention, preserve 1,024-byte per-ID limit.
+  - RED→GREEN TEST-028/CC-019/023/026: WI exact identities, PR exact pairs with null/undefined equivalence only, blank invalid ID, duplicate anchors and nonanchors, duplicate incomplete PR pairs, multi-byte limits, oversized/invalid one-kind invalidating whole candidate, no dedup/truncation/full oversized copy.
+  - Exercise aggregate 1,048,576/1,048,577-byte boundaries with PR windows: WI's 1,000 × 1,024-byte maximum is only 1,024,000, so its aggregate ceiling is redundant, not a reason to relax count or per-ID limits.
+  - Assert absent persisted anchor fails closed; newest complete new PR pair wins mixed windows with disjoint changes/skips; opaque IDs never sorted/numerically ordered.
+  - Traceability: R14-003/005/007; FR-012/034/035/035a/035b. Verify focused observation tests.
+
+- [x] **W033** Cancel observation work and retire every listener/timer
+  - One dedicated seam AbortController per observation linked from parent, fresh abort gate before invocation, timeout/abort cancels seam and timer; cleanup success/rejection/throw/timeout/abort paths and quarantine late settlements.
+  - RED→GREEN TEST-029/CC-027: capture child signal distinct from parent, parent-forwarding and timeout cancellation, balanced listeners/timers, no unhandled late rejection or late effects; maximum concurrent cooperative seam operations remains one per pass and at most one active observation timer. Demonstrate noncooperating seam may outlive cancellation; do not claim physical termination.
+  - Traceability: R14-004; FR-048/051–053; INV-011. Verify focused bounds tests.
+
+- [x] **W034** Surface mandatory truthful claim cleanup and independent counts
+  - RC14-004 follow-up: live cancellation gates after the last candidate and during budget-finalizer cleanup, with success/rejection/throw regression cases retaining acknowledged signals, cursor changes, revisions and truthful cleanup counts.
+  - Add cleanup to every candidate: `{status: released|failed|indeterminate|not-required, reason: release-acknowledged|release-rejected|release-indeterminate|authority-unvalidated|no-claim-acquired, ledgerErrorKind: known category|"ledger-fault"|null, acceptedRevision: number|null}`.
+  - Exactly one release per previously validated authority on completion/error/cancellation; retain local evidence through result validation. Zero release without validated authority; never guess/reacquire/retry. A release replay acknowledges original release, not absence of a later owner.
+  - Known rejection (including storage/unchanged) → failed/release-rejected; storage/indeterminate or contention → indeterminate/release-indeterminate; throw/reject/malformed → indeterminate/ledger-fault. Faulting/ambiguous acquire → indeterminate/authority-unvalidated; no claim or uncertainty → not-required.
+  - Failed/indeterminate cleanup promotes nonfailed outcomes to ledger-unavailable for ledger-fault, otherwise claim-cleanup-unconfirmed; retain existing primary failed reason. Preserve acknowledged checkpoint revision/cursorChanges AND returned signal without rollback/retraction. Inclusive expiry is the backstop.
+  - RED→GREEN TEST-030/CC-028 exercises every matrix row under success/suppression/primary failure/abort/budget/stale-observation/clock or delay fault, malformed acquire zero release, release replay after takeover, and counts. Acted counts returned signals; suppressed acknowledged suppressed advances; failed final failures and may overlap. Four cleanup counts partition every candidate.
+  - Traceability: cleanup review extras; FR-006/029/060. Verify focused watcher tests and `npm run typecheck`.
+
+- [x] **W035** Prove revision, authority, metadata and replay semantics
+  - RC14-008 follow-up: retain original submitted checkpoint metadata apart from retry revision; reuse the direct acknowledgement guard for history. Cover accepted5/latest5 and accepted6/latest6/cursor480 contradictions, same-revision state/authority/timestamp/PR-cursor contradictions, valid accepted6/cursor481, newer mutation/renewal/takeover history and unchanged retry with pre-submit/pre-retry renewal. Failed history reports no checkpoint revision/cursorChanges/signals and attempts cleanup once with validated authority.
+  - RED→GREEN TEST-031/CC-001/002/021/022/030: read4 → acquire5 → checkpoint6 → release7; sourceRevision4, checkpoint revision6, cleanup revision7; unchanged repeat stays at then-current7.
+  - Assert takeover revision/fence increments and old fence rejection; PR identity and PR cursor changes between read/acquire abandon stale selection; full intake owner/fencing/expiry/source/phase/status metadata; watcher-level idempotency conflict is terminal without a new ID.
+  - Preserve accepted original revision on replay and latest valid record semantics; do not modify ADR-0025 or ledger implementation to fit mistaken examples.
+  - Traceability: R14-006, PR/intake/idempotency extras; FR-036a/038/044. Verify focused watcher/ledger regression selectors.
+
+- [x] **W036** Complete configuration boundary conformance
+  - RED→GREEN TEST-032/CC-015/030: candidate counts 1/1,000 accepted and 0/1,001 rejected, canonical duplicates rejected, maxPolls 1/10,000 accepted and 0/10,001/unsafe rejected; positive safe durations and backoff bounds; renewal threshold below lease; 24-hour lease inclusive and above rejected; invalid defaults blamed on supplied field.
+  - Assert no clock/delay/seam/ledger side effects on invalid input, not just zero mutations.
+  - Traceability: preflight/bounds extras; FR-003/004. Verify focused validation tests.
+
+- [x] **W037** Align public types, README and changesets with recovery
+  - RC14-006/007 follow-up: replace contradictory README termination/stale-release promises and authoritative pending-implementation status; preserve historical reviews and record the fresh FAILED W038 verdict without granting independent closure.
+  - Verify exactly 27 reason codes, four stop reasons, mandatory cleanup exports, known ledger category union and independent counts; Effect-free public declarations and privacy remain mandatory.
+  - Update README for bounded unique anchor-inclusive windows, cooperative limits, cleanup evidence, revision distinctions, at-most-once batching and possible signal loss/host reconciliation. All existing changesets were checked: preserve the minor feature changeset with corrected guarantees and add one patch remediation changeset, following the user's explicit bugfix-versioning instruction rather than duplicating a feature release.
+  - Acceptance: TEST-025/public-surface assertions, `npm run typecheck`, existing build/public declaration validation; no live clients or lifecycle ownership creep.
+
+- [x] **W038** Independently verify recovery and replace superseded approval only with evidence — **completed TECHNICAL only**
+  - Final fresh independent `devsquad.review` turn 4 PASSED: 0 Critical, 0 Major, 1 nonblocking Minor TB001; all five guardians completed and the separate security specialist reported no vulnerabilities. Reviewed worktree over baseline `fb6a238`; parent approved recording the supplied evidence.
+  - RC14-008 independently closed: original submitted snapshot retained; history validated before retry refresh; accepted = expected + 1 and operation/time/state consistency enforced, with authority/cursors checked at latest = accepted and valid older acknowledgement retained under newer records. All 36 independently authored in-memory public-pass probes passed (31 boundary + 5 receipt/renewal). The first harness exit 13 was a polling-delay/timer fixture error; corrected fixture passed, no product issue.
+  - Historical failures preserved: the third review found Critical RC14-008; the second found SC-01, SC-02, SL14-001 and DOC14-001. Final closure covers original R14-001-007, RC14-001-008 and all cleanup/signal-preflight/bounds/metadata/reason/traceability extras; see the final review-log matrix and existing CC-001-030 / TEST-001-032 mappings.
+  - Fresh independent commands: combined watcher/ledger selector 401 passed, 2 existing Windows skips, 11 files; targeted third-history selector 19 passed, 244 deselected; typecheck and public Effect-free declaration guard exit 0; 20-path Prettier passed with existing ignores; tracked/untracked whitespace checks had no diagnostics.
+  - Build NOT rerun in this final review. Inherited latest implementer ESM 16.296s and DTS 24.107s passed, then unchanged Windows postbuild `rm` failed (exit 1); template copy not reached. Existing declarations reflect latest code, with no subsequent code changes; no fresh packaging-success claim.
+  - TB001 remains acknowledged and nonblocking: older tests at remediation.test.ts lines 953, 1021, 1288 and 2423 use internal guards/object identity, causing refactor coupling. No fix required for this gate.
+  - Preserve supplied-candidate/exact host phase/status scope, potentially lossy at-most-once delivery requiring host reconciliation, cooperative cancellation/settling assumptions and one cleanup attempt with inclusive expiry backstop. ADR-0025/0026 remain Proposed; no governance acceptance or merge-ready claim. Parent publication is separate; #20 precedes #21. After publication only, recommend updated #21 head `users/davidsant/symmetrical-train` as next-slice base; slice 15 remains blocked pending the creator's explicit decision.
+
+### Recovery Traceability
+
+| Finding / obligation                              | Owner                        | Requirements              | Conformance / tests          |
+| ------------------------------------------------- | ---------------------------- | ------------------------- | ---------------------------- |
+| R14-001                                           | W030                         | FR-059                    | CC-024/029; TEST-026         |
+| RC14-008 history acknowledgement consistency      | W030/W035                    | FR-036/059; INV-007       | CC-024/029; TEST-026/031     |
+| R14-002                                           | W031                         | FR-003/051                | CC-025; TEST-027             |
+| R14-003                                           | W032                         | FR-012/034/035            | CC-019/026; TEST-028         |
+| R14-004                                           | W033                         | FR-048/051/052/053        | CC-027; TEST-029             |
+| R14-005                                           | W032                         | FR-035b                   | CC-026; TEST-028             |
+| R14-006                                           | W035                         | FR-005/044                | CC-001/002; TEST-031         |
+| R14-007                                           | W029 (text), W032 (behavior) | FR-035a                   | CC-023; TEST-028             |
+| Cleanup, signal preservation, counts              | W034                         | FR-006/029/060            | CC-028; TEST-030             |
+| PR staleness, intake metadata, takeover, conflict | W035                         | FR-036a/038/044           | CC-021/022/030; TEST-012/031 |
+| Full configuration bounds                         | W036                         | FR-003/004                | CC-015/030; TEST-032         |
+| SC-01 live indexed array bounds                   | W032/W036                    | FR-004/035b               | CC-015/026/030; TEST-028/032 |
+| SC-02 guarded signal/configuration access         | W031/W036                    | FR-003/051                | CC-015/025; TEST-027/032     |
+| SL14-001 public-field-only response snapshots     | W030                         | FR-059                    | CC-024/029; TEST-026         |
+| DOC14-001 final cancellation priority pseudocode  | W037                         | FR-051/053                | RC14-004 preserved tests     |
+| Reason union and public contract                  | W037                         | FR-008/060                | TEST-025                     |
+| Verified closure / historical correction          | W038                         | All recovery requirements | CC-001–030; TEST-001–032     |

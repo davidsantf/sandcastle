@@ -1,14 +1,16 @@
 import { randomBytes } from "node:crypto";
 import type {
+  CheckpointDevSquadAdoWorkflowInput,
   DevSquadAdoLedgerError,
   DevSquadAdoLedgerResult,
   DevSquadAdoPullRequestCursor,
-  DevSquadAdoWorkflowLedger,
   DevSquadAdoWorkflowRecord,
 } from "./DevSquadAdoWorkflowLedger.js";
 import type {
   DevSquadAdoWatchCandidateOutcome,
   DevSquadAdoWatchClaimMetadata,
+  DevSquadAdoWatchCleanup,
+  DevSquadAdoWatchLedgerErrorKind,
   DevSquadAdoWatchIntakeSignal,
   DevSquadAdoWatchObservationKind,
   DevSquadAdoWatchPassOutcome,
@@ -21,10 +23,14 @@ import type {
 } from "./DevSquadAdoWorkflowWatcher.js";
 import { observeDevSquadAdoWatchCandidate } from "./DevSquadAdoWorkflowWatcherObservation.js";
 import {
+  guardDevSquadAdoWatcherLedger,
+  isDevSquadAdoWatcherCheckpointHistoryValid,
+} from "./DevSquadAdoWorkflowWatcherLedger.js";
+import {
   computeDevSquadAdoWatcherBackoffDelayMs,
   deriveDevSquadAdoWatcherOperationId,
   mintDevSquadAdoWatcherClaimEpoch,
-  validateDevSquadAdoWorkflowWatchPassOptions,
+  prepareDevSquadAdoWorkflowWatchPassOptions,
 } from "./DevSquadAdoWorkflowWatcherValidation.js";
 
 /** Stable redacted category reported when an injected ledger method faults. */
@@ -50,6 +56,8 @@ interface PendingCheckpoint {
    * decision was derived from, so a foreign state change still conflicts.
    */
   expectedRevision: number;
+  /** Acceptance preconditions of the last submission, not the next retry. */
+  submittedRequest: CheckpointDevSquadAdoWorkflowInput | null;
   readonly patch: {
     readonly observations: {
       readonly workItemCommentId?: string;
@@ -72,10 +80,12 @@ interface CandidateState {
   claim: HeldClaim | null;
   renewOrdinal: number;
   pendingCheckpoint: PendingCheckpoint | null;
+  cleanup: DevSquadAdoWatchCleanup;
+  suppressed: boolean;
 }
 
 interface PassContext {
-  readonly ledger: DevSquadAdoWorkflowLedger;
+  readonly ledger: ReturnType<typeof guardDevSquadAdoWatcherLedger>;
   readonly seam: DevSquadAdoWatcherObservationSeam;
   readonly validated: DevSquadAdoWatchValidatedPass;
   readonly delay: (ms: number, signal?: AbortSignal) => Promise<void>;
@@ -175,7 +185,7 @@ const outcomeFor = (
   extra?: {
     readonly revision?: number | null;
     readonly cursorChanges?: readonly DevSquadAdoWatchObservationKind[];
-    readonly ledgerErrorKind?: string | null;
+    readonly ledgerErrorKind?: DevSquadAdoWatchLedgerErrorKind | null;
   },
 ): DevSquadAdoWatchCandidateOutcome => ({
   workItemId: state.workItemId,
@@ -187,15 +197,14 @@ const outcomeFor = (
   skippedCursorKinds: state.skippedCursorKinds,
   claim: state.claim === null ? null : claimMetadata(state.claim),
   ledgerErrorKind: extra?.ledgerErrorKind ?? null,
+  cleanup: state.cleanup,
 });
 
 /**
  * Release a held claim on every exit path.
  *
- * Release failure never changes the reported outcome; the inclusive lease
- * expiry is the backstop, including when the injected ledger throws rather
- * than answering. Cancellation never suppresses a release, because a cancelled
- * pass must still leave no watcher-held claim behind.
+ * Retain authority through validation and never retry cleanup. Inclusive lease
+ * expiry is the backstop when acknowledgement is unavailable.
  */
 const releaseClaim = async (
   context: PassContext,
@@ -203,8 +212,7 @@ const releaseClaim = async (
 ): Promise<void> => {
   const claim = state.claim;
   if (claim === null) return;
-  state.claim = null;
-  await callLedger(() =>
+  const released = await callLedger(() =>
     context.ledger.releaseClaim({
       workItemId: state.workItemId,
       operationId: deriveDevSquadAdoWatcherOperationId({
@@ -221,6 +229,53 @@ const releaseClaim = async (
       },
     }),
   );
+  state.claim = null;
+  state.cleanup =
+    released.status === "ok"
+      ? {
+          status: "released",
+          reason: "release-acknowledged",
+          ledgerErrorKind: null,
+          acceptedRevision: released.value.acceptedRevision,
+        }
+      : released.status === "fault"
+        ? {
+            status: "indeterminate",
+            reason: "release-indeterminate",
+            ledgerErrorKind: LEDGER_FAULT_KIND,
+            acceptedRevision: null,
+          }
+        : {
+            status: isAmbiguous(released.error) ? "indeterminate" : "failed",
+            reason: isAmbiguous(released.error)
+              ? "release-indeterminate"
+              : "release-rejected",
+            ledgerErrorKind: released.error.kind,
+            acceptedRevision: null,
+          };
+  if (state.resolved !== null)
+    state.resolved = withCleanup(state.resolved, state.cleanup);
+};
+
+const withCleanup = (
+  outcome: DevSquadAdoWatchCandidateOutcome,
+  cleanup: DevSquadAdoWatchCleanup,
+): DevSquadAdoWatchCandidateOutcome => {
+  if (
+    (cleanup.status === "failed" || cleanup.status === "indeterminate") &&
+    outcome.kind !== "failed"
+  )
+    return {
+      ...outcome,
+      cleanup,
+      kind: "failed",
+      reason:
+        cleanup.ledgerErrorKind === LEDGER_FAULT_KIND
+          ? "ledger-unavailable"
+          : "claim-cleanup-unconfirmed",
+      ledgerErrorKind: cleanup.ledgerErrorKind,
+    };
+  return { ...outcome, cleanup };
 };
 
 const resolveCandidate = async (
@@ -231,7 +286,7 @@ const resolveCandidate = async (
   extra?: {
     readonly revision?: number | null;
     readonly cursorChanges?: readonly DevSquadAdoWatchObservationKind[];
-    readonly ledgerErrorKind?: string | null;
+    readonly ledgerErrorKind?: DevSquadAdoWatchLedgerErrorKind | null;
   },
 ): Promise<void> => {
   state.resolved = outcomeFor(state, kind, reason, extra);
@@ -245,7 +300,7 @@ const mapReadError = (
 ): {
   readonly kind: DevSquadAdoWatchCandidateOutcome["kind"];
   readonly reason: DevSquadAdoWatchReasonCode;
-  readonly ledgerErrorKind: string | null;
+  readonly ledgerErrorKind: DevSquadAdoWatchLedgerErrorKind | null;
 } => {
   if (error.kind === "record-not-found")
     return {
@@ -272,7 +327,7 @@ const mapAcquireError = (
 ): {
   readonly kind: DevSquadAdoWatchCandidateOutcome["kind"];
   readonly reason: DevSquadAdoWatchReasonCode;
-  readonly ledgerErrorKind: string | null;
+  readonly ledgerErrorKind: DevSquadAdoWatchLedgerErrorKind | null;
 } => {
   switch (error.kind) {
     case "claim-conflict":
@@ -332,7 +387,7 @@ const mapClaimedMutationError = (
 ): {
   readonly kind: DevSquadAdoWatchCandidateOutcome["kind"];
   readonly reason: DevSquadAdoWatchReasonCode;
-  readonly ledgerErrorKind: string | null;
+  readonly ledgerErrorKind: DevSquadAdoWatchLedgerErrorKind | null;
 } => {
   switch (error.kind) {
     case "revision-conflict":
@@ -447,6 +502,7 @@ const completeCheckpoint = async (
     context.validated.intakeStatuses.includes(pending.status);
 
   if (!admitted) {
+    state.suppressed = true;
     await resolveCandidate(
       context,
       state,
@@ -549,22 +605,24 @@ const issueCheckpoint = async (
     return;
   }
 
+  const request: CheckpointDevSquadAdoWorkflowInput = {
+    workItemId: state.workItemId,
+    operationId: pending.operationId,
+    authority: {
+      ownerId: claim.ownerId,
+      claimToken: claim.claimToken,
+      fencingValue: claim.fencingValue,
+    },
+    expected: {
+      revision: pending.expectedRevision,
+      phase: pending.phase,
+      status: pending.status,
+    },
+    patch: pending.patch,
+  };
+  pending.submittedRequest = structuredClone(request);
   const checkpointed = await callLedger(() =>
-    context.ledger.checkpoint({
-      workItemId: state.workItemId,
-      operationId: pending.operationId,
-      authority: {
-        ownerId: claim.ownerId,
-        claimToken: claim.claimToken,
-        fencingValue: claim.fencingValue,
-      },
-      expected: {
-        revision: pending.expectedRevision,
-        phase: pending.phase,
-        status: pending.status,
-      },
-      patch: pending.patch,
-    }),
+    context.ledger.checkpoint(request),
   );
 
   if (checkpointed.status === "fault") {
@@ -636,6 +694,19 @@ const resumeCheckpoint = async (
     (checkpoint) => checkpoint.operationId === pending.operationId,
   );
   if (durable !== undefined) {
+    if (
+      pending.submittedRequest === null ||
+      !isDevSquadAdoWatcherCheckpointHistoryValid(
+        pending.submittedRequest,
+        read.value,
+        durable,
+      )
+    ) {
+      await resolveCandidate(context, state, "failed", "ledger-unavailable", {
+        ledgerErrorKind: LEDGER_FAULT_KIND,
+      });
+      return;
+    }
     await completeCheckpoint(context, state, pending, durable.revision, claim);
     return;
   }
@@ -768,6 +839,12 @@ const runCandidateStep = async (
     }),
   );
   if (acquired.status === "fault") {
+    state.cleanup = {
+      status: "indeterminate",
+      reason: "authority-unvalidated",
+      ledgerErrorKind: LEDGER_FAULT_KIND,
+      acceptedRevision: null,
+    };
     // No claim was recorded locally, so there is nothing to release; if the
     // ledger did publish one before faulting, its lease expiry retires it.
     await resolveCandidate(context, state, "failed", "ledger-unavailable", {
@@ -776,6 +853,13 @@ const runCandidateStep = async (
     return;
   }
   if (acquired.status === "error") {
+    if (isAmbiguous(acquired.error))
+      state.cleanup = {
+        status: "indeterminate",
+        reason: "authority-unvalidated",
+        ledgerErrorKind: acquired.error.kind,
+        acceptedRevision: null,
+      };
     const mapped = mapAcquireError(acquired.error);
     await resolveCandidate(context, state, mapped.kind, mapped.reason, {
       ledgerErrorKind: mapped.ledgerErrorKind,
@@ -805,7 +889,10 @@ const runCandidateStep = async (
     state.eligible = false;
     state.skippedCursorKinds = [];
     state.pendingReason = "stale-observation";
+    const stale = outcomeFor(state, "no-change", "stale-observation");
     await releaseClaim(context, state);
+    if (state.cleanup.status !== "released")
+      state.resolved = withCleanup(stale, state.cleanup);
     return;
   }
 
@@ -824,6 +911,7 @@ const runCandidateStep = async (
       generation,
     }),
     expectedRevision: claimed.revision,
+    submittedRequest: null,
     patch: { observations },
     changedKinds,
     phase: claimed.phase,
@@ -839,11 +927,12 @@ const runCandidateStep = async (
  * See {@link runDevSquadAdoWorkflowWatchPass} for the public contract.
  */
 export const runDevSquadAdoWorkflowWatchPassImplementation = async (
-  options: RunDevSquadAdoWorkflowWatchPassOptions,
+  input: RunDevSquadAdoWorkflowWatchPassOptions,
 ): Promise<DevSquadAdoWatchPassOutcome> => {
-  const validation = validateDevSquadAdoWorkflowWatchPassOptions(options);
+  const validation = prepareDevSquadAdoWorkflowWatchPassOptions(input);
   if (!validation.ok) return { ok: false, error: validation.error };
   const validated = validation.value;
+  const options = validation.options;
 
   const startedAtDate = readClock(options.clock);
   if (startedAtDate === null) {
@@ -858,7 +947,7 @@ export const runDevSquadAdoWorkflowWatchPassImplementation = async (
   }
 
   const context: PassContext = {
-    ledger: options.ledger,
+    ledger: guardDevSquadAdoWatcherLedger(options.ledger),
     seam: options.seam,
     validated,
     delay: options.delay,
@@ -880,6 +969,13 @@ export const runDevSquadAdoWorkflowWatchPassImplementation = async (
       claim: null,
       renewOrdinal: 0,
       pendingCheckpoint: null,
+      cleanup: {
+        status: "not-required",
+        reason: "no-claim-acquired",
+        ledgerErrorKind: null,
+        acceptedRevision: null,
+      },
+      suppressed: false,
     });
   }
 
@@ -918,6 +1014,7 @@ export const runDevSquadAdoWorkflowWatchPassImplementation = async (
       const state = states.get(workItemId);
       if (state === undefined || state.resolved !== null) continue;
       await runCandidateStep(context, state, now);
+      if (isAborted(context.signal)) context.cancelled = true;
       if (context.cancelled) break;
     }
 
@@ -984,7 +1081,11 @@ export const runDevSquadAdoWorkflowWatchPassImplementation = async (
         );
       }
     }
-    outcomes.push(state.resolved);
+    outcomes.push(withCleanup(state.resolved, state.cleanup));
+    if (isAborted(context.signal)) {
+      context.cancelled = true;
+      stopReason = "cancelled";
+    }
   }
 
   const counts = {
@@ -994,13 +1095,25 @@ export const runDevSquadAdoWorkflowWatchPassImplementation = async (
     eligible: outcomes.filter(
       (outcome) => states.get(outcome.workItemId)?.eligible === true,
     ).length,
-    acted: outcomes.filter((outcome) => outcome.kind === "acted").length,
+    acted: context.signals.length,
     noChange: outcomes.filter((outcome) => outcome.kind === "no-change").length,
     suppressed: outcomes.filter(
-      (outcome) => outcome.kind === "intake-suppressed",
+      (outcome) => states.get(outcome.workItemId)?.suppressed === true,
     ).length,
     skipped: outcomes.filter((outcome) => outcome.kind === "skipped").length,
     failed: outcomes.filter((outcome) => outcome.kind === "failed").length,
+    cleanupReleased: outcomes.filter(
+      (outcome) => outcome.cleanup.status === "released",
+    ).length,
+    cleanupFailed: outcomes.filter(
+      (outcome) => outcome.cleanup.status === "failed",
+    ).length,
+    cleanupIndeterminate: outcomes.filter(
+      (outcome) => outcome.cleanup.status === "indeterminate",
+    ).length,
+    cleanupNotRequired: outcomes.filter(
+      (outcome) => outcome.cleanup.status === "not-required",
+    ).length,
   };
 
   return {

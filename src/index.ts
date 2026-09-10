@@ -273,6 +273,8 @@ export type {
   DevSquadAdoWatchCandidateOutcome,
   DevSquadAdoWatchCandidateOutcomeKind,
   DevSquadAdoWatchClaimMetadata,
+  DevSquadAdoWatchCleanup,
+  DevSquadAdoWatchLedgerErrorKind,
   DevSquadAdoWatchError,
   DevSquadAdoWatchIntakeRules,
   DevSquadAdoWatchIntakeSignal,

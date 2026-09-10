@@ -456,6 +456,10 @@ describe("DevSquadAdoWorkflowWatcher watch pass", () => {
       suppressed: 0,
       skipped: 0,
       failed: 0,
+      cleanupReleased: 1,
+      cleanupFailed: 0,
+      cleanupIndeterminate: 0,
+      cleanupNotRequired: 0,
     });
     expect(result.outcomes).toHaveLength(1);
     const candidate = result.outcomes[0];
@@ -465,6 +469,12 @@ describe("DevSquadAdoWorkflowWatcher watch pass", () => {
       reason: "new-work-item-comment",
       sourceRevision: 4,
       cursorChanges: ["work-item-comment"],
+      cleanup: {
+        status: "released",
+        reason: "release-acknowledged",
+        ledgerErrorKind: null,
+        acceptedRevision: 7,
+      },
       skippedCursorKinds: [],
       ledgerErrorKind: null,
     });

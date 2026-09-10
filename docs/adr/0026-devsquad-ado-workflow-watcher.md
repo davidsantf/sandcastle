@@ -4,12 +4,14 @@
 
 Proposed
 
+Recovery contract amended through DevSquad on 2026-09-10 for #21. **W038 is completed TECHNICAL only:** final fresh independent `devsquad.review` turn 4 PASSED with no blockers (0 Critical, 0 Major, 1 nonblocking Minor TB001). W029-W037 are complete; all five guardians completed and the separate security specialist found no vulnerabilities. RC14-008 is independently closed and all earlier findings are closed/preserved in the feature review log. TB001's older-test internal guard/object-identity coupling is acknowledged, with no required fix. The first failed review (2 Critical, 3 Major, 2 documentation findings), second/third failures and superseded PASS verdicts remain historical evidence. Fresh review execution is distinct from inherited ESM/DTS build evidence and the unchanged Windows postbuild failure; there is no fresh packaging-success claim. Technical conformance does not grant governance acceptance or merge readiness. ADR-0025 and ADR-0026 remain Proposed pending an authorized owner's separate acceptance; ADR-0025 is unchanged and no board item is linked. Parent publication is separate, #20 must merge before #21, and slice 15 remains blocked until the creator's explicit decision.
+
 ## Priorities
 
 1. Preserve DevSquad ownership of lifecycle meaning, phase legality, scheduling, and external tracker authority.
 2. Deliver each externally observed event to DevSquad intake at most once, across restarts.
 3. Prevent concurrent or stale coordinators from acting on the same work item.
-4. Guarantee termination through bounds the implementation can actually enforce, with cooperative cancellation.
+4. Bound scheduling and retained observations, with honest cooperative cancellation and explicit dependency-liveness assumptions.
 5. Keep Sandcastle core offline, tracker-neutral, and free of transport or credential coupling.
 6. Keep every decision deterministic and reproducible from injected inputs alone.
 
@@ -66,9 +68,15 @@ The watcher seam therefore exposes exactly two methods:
 
 The seam is structurally validated before any observation or mutation, following the ADR-0021 precedent, and a missing or non-callable required method produces a stable configuration error naming the method. The seam is never invoked to write. Only identifier-bearing fields are read from seam responses; every other field on a returned entry is discarded before the value can reach durable state, results, errors, or diagnostics.
 
+Before any injected side effects, validate the optional parent signal's boolean `aborted` and callable `addEventListener` AND `removeEventListener`. Recheck parent abort immediately before each seam invocation, including when a valid work-item response aborts the parent before the PR call.
+
 Identifiers returned by the seam are opaque. The watcher never parses, orders, or arithmetically compares identifier text. Ordering is the seam's contract: entries are returned in the tracker's authoritative order, oldest first, and the window is anchor-inclusive — whenever a `since` cursor is supplied and the window is non-empty, that cursor appears in it. New-event selection anchors on that cursor and takes everything after it.
 
 A non-empty window that omits the supplied anchor is **undecidable** and is therefore fail-closed. Because no identifier is parsed or ordered, that shape is indistinguishable from a window in which every entry is new; treating it as such silently re-delivers the whole window, which is exactly the duplication this ADR exists to prevent. The watcher reports `observation-anchor-missing` for that candidate and advances nothing. Re-anchoring a record whose tracker really did drop an anchored entry is a deliberate host action, not an inference the watcher is entitled to make.
+
+Every duplicate canonical observation identity is rejected, not deduplicated. Work-item identity is exact comment ID; PR identity is the exact thread/comment pair after only null/undefined normalization. Missing/null comments are incomplete; blank comments are invalid identifiers. For mixed new PR entries, persist the newest complete pair in seam order and mark PR skipped only if no new pair is persistable. Changes and skipped kinds are disjoint.
+
+Each WI or PR window is bounded inclusively to 1,000 entries and 1,048,576 aggregate UTF-8 identifier bytes (PR sums thread ID plus nonnull comment ID); each identifier remains at most 1,024 bytes. Check count before iteration/copy and accumulate bytes/uniqueness before retaining each entry. Never create an oversized full projection, silently truncate, or sort opaque IDs. Malformed/duplicate/oversized windows invalidate the entire candidate as `invalid-observation-window`, even if the other kind is valid; individual identifier violations remain `invalid-observation-identifier`. The host SHOULD also bound upstream payloads, but the watcher MUST independently enforce its bounds.
 
 ### Deterministic operation identifiers
 
@@ -92,11 +100,28 @@ An `idempotency-conflict` remains a terminal outcome for that candidate step. Th
 
 ### Claim lifetime, leases, and renewal
 
-A claim is acquired only when the watcher intends to mutate, and it is released as soon as the candidate resolves. The watcher never force-releases, deletes, or resets a claim owned by another owner; an unexpired foreign claim is a `claim-conflict` skip, not a fault.
+A claim is acquired only when the watcher intends to mutate. On candidate completion/error/cancellation, invoke release exactly once for previously validated authority, retaining local evidence until the response is validated. Without validated authority invoke no release; never guess authority, reacquire, retry release, or force-release another owner. An unexpired foreign claim is a `claim-conflict` skip.
 
 Default lease duration is 60 seconds; the caller may raise it up to the ADR-0025 ceiling of 24 hours. Default renewal threshold is one third of the lease. Before any mutation under a held claim, the watcher renews when `now + renewalThreshold >= expiresAt`, preserving the fencing value.
 
-One case holds a claim across polls: a checkpoint whose outcome is ambiguous (`contention`, or `storage` with an `indeterminate` outcome) leaves the candidate pending under its existing claim and retries on a later poll with the **same** operation identifier, so an already-durable mutation replays instead of duplicating. Renewal exists for exactly this window. If the pass budget ends first, the candidate is reported as failed and its claim is released.
+One case holds a claim across polls: a checkpoint whose outcome is ambiguous (`contention`, or `storage` with an `indeterminate` outcome) leaves the candidate pending under its existing validated authority and retries on a later poll with the **same** operation identifier. Renewal exists for this window. If the budget ends first, report failure and attempt cleanup once; do not equate an attempted release with confirmed release.
+
+Every candidate outcome has mandatory `cleanup: { status, reason, ledgerErrorKind, acceptedRevision }`:
+
+| Evidence                                               | Status / reason                           | Category / revision                                             |
+| ------------------------------------------------------ | ----------------------------------------- | --------------------------------------------------------------- |
+| Valid release acknowledgement, including exact replay  | `released` / `release-acknowledged`       | null / original accepted release revision                       |
+| Known rejection (including storage/unchanged)          | `failed` / `release-rejected`             | known category / null                                           |
+| Storage/indeterminate or contention                    | `indeterminate` / `release-indeterminate` | known category / null                                           |
+| Throw/reject/malformed release                         | `indeterminate` / `release-indeterminate` | `ledger-fault` / null                                           |
+| Faulting/ambiguous acquire without validated authority | `indeterminate` / `authority-unvalidated` | `ledger-fault` or known ambiguous category / null; zero release |
+| No claim and no uncertainty                            | `not-required` / `no-claim-acquired`      | null / null; zero release                                       |
+
+Categories are validated `DevSquadAdoLedgerError["kind"]` values or `ledger-fault`; no arbitrary strings. Accepted revision is a positive safe integer only after acknowledgement, otherwise null. Inclusive lease expiry is the backstop, not evidence of release. An exact replay acknowledges the original release even if its valid latest record now has a later owner.
+
+Failed/indeterminate cleanup promotes an otherwise nonfailed candidate to failed: `ledger-unavailable` for `ledger-fault`, otherwise `claim-cleanup-unconfirmed`. Preserve any existing primary failure reason. Preserve acknowledged checkpoint revision, cursor changes AND the returned intake signal; no rollback/retraction. `counts.acted` counts returned signals, `counts.suppressed` acknowledged suppressed advances, `counts.failed` final failures; these may overlap. `cleanupReleased`, `cleanupFailed`, `cleanupIndeterminate`, and `cleanupNotRequired` partition all candidate outcomes.
+
+Source revision, checkpoint accepted revision and cleanup accepted revision remain separate. A record read at 4 acquires at 5, checkpoints at 6, releases at 7: signal source 4, outcome revision 6, cleanup revision 7. An unchanged subsequent pass leaves then-current revision 7 unchanged. This follows ADR-0025; no ledger semantics are changed to fit the former incorrect example.
 
 Fencing protects ledger mutations only. It makes no external side effect exactly-once.
 
@@ -106,15 +131,15 @@ Acquiring a claim does not retroactively validate an earlier observation. A reco
 
 This matters because those two reads straddle a window in which another owner can acquire, advance a cursor, and release. The later acquisition then succeeds legitimately — no fence is violated — but the selection in hand was computed from anchors that are no longer durable, and checkpointing it would move the cursor **backwards**, re-delivering every event between the two positions. Fencing alone does not close that hole, because nothing about it is stale in the fencing sense.
 
-When the observation anchors or the pull-request identity moved, the watcher releases the claim without writing and reports `no-change` / `stale-observation`; a later poll re-observes from the advanced anchor. Phase and status are deliberately excluded from that comparison: they are read fresh from the claimed record and carried into the checkpoint precondition, so a foreign change to them still conflicts on its own terms.
+When observation anchors or PR identity moved, the watcher attempts cleanup without checkpointing and reports `no-change` / `stale-observation` only when cleanup is acknowledged; a later poll can re-observe. Unconfirmed cleanup instead finalizes a failed candidate. Phase/status are taken fresh from the claimed record and carried into checkpoint preconditions, without changing the pre-acquire source revision.
 
 ### Intake signals are returned, never dispatched
 
 Intake signals are returned in the pass result. The watcher exposes no callback, queue, retry, or transport.
 
-A callback would allow host code to run inside the pass while a claim is held, which reintroduces re-entrancy, partial-failure ambiguity, and a second definition of "delivered". A returned array makes the non-duplication argument mechanical: a candidate's cursor checkpoint is acknowledged as durable before its signal enters the result, so a crash before return loses only signals whose cursors never advanced.
+A callback would allow host code to run inside the pass while a claim is held, which reintroduces re-entrancy, partial-failure ambiguity, and a second definition of "delivered". A returned array requires a validated durable checkpoint acknowledgement before its signal enters the result. A host crash before return or consumption can lose that signal even though its cursor advanced durably.
 
-Delivery is therefore **at-most-once**. The ordering guarantees no duplicate, not no loss: a checkpoint that becomes durable while its acknowledgement is lost — process death, or an `indeterminate` storage outcome the budget does not outlive — advances the cursor without ever returning its signal, and a later pass correctly sees nothing new for that window. Hosts that cannot tolerate a dropped signal must reconcile from the durable record rather than from the signal stream. Claiming exactly-once here would be a promise the ledger cannot keep.
+Delivery is **at-most-once and batched**, not lossless: a durable checkpoint whose acknowledgement is lost or malformed can advance the cursor without returning a signal, and a host crash can lose an acknowledged signal before intake processing. Later passes see no new activity for that window. Hosts reconcile durable cursors against intake processing; no outbox, dispatch factory, or live client is added. Fencing protects ledger mutations, not downstream execution.
 
 At most one intake signal is emitted per candidate per pass. A signal carries the work-item identifier, the source revision it was derived from, the changed observation kinds, the exact caller-defined phase and status, and token-free claim metadata. It carries no external body, author, credential, claim token, or agent-session content.
 
@@ -126,11 +151,11 @@ Candidates are evaluated sequentially in a canonical order derived from the UTF-
 
 The clock is read once per poll and that single reading drives every eligibility, lease, and timestamp decision in the poll. Delays come from an injected delay source. Backoff is `min(base * multiplier^(n-1), max)` truncated to an integer, with no randomness unless an explicit jitter source is injected.
 
-A pass stops at the first of: all candidates resolved, poll budget reached, poll-start elapsed budget reached, or cancellation. Cancellation is observed before each seam call, before each ledger mutation, and between polls; it still releases every acquired claim and still reports every durable outcome already acknowledged.
+A pass stops at the first of: all candidates resolved, poll budget reached, poll-start elapsed budget reached, or cancellation. Fresh cancellation gates precede each seam and non-cleanup mutation and run between polls; mandatory cleanup remains attempted once after abort and preserves acknowledgements.
 
-Termination is guaranteed by the **poll count**, not by elapsed time. `maxPollStartElapsedMs` is checked once per poll, before that poll begins, and it bounds how long the pass keeps scheduling new work — not how long the pass runs. Work already in flight always runs to completion.
+`maxPollStartElapsedMs` gates new poll scheduling, not runtime. Candidate count is 1–1,000; safe-integer maxPolls is 1–10,000; duration/threshold rules and the inclusive 24-hour lease ceiling are validated. Ledger calls and delays must settle for termination; observation timeout assumes a valid delay. Poll bounds and abort do not imply an unconditional runtime or physical-request ceiling.
 
-This is deliberate, and the budget is named for what it does. A strict wall-clock ceiling would have to abandon in-flight ledger mutations, which is precisely what must never happen: a mutation abandoned mid-flight is an indeterminate write and, worse, a stranded claim. A bound the implementation cannot enforce without breaking a stronger invariant should not be advertised as if it could. Callers who need a hard ceiling on the call itself impose it with their own abort signal, which the pass honours at every checkpoint. Per-observation overrun is separately bounded by `observationTimeoutMs`, which is enforceable because abandoning a read is safe.
+Each observation owns a dedicated AbortController, linked from its parent and passed into its seam call. Timeout/abort cancels the seam and timer; every terminal path removes parent links/listeners and consumes/quarantines late settlements. Success/rejection also retires the timer. Cooperative fakes must demonstrate at most one active seam operation per pass and one observation timer; noncooperating work may remain physically in flight and cannot be forcibly terminated. Abort is not a hard wall-clock ceiling. Ledger mutations remain awaited to avoid silently abandoning durability/authority evidence.
 
 ### Fail-closed partial failure
 
@@ -138,7 +163,9 @@ A candidate failure never aborts the remaining candidates. Only invalid input an
 
 Ledger recovery categories (`corrupt-artifact`, `unsupported-schema-version`, `path-boundary`, `unsupported-permissions`, `capacity-exceeded`, `scan-limit`) are surfaced with their stable ledger category and are never repaired, reset, or bypassed. The watcher creates, deletes, or rewrites no ledger artifact except through the ledger's public typed operations.
 
-Seam rejections are converted into a stable per-candidate observation error carrying no transport message, no URL, and no external body. The injected **ledger** is treated with the same suspicion as the seam: a ledger method that throws, rejects, or returns something that is not a typed result resolves as `failed` / `ledger-unavailable` with the stable category `ledger-fault`. Letting such a failure escape would carry a raw `Error`, its message and stack, out through the public result — and would abandon whatever claim the candidate was holding, since the release path lives on the candidate's own resolution. Each injected call is classified individually rather than wrapped in one blanket handler, so a genuine typed ledger error still travels its own mapped path and keeps its own category.
+Seam failures expose no transport message, URL or external body. Every ledger method (`readRecord`, acquire, renew, checkpoint, release) is guarded with method-specific runtime validation, not a shallow `ok: true` cast. Validate the complete latest public record, canonical requested identity, original accepted revision/time/replay, method outcome, and applicable request owner/token/fencing/checkpoint consistency. A replay's original accepted revision may be below its valid latest record revision; never conflate historical acknowledgement with current ownership. Every known error variant's required fields are checked; unknown/malformed categories and throws/rejections become only `ledger-fault`.
+
+Non-cleanup faults report `failed` / `ledger-unavailable`; cleanup faults follow the mandatory matrix. A malformed acquire establishes no authority and cannot fabricate release. A malformed post-mutation acknowledgement suppresses unacknowledged effects despite possible durable mutation, accepting potential signal loss rather than inventing acknowledgement. Runtime validation checks a dependency's contract, not its underlying storage honesty.
 
 ## Alternatives Considered
 
@@ -156,7 +183,7 @@ Rejected in both directions. Deriving the capability token from the pass identit
 
 ### A strict wall-clock bound on pass duration
 
-Rejected, and the option renamed rather than left ambiguous. Enforcing a hard ceiling means abandoning whatever is in flight when it expires, and the things in flight are ledger mutations; abandoning one produces an indeterminate write and a stranded claim, trading a soft guarantee for a hard corruption risk. The budget is therefore named `maxPollStartElapsedMs` and documented as bounding scheduling, with `maxPolls`, `observationTimeoutMs`, and the caller's abort signal carrying the actual termination guarantee.
+Rejected. A hard ceiling would abandon in-flight ledger mutations and their authority/durability evidence. `maxPollStartElapsedMs` therefore bounds scheduling, with poll/window limits and cooperative cancellation; termination still assumes settling ledger methods and delays. An abort signal is not a substitute hard ceiling.
 
 ### Treating an anchor-less window as an all-new window
 
@@ -188,7 +215,8 @@ Rejected. Initialization encodes lifecycle intent, which ADR-0024 assigns to Dev
 - Non-duplicating intake holds only for ledger-mediated delivery, and it is at-most-once: a durable-but-unacknowledged checkpoint advances a cursor without delivering its signal. Hosts needing completeness reconcile from the record.
 - Hosts must supply a stable pass identity and must implement the anchor-inclusive seam contract; a window that drops its anchor stalls that candidate with `observation-anchor-missing` rather than silently re-delivering.
 - Retrying a pass under the same `passId` is safe by construction, including after a durable acquire whose checkpoint never landed.
-- `maxPollStartElapsedMs` bounds scheduling, not duration. A pass can exceed it; hosts wanting a hard ceiling supply an abort signal.
+- `maxPollStartElapsedMs` bounds scheduling, not duration. Abort is cooperative and cannot force noncooperating dependencies to stop.
+- Every candidate carries truthful cleanup evidence and counts distinguish acknowledged signals from final cleanup failures; no release acknowledgement is fabricated.
 - Intake rules must be enumerated explicitly, which is more verbose than a wildcard but keeps lifecycle policy outside Sandcastle.
 - Claims are short-lived, so a long host-side reaction to a signal runs without watcher-held exclusivity; the host must reacquire if it intends to mutate.
 - A candidate can end a pass having done nothing but acquire and release a claim (`stale-observation`) when another owner won the race; this consumes two revisions and is expected under contention.

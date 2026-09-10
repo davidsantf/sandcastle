@@ -1,5 +1,9 @@
 # DevSquad/ADO Workflow Watcher Implementation Plan
 
+**Historical third-review follow-up (2026-09-10; superseded by final turn 4):** Critical RC14-008 caused a third independent FAILED verdict. History acknowledgement was remediated to use the same validator as direct checkpoint replay, against separately retained submitted-request metadata. W038 remained FAILED at that stage; remediation alone was not independent approval.
+
+**Current recovery status (2026-09-10): W038 completed TECHNICAL only.** Final fresh independent `devsquad.review` turn 4 PASSED with no blockers (0 Critical, 0 Major, 1 nonblocking Minor TB001). W029-W037 are complete; all five guardians completed and the separate security specialist found no vulnerabilities. Original R14-001-007, RC14-001-008, SC-01/02, SL14-001, DOC14-001 and extras are closed/preserved; RC14-008 closure includes 36 independent public-pass probes. TB001's older-test internal guard/object-identity coupling is acknowledged, not a required fix. The second review's three Major/one Minor failures and all earlier review states remain historical in `review-log.md`. Fresh review commands are recorded separately from inherited ESM/DTS build evidence and the unchanged Windows postbuild failure; no fresh packaging success is claimed. ADR-0025/0026 remain Proposed pending authorized acceptance, with no linked board item or merge-ready claim. Publication is the parent's responsibility: #20 must merge before #21. After parent publication only, recommend updated #21 head `users/davidsant/symmetrical-train` as the next-slice base; slice 15 remains blocked until the creator explicitly decides.
+
 ## Summary
 
 Implement one bounded, offline, deterministic watch pass that turns injected ADO/GitHub observations into durably checkpointed intake signals for a DevSquad host.
@@ -28,7 +32,7 @@ The implementation follows [ADR-0026](../../adr/0026-devsquad-ado-workflow-watch
 - Acquire, renew, and release ledger claims around its own mutations only.
 - Persist opaque cursors through fenced, revision-checked, idempotent checkpoints.
 - Emit intake signals only when caller intake rules match the record's exact phase and status.
-- Terminate inside the caller-declared poll budget, or on cancellation. The poll-start elapsed budget gates when a new poll may begin, not total elapsed time; work already in flight always completes.
+- Bound poll scheduling and observation windows and request cooperative cancellation. Ledger calls and delays must settle; observation timeout assumes a valid delay. Neither poll limits nor abort impose an unconditional runtime or physical-request bound.
 - Report stable outcome kinds, reason codes, counts, and stop reasons.
 
 ### Explicit non-responsibilities
@@ -137,7 +141,7 @@ export interface DevSquadAdoWatcherPullRequestObservation {
 }
 ```
 
-**Seam contract.** Entries are returned in the tracker's authoritative order, oldest first. The seam either includes the supplied `since` cursor as the first entry or returns only entries strictly after it. The watcher reads only the identifier fields shown above and discards every other property of a returned entry.
+**Seam contract.** Entries are returned in authoritative oldest-first order. A nonempty window with a supplied `since` cursor MUST include that anchor; post-cursor-only windows are invalid. Work-item identities are exact comment IDs; PR identities are exact thread/comment pairs after only null/undefined normalization. Reject duplicate identities, never deduplicate, truncate, or sort opaque IDs. Missing/null PR comments are incomplete; blank strings are invalid identifiers. Each window has inclusive limits of 1,000 entries and 1,048,576 aggregate UTF-8 identifier bytes (PR sums thread and nonnull comment bytes); each identifier is at most 1,024 bytes. Check length before iteration/copy, then accumulate bytes and uniqueness before retaining each projected entry. Malformed/duplicate/oversized windows invalidate the whole candidate with `invalid-observation-window`, even if the other kind is valid; identifier violations retain `invalid-observation-identifier`. Host upstream bounds are recommended, never a substitute for watcher validation.
 
 ### Pass options
 
@@ -217,9 +221,11 @@ export type DevSquadAdoWatchReasonCode =
   | "observation-anchor-missing"
   | "pull-request-observation-unavailable"
   | "invalid-observation-identifier"
+  | "invalid-observation-window"
   | "ledger-recovery"
   | "ledger-capacity"
   | "ledger-unavailable"
+  | "claim-cleanup-unconfirmed"
   | "cancelled";
 
 export type DevSquadAdoWatchStopReason =
@@ -234,6 +240,21 @@ export interface DevSquadAdoWatchClaimMetadata {
   readonly expiresAt: string;
 }
 
+export interface DevSquadAdoWatchCleanup {
+  readonly status: "released" | "failed" | "indeterminate" | "not-required";
+  readonly reason:
+    | "release-acknowledged"
+    | "release-rejected"
+    | "release-indeterminate"
+    | "authority-unvalidated"
+    | "no-claim-acquired";
+  readonly ledgerErrorKind:
+    | DevSquadAdoLedgerError["kind"]
+    | "ledger-fault"
+    | null;
+  readonly acceptedRevision: number | null;
+}
+
 export interface DevSquadAdoWatchCandidateOutcome {
   readonly workItemId: string;
   readonly kind: DevSquadAdoWatchCandidateOutcomeKind;
@@ -243,7 +264,11 @@ export interface DevSquadAdoWatchCandidateOutcome {
   readonly cursorChanges: readonly DevSquadAdoWatchObservationKind[];
   readonly skippedCursorKinds: readonly DevSquadAdoWatchObservationKind[];
   readonly claim: DevSquadAdoWatchClaimMetadata | null;
-  readonly ledgerErrorKind: string | null;
+  readonly ledgerErrorKind:
+    | DevSquadAdoLedgerError["kind"]
+    | "ledger-fault"
+    | null;
+  readonly cleanup: DevSquadAdoWatchCleanup;
 }
 
 export interface DevSquadAdoWatchIntakeSignal {
@@ -263,6 +288,10 @@ export interface DevSquadAdoWatchPassCounts {
   readonly suppressed: number;
   readonly skipped: number;
   readonly failed: number;
+  readonly cleanupReleased: number;
+  readonly cleanupFailed: number;
+  readonly cleanupIndeterminate: number;
+  readonly cleanupNotRequired: number;
 }
 
 export interface DevSquadAdoWatchPassResult {
@@ -278,7 +307,9 @@ export interface DevSquadAdoWatchPassResult {
 }
 ```
 
-`sourceRevision` is the revision the decision was derived from; `revision` is the accepted revision when a mutation was durable. In the happy path they differ by one, which is what CC-001 asserts.
+The reason union has exactly 27 members (the prior implementation had 25, not 18). `sourceRevision` is pre-acquire; outcome `revision` retains the acknowledged checkpoint revision when present; `cleanup.acceptedRevision` is the original accepted release revision. CC-001 is read 4 → acquire 5 → checkpoint 6 → release 7, with signal source 4, outcome revision 6, cleanup revision 7. CC-002 leaves the then-current revision 7 unchanged. Replays acknowledge their original accepted revision, possibly below the returned latest record revision; these are never conflated.
+
+`counts.acted` equals returned signal count; `counts.suppressed` counts acknowledged suppressed cursor advances; `counts.failed` counts final failures, including cleanup failures. These counts may overlap. The four cleanup counts partition every candidate outcome.
 
 ### Exported operations
 
@@ -322,7 +353,7 @@ Validation runs to completion before any seam call or ledger operation and retur
 | `backoff.jitter`                | Callable when present; its return is coerced with `trunc` and clamped to `[0, maxIntervalMs]`.                                                                                                                                |
 | `clock`                         | Callable returning a valid `Date`.                                                                                                                                                                                            |
 | `delay`                         | Callable.                                                                                                                                                                                                                     |
-| `signal`                        | `AbortSignal` when present.                                                                                                                                                                                                   |
+| `signal`                        | When present, boolean `aborted` plus callable `addEventListener` AND `removeEventListener`; reject before any injected clock, delay, seam, or ledger side effect.                                                             |
 
 Intake rules are exact-match sets with no wildcard. Admitting every status requires listing every status, which keeps lifecycle policy in the host.
 
@@ -347,7 +378,25 @@ The two scopes are not interchangeable. A **checkpoint** identifier must reprodu
 
 ## Candidate Ordering
 
-Candidates are canonicalized, deduplicated, and sorted by UTF-8 byte comparison of the canonical identifier. Ordering is total, locale-independent, and independent of input order. All processing is sequential; the watcher runs no candidates concurrently.
+Candidates are canonicalized, every duplicate canonical identity is rejected, and valid candidates are sorted by UTF-8 byte comparison. This candidate ordering never applies to observation identifiers, whose sequence is authoritative. All processing is sequential; noncooperating abandoned observations may nevertheless remain physically in flight.
+
+## Runtime Ledger Response Validation
+
+`callLedger` must accept a method-specific validator and request context, not blindly return `ok: true` values or arbitrary `error.kind` strings. Guard invocation and response inspection. Validate:
+
+- `readRecord`: the complete token-free public record, including schema, requested work-item identity, revision/timestamps, phase/status, branch/worktree, agent/session histories, PR reference, both observation cursors, checkpoint history, active claim and fencing counter. Use ledger-compatible structural rules without lifecycle policy or schema changes.
+- Every mutation: positive safe accepted revision, valid accepted timestamp, boolean replay flag, correct method outcome, and a complete valid latest record for the requested work item. Original accepted revision cannot exceed latest record revision; exact replay may be older and must not require original metadata to describe a later owner's state.
+- Acquire: original authority owner and token match the request, valid fencing and lease metadata, consistent outcome/record; establish current local authority only from validated evidence, never reconstruct it from a malformed payload.
+- Renew: returned claim owner/fence/lease and acceptance metadata match the held authority and renewal request, without converting an old replay into new authority.
+- Checkpoint: original checkpoint metadata (operation identity, accepted revision/time, state, owner/fence and requested patch where represented) matches the request; latest record remains valid even when its revision is newer. A malformed acknowledgement authorizes no new cursor changes or signals, even if a durable mutation happened.
+- Release: original released owner/fence/time and accepted revision match the request. A valid replay proves the original release, not that a later owner is absent.
+- Errors: require boolean false and a known `DevSquadAdoLedgerError` variant with its required fields validated (claim metadata, expiry, fencing, revision pair, current state, artifact/schema, resource/limit, attempts, storage outcome, or validation field/reason as appropriate). Project only the known category. Unknown or malformed variants, throws and rejections become `ledger-fault`; never return their strings/messages/stacks.
+
+This boundary validates injected claims of durability; it does not independently verify a dishonest dependency's filesystem. A faulting or ambiguous acquire yields no usable authority and zero release. A malformed post-write acknowledgement can lose the corresponding intake signal; host reconciliation remains necessary.
+
+Snapshot only method/discriminator-specific public fields into fresh nested objects before validation. Never clone or enumerate a dependency's whole response: unknown getters must remain untouched. Snapshot record collections with indexed traversal bounded by the inherited ledger ceilings; reject observed length changes, including during the last entry getter. Keep the original request snapshot separate from both the adapter's request copy and the response projection.
+
+History recovery must run the shared checkpoint acknowledgement validator against the last submitted request snapshot before reporting durability. Require accepted revision = submitted expected revision + 1; if latest equals accepted, require matching timestamp, state, authority and patched cursors. A newer valid latest record may reflect later mutations, renewal or takeover and must not be mistaken for the original acceptance. Refresh retry preconditions only after finding no matching history; retain the prior submission unchanged until a new request is issued (including any own renewal). The history entry carries no cursor or authority of its own, so do not invent missing receipt fields or alter the ledger schema.
 
 ## Poll Loop Algorithm
 
@@ -366,18 +415,22 @@ loop:
 
   for candidate in pending (canonical order):
     runCandidateStep(candidate, now)
+    if signal.aborted          -> stop("cancelled")
 
+  if signal.aborted            -> stop("cancelled")
   if pending is empty          -> stop("candidates-resolved")
   if polls >= maxPolls         -> stop("poll-budget-exhausted")
-  if signal.aborted            -> stop("cancelled")
   delayMs := backoffFor(polls)
   await delay(delayMs, signal)
 
 finalize:
-  release every still-held claim
   every still-pending candidate is reported:
      holding a claim -> failed / "checkpoint-indeterminate"
      otherwise       -> no-change / <last pending reason>
+  run mandatory cleanup once per previously validated authority
+  attach cleanup and apply failure promotion without retracting acknowledgements
+  if signal.aborted            -> override stop reason with "cancelled"
+  compute counts from returned signals, acknowledged suppression, final failures and cleanup
 ```
 
 Backoff for the transition from poll `n` to poll `n + 1`:
@@ -401,27 +454,29 @@ Gates run in this fixed order. Every check uses the single poll clock reading.
    - `capacity-exceeded` → resolve `failed` / `ledger-capacity`.
    - `storage` → resolve `failed` / `ledger-recovery` with `ledgerErrorKind: "storage"`.
 3. **Foreign-claim gate.** `record.activeClaim` exists, is owned by another `ownerId`, and `now < expiresAt` → resolve `skipped` / `claim-conflict`. No seam call is made.
-4. **Observe work-item comments.** Cancellation checked first. Call the seam with `sinceCommentId` from the record, raced against `delay(observationTimeoutMs, signal)`.
+4. **Observe work-item comments.** Fresh cancellation gate immediately before invocation. Pass a dedicated child controller's signal linked to parent; race a valid injected timeout, retiring both timer and links on every terminal path.
    - Timeout → resolve `failed` / `observation-timeout`.
    - Rejection → resolve `failed` / `observation-failed`, with no transport message retained.
-5. **Observe pull-request activity.** Only when `record.pullRequest.id !== null`.
+5. **Observe pull-request activity.** Only when `record.pullRequest.id !== null`, with a fresh parent abort check even if the work-item call returned valid data while aborting the parent.
    - Method absent → resolve `failed` / `pull-request-observation-unavailable`.
    - Same timeout and rejection handling as step 4.
-6. **Project and validate.** Take only `commentIds` / `{ threadId, commentId }` from responses. Each identifier must be a nonblank string ≤ 1,024 UTF-8 bytes without control characters; otherwise resolve `failed` / `invalid-observation-identifier`. Every other property of a seam entry is discarded here.
-7. **Select new events.** Apply the anchor rule per kind (below). A pull-request entry lacking a usable `commentId` is never persisted; its kind is recorded in `skippedCursorKinds`.
+6. **Project and validate.** Enforce the complete seam contract above: count before copy/iteration, incremental UTF-8 bytes and identity uniqueness before retention, per-ID validity. Reject the entire candidate if either kind fails. Retain only identifiers.
+7. **Select new events.** Apply anchor-inclusive rules below. Select the newest complete new PR pair; only mark PR skipped when no new complete pair exists. No kind can occur in both cursor-change and skipped sets.
 8. **Eligibility.** No new events in any kind → leave the candidate **pending** with reason `no-new-observations` (or `incomplete-pull-request-cursor` when the only observed activity was unpersistable). Pending candidates are re-examined on the next poll.
 9. **Acquire claim.** Fresh 32-byte `crypto.randomBytes` base64url token, derived `claim` operation ID, configured lease.
    - `claim-conflict` → resolve `skipped` / `claim-conflict`.
    - `claim-expired` | `claim-authorization` | `stale-fencing` → resolve `skipped` with the matching reason.
+   - Validate the response before establishing authority. Fault/ambiguity without validated authority means cleanup `indeterminate` / `authority-unvalidated`, no release.
+   - Recheck pre-acquire PR identity and both observation anchors against the valid claimed record. On change, write nothing and clean up, reporting stale observation; only acknowledged cleanup permits continued observation on a later poll.
 10. **Renewal guard.** If `now + renewalThresholdMs >= Date.parse(expiresAt)`, renew with the next `renew` ordinal before mutating. Fencing is preserved.
-11. **Checkpoint.** `expected` = `{ revision, phase, status }` from step 2; `patch.observations` carries only the advanced cursors.
-    - Success → record `revision` and `cursorChanges`.
+11. **Checkpoint.** `expected` uses the validated claimed record's revision/phase/status, refreshing expected revision after own renewal; `sourceRevision` remains the pre-acquire read. `patch.observations` carries only advanced cursors.
+    - Validated success → record original accepted checkpoint `revision` and `cursorChanges`; malformed success → `ledger-unavailable`, suppress all unacknowledged effects and run cleanup.
     - `revision-conflict` | `state-conflict` | `idempotency-conflict` → resolve `failed` with the matching reason; durable state unchanged.
     - `stale-fencing` | `claim-expired` | `claim-authorization` → resolve `failed` with the matching reason; nothing is advanced.
     - `contention`, or `storage` with `outcome: "indeterminate"` → leave the candidate **pending while holding the claim** and retry on a later poll with the **same** checkpoint operation ID.
     - `storage` with `outcome: "unchanged"` → resolve `failed` / `ledger-recovery`; durable state is known unchanged, so no retry is attempted.
 12. **Intake decision.** Record phase ∈ `intakeRules.phases` **and** status ∈ `intakeRules.statuses` → append one intake signal citing `sourceRevision` from step 2 and resolve `acted`. Otherwise resolve `intake-suppressed` / `intake-rules-unmatched`; the cursor stays advanced.
-13. **Release.** Release the claim with the derived `release` operation ID. Release failure never changes the reported outcome; the lease expiry is the backstop.
+13. **Cleanup.** Invoke release exactly once for previously validated authority using its derived release ID, retaining evidence until validation. Apply the cleanup contract below, preserving acknowledged checkpoint revision, cursor changes, and signals. Inclusive lease expiry is the backstop.
 
 The signal is appended only after the checkpoint response is accepted, so no signal can exist for a cursor that is not durable.
 
@@ -441,7 +496,7 @@ Equality is exact string comparison for work-item comments and exact pair compar
 
 The final branch is the fail-closed one. The seam window is anchor-inclusive, so a non-empty window that does not contain a supplied anchor is undecidable: it is indistinguishable from a window in which every entry is new, and treating it that way silently re-delivers the whole window. The candidate reports `failed` / `observation-anchor-missing` and advances nothing.
 
-A pull-request entry with a missing, null, or blank `commentId` is not persistable; the newest persistable entry among the new entries becomes the next cursor. `pull-request-thread` is recorded in `skippedCursorKinds` **only when no persistable entry exists at all**, so `cursorChanges` and `skippedCursorKinds` never name the same kind in one outcome.
+A pull-request entry with missing/undefined/null `commentId` is not persistable; a blank comment is invalid, not normalized. The newest complete pair among new entries becomes the next cursor. `pull-request-thread` is recorded in `skippedCursorKinds` **only when no new persistable entry exists**, so `cursorChanges` and `skippedCursorKinds` are disjoint.
 
 ## Observation Staleness Gate
 
@@ -454,21 +509,42 @@ claimed  := acquireClaim(...).record       # record as it stands under the claim
 if observed.observations.workItemCommentId != claimed.observations.workItemCommentId
    or observed.observations.pullRequest    != claimed.observations.pullRequest
    or observed.pullRequest.id              != claimed.pullRequest.id
-                               -> releaseClaim(); report no-change / stale-observation
-                                  (candidate stays pending and re-observes next poll)
+                               -> mandatory cleanup; report no-change / stale-observation
+                                  (re-observe later only after acknowledged cleanup;
+                                   unconfirmed cleanup finalizes failed instead)
 ```
 
 Phase and status are excluded on purpose: they are taken fresh from `claimed` and carried into the checkpoint precondition, so a foreign change to them conflicts on its own terms rather than being reclassified as staleness.
 
 ## Cancellation Points
 
-Cancellation is observed at exactly three classes of point, per FR-051:
+Cancellation is observed at these points, per FR-051:
 
-- before each seam call (steps 4 and 5), and propagated to the seam through `signal`;
-- before each ledger mutation (steps 9, 10, 11, and 13, except that a release already in flight completes);
+- freshly before each seam call (steps 4 and 5), including WI-success/parent-abort before PR;
+- before each non-cleanup ledger mutation (steps 9, 10, 11); mandatory release is still attempted once after abort;
 - between polls, both before the delay and via the delay's own `signal`.
+- immediately after each candidate, before resolved/budget exits, and after final cleanup; cancellation takes priority without retracting acknowledged effects.
 
-On abort the pass releases every held claim, reports every already-acknowledged outcome, and returns `stopReason: "cancelled"`.
+Signal property inspection is a narrow preflight boundary: unreadable required fields report validation at `signal` before injected side effects. Capture listener methods once with their original receiver, but keep `aborted` live. If it becomes unreadable or nonboolean after successful preflight, stop as cancelled and retain mandatory cleanup. Required configuration fields are read once into a private pass snapshot; the caller's signal is never modified.
+
+Each observation owns a dedicated AbortController propagated into its seam call and linked from the parent. Abort/timeout cancels seam and timer; success/rejection also retire timers and every parent link/listener. Consume/quarantine late settlements so they cannot produce later effects or unhandled rejections. Tests measure maximum cooperative active operations; sequential invocation is not a physical-concurrency guarantee for noncooperating dependencies.
+
+On abort the pass runs mandatory cleanup, preserves acknowledged outcomes/signals, and returns `stopReason: "cancelled"`. Ledger calls and delays must settle; abort cannot impose a hard wall-clock ceiling.
+
+## Mandatory Cleanup and Result Accounting
+
+Attach `DevSquadAdoWatchCleanup` to every outcome, even missing/skipped/unexamined candidates. Exactly one release invocation is made on candidate exit for validated authority, including cancellation/error, and zero without it. Retain local evidence until the response is validated; never fabricate authority, guess/reacquire, or retry cleanup.
+
+| Evidence                                               | Cleanup status / reason                   | Category; accepted revision                                    |
+| ------------------------------------------------------ | ----------------------------------------- | -------------------------------------------------------------- |
+| Valid release acknowledgement or exact replay          | `released` / `release-acknowledged`       | null; original accepted release revision                       |
+| Known rejection, including storage/unchanged           | `failed` / `release-rejected`             | known ledger category; null                                    |
+| Storage/indeterminate or contention                    | `indeterminate` / `release-indeterminate` | known ledger category; null                                    |
+| Throw/reject/malformed release                         | `indeterminate` / `release-indeterminate` | `ledger-fault`; null                                           |
+| Faulting/ambiguous acquire without validated authority | `indeterminate` / `authority-unvalidated` | `ledger-fault` or known ambiguous category; null; zero release |
+| No claim and no acquisition uncertainty                | `not-required` / `no-claim-acquired`      | null; null; zero release                                       |
+
+Only validated acknowledgements mean released; replay may include a later owner's active claim in the latest valid record. On failed/indeterminate cleanup, promote an otherwise nonfailed outcome to failed: `ledger-unavailable` for `ledger-fault`, else `claim-cleanup-unconfirmed`. Retain an existing primary failure reason. Preserve every acknowledged checkpoint revision/cursor change and returned signal; never roll back or retract. Derive acted/suppressed independently from final kind, and partition all candidates by cleanup counts.
 
 ## Security Controls
 
@@ -481,62 +557,62 @@ On abort the pass releases every held claim, reports every already-acknowledged 
 
 ## Requirement Traceability
 
-| Requirements  | Implementation                                                                                              | Tests                                  |
-| ------------- | ----------------------------------------------------------------------------------------------------------- | -------------------------------------- |
-| FR-001–FR-008 | `runDevSquadAdoWorkflowWatchPass`, result envelope, validation module, per-candidate isolation, root export | TEST-001, TEST-004, TEST-019, TEST-025 |
-| FR-009–FR-015 | Watcher-specific read seam, structural validation, projection, per-candidate observation calls              | TEST-002, TEST-003, TEST-018, TEST-024 |
-| FR-016–FR-024 | Pure eligibility over record + observations + single poll clock reading, canonical ordering                 | TEST-005, TEST-006, TEST-007, TEST-015 |
-| FR-025–FR-031 | Acquire-on-intent, random tokens, fencing carried per step, renewal guard, unconditional release            | TEST-008, TEST-009, TEST-010, TEST-011 |
-| FR-032–FR-039 | Cursor-only checkpoint patch with expected revision/phase/status, derived operation IDs                     | TEST-004, TEST-012, TEST-013, TEST-022 |
-| FR-040–FR-046 | Exact-match intake rules, suppression that still advances cursors, one signal per candidate                 | TEST-014, TEST-004, TEST-021           |
-| FR-047–FR-053 | Poll loop, budgets, injected delay, deterministic backoff, cancellation gates, observation timeout          | TEST-016, TEST-017, TEST-018           |
-| FR-054–FR-058 | Ledger category passthrough, candidate isolation, no artifact writes, redacted diagnostics                  | TEST-019, TEST-020, TEST-021, TEST-023 |
+| Requirements  | Implementation                                                                                                             | Tests                                            |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| FR-001–FR-008 | `runDevSquadAdoWorkflowWatchPass`, result envelope, validation module, per-candidate isolation, root export                | TEST-001, TEST-004, TEST-019, TEST-025           |
+| FR-009–FR-015 | Watcher-specific read seam, structural validation, projection, per-candidate observation calls                             | TEST-002, TEST-003, TEST-018, TEST-024           |
+| FR-016–FR-024 | Pure eligibility over record + observations + single poll clock reading, canonical ordering                                | TEST-005, TEST-006, TEST-007, TEST-015           |
+| FR-025–FR-031 | Validated acquire authority, random tokens, fencing, renewal guard, exactly one cleanup invocation per validated authority | TEST-008, TEST-009, TEST-010, TEST-011, TEST-030 |
+| FR-032–FR-039 | Cursor-only checkpoint patch with expected revision/phase/status, derived operation IDs                                    | TEST-004, TEST-012, TEST-013, TEST-022           |
+| FR-040–FR-046 | Exact-match intake rules, suppression that still advances cursors, one signal per candidate                                | TEST-014, TEST-004, TEST-021                     |
+| FR-047–FR-053 | Poll loop, budgets, injected delay, deterministic backoff, cancellation gates, observation timeout                         | TEST-016, TEST-017, TEST-018                     |
+| FR-054–FR-058 | Ledger category passthrough, candidate isolation, no artifact writes, redacted diagnostics                                 | TEST-019, TEST-020, TEST-021, TEST-023           |
 
 ## Invariant Traceability
 
-| Invariant | Enforcement                                                                             | Test                         |
-| --------- | --------------------------------------------------------------------------------------- | ---------------------------- |
-| INV-001   | Static dependency assertion plus seam-only observation                                  | TEST-024                     |
-| INV-002   | Seam exposes observation methods only; recording fake asserts call set                  | TEST-003                     |
-| INV-003   | Single poll clock reading, canonical ordering, pure eligibility                         | TEST-006, TEST-007           |
-| INV-004   | Foreign-claim gate plus acquire-on-intent                                               | TEST-008                     |
-| INV-005   | Fencing value carried on every mutation; ledger rejects superseded fences               | TEST-009                     |
-| INV-006   | Signal appended only after checkpoint acceptance                                        | TEST-004, TEST-005, TEST-019 |
-| INV-007   | `acted` set only from an accepted checkpoint response                                   | TEST-004, TEST-023           |
-| INV-008   | Checkpoint IDs reused verbatim on retry; claim IDs scoped per acquisition               | TEST-012, TEST-023           |
-| INV-009   | No phase table; intake rules are caller-supplied exact-match sets                       | TEST-014                     |
-| INV-010   | Projection to identifiers, token isolation, redacted errors                             | TEST-021                     |
-| INV-011   | Poll budget checked before each additional poll; elapsed budget bounds poll starts only | TEST-016                     |
-| INV-012   | Finalizer releases every held claim on every exit path                                  | TEST-011, TEST-017           |
-| INV-013   | Ledger recovery categories surfaced unchanged, never repaired                           | TEST-020                     |
-| INV-014   | Per-candidate step isolation with independent outcomes                                  | TEST-019                     |
-| INV-015   | Anchors compared between the pre-claim read and the acquired record                     | TEST-009                     |
-| INV-016   | Every injected ledger call classified into a typed outcome or `ledger-fault`            | TEST-019, TEST-011           |
+| Invariant | Enforcement                                                                                                               | Test                         |
+| --------- | ------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| INV-001   | Static dependency assertion plus seam-only observation                                                                    | TEST-024                     |
+| INV-002   | Seam exposes observation methods only; recording fake asserts call set                                                    | TEST-003                     |
+| INV-003   | Single poll clock reading, canonical ordering, pure eligibility                                                           | TEST-006, TEST-007           |
+| INV-004   | Foreign-claim gate plus acquire-on-intent                                                                                 | TEST-008                     |
+| INV-005   | Fencing value carried on every mutation; ledger rejects superseded fences                                                 | TEST-009                     |
+| INV-006   | Signal appended only after checkpoint acceptance                                                                          | TEST-004, TEST-005, TEST-019 |
+| INV-007   | `acted` set only from an accepted checkpoint response                                                                     | TEST-004, TEST-023           |
+| INV-008   | Checkpoint IDs reused verbatim on retry; claim IDs scoped per acquisition                                                 | TEST-012, TEST-023           |
+| INV-009   | No phase table; intake rules are caller-supplied exact-match sets                                                         | TEST-014                     |
+| INV-010   | Projection to identifiers, token isolation, redacted errors                                                               | TEST-021                     |
+| INV-011   | Poll budget checked before each additional poll; elapsed budget bounds poll starts only                                   | TEST-016                     |
+| INV-012   | Finalizer attempts cleanup once for validated authority, zero otherwise; reports validated acknowledgement or uncertainty | TEST-011, TEST-017, TEST-030 |
+| INV-013   | Ledger recovery categories surfaced unchanged, never repaired                                                             | TEST-020                     |
+| INV-014   | Per-candidate step isolation with independent outcomes                                                                    | TEST-019                     |
+| INV-015   | Anchors compared between the pre-claim read and the acquired record                                                       | TEST-009                     |
+| INV-016   | Every injected ledger call classified into a typed outcome or `ledger-fault`                                              | TEST-019, TEST-011           |
 
 ## Conformance Test Matrix
 
-| Case   | Test                                                                                                                  |
-| ------ | --------------------------------------------------------------------------------------------------------------------- |
-| CC-001 | Seed record `137` rev 4 cursor `480`; observe `[480, 481]`; assert one signal citing rev 4 and cursor `481` at rev 5. |
-| CC-002 | Rerun CC-001 inputs unchanged; assert `no-change`, zero signals, zero checkpoints, revision still 5.                  |
-| CC-003 | Recording seam fake exposes write-shaped spies; assert only observation methods were invoked.                         |
-| CC-004 | Interleave `watch-a` and `watch-b` passes over `137` with a 60s lease; assert one actor and one `claim-conflict`.     |
-| CC-005 | Expire `watch-a`, take over with `watch-b`, replay `watch-a` checkpoint; assert `stale-fencing` and no mutation.      |
-| CC-006 | Advance the record to rev 9 between read and checkpoint; assert `revision-conflict` and pass continuation.            |
-| CC-007 | Phase `awaiting-approval` with rules `[implement, review]`; assert cursor advanced and `intake-suppressed`.           |
-| CC-008 | Phase `custom-security-gate` listed in intake rules; assert a signal is emitted with no allowlist error.              |
-| CC-009 | Candidate `999` uninitialized; assert `skipped` / `record-not-found` and no record created on disk.                   |
-| CC-010 | Three shuffled input orders; assert identical outcomes, reason codes, and recorded seam call order.                   |
-| CC-011 | No eligible candidate with `maxPolls = 3`; assert 3 polls, 2 recorded delays, `poll-budget-exhausted`.                |
-| CC-012 | Abort after the first checkpoint acknowledgement; assert `cancelled`, acknowledged outcome present, claims released.  |
-| CC-013 | Non-settling seam with `observationTimeoutMs = 5000`; assert `failed` / `observation-timeout` and continuation.       |
-| CC-014 | Indeterminate checkpoint forces a multi-poll hold; assert renewal before inclusive expiry with unchanged fencing.     |
-| CC-015 | Blank owner, duplicate candidates, `maxPolls = 0`, malformed intake rules; assert field paths and zero side effects.  |
-| CC-016 | Seam without `observeWorkItemComments`; assert `seam-contract` error naming the method and zero mutations.            |
-| CC-017 | Three candidates, one corrupt artifact; assert isolated `ledger-recovery` failure and two normal completions.         |
-| CC-018 | Seam returns bodies, authors, and a credential-bearing URL; snapshot durable state, result, and errors for leaks.     |
-| CC-019 | Pull-request entry with a thread but no comment identifier; assert no PR cursor persisted and stable reason.          |
-| CC-020 | Full pass under the static dependency assertion with no network-capable module in the graph.                          |
+| Case   | Test                                                                                                                                                                 |
+| ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CC-001 | Seed rev 4 cursor `480`; observe `[480, 481]`; acquire 5 → checkpoint 6 → release 7; signal source 4, outcome revision 6, cleanup revision 7.                        |
+| CC-002 | Rerun unchanged; no signal/acquire/checkpoint/release, cleanup not-required, then-current revision 7 unchanged.                                                      |
+| CC-003 | Recording seam fake exposes write-shaped spies; assert only observation methods were invoked.                                                                        |
+| CC-004 | Interleave `watch-a` and `watch-b` passes over `137` with a 60s lease; assert one actor and one `claim-conflict`.                                                    |
+| CC-005 | Expire `watch-a`, take over with `watch-b`, replay `watch-a` checkpoint; assert `stale-fencing` and no mutation.                                                     |
+| CC-006 | Advance the record to rev 9 between read and checkpoint; assert `revision-conflict` and pass continuation.                                                           |
+| CC-007 | Phase `awaiting-approval` with rules `[implement, review]`; assert cursor advanced and `intake-suppressed`.                                                          |
+| CC-008 | Phase `custom-security-gate` listed in intake rules; assert a signal is emitted with no allowlist error.                                                             |
+| CC-009 | Candidate `999` uninitialized; assert `skipped` / `record-not-found` and no record created on disk.                                                                  |
+| CC-010 | Three shuffled input orders; assert identical outcomes, reason codes, and recorded seam call order.                                                                  |
+| CC-011 | No eligible candidate with `maxPolls = 3`; assert 3 polls, 2 recorded delays, `poll-budget-exhausted`.                                                               |
+| CC-012 | Abort after acknowledged checkpoint under cooperating dependencies; retain outcome/signal and attempt cleanup once; assert released only from valid acknowledgement. |
+| CC-013 | Non-settling seam with `observationTimeoutMs = 5000`; assert `failed` / `observation-timeout` and continuation.                                                      |
+| CC-014 | Indeterminate checkpoint forces a multi-poll hold; assert renewal before inclusive expiry with unchanged fencing.                                                    |
+| CC-015 | Blank owner, duplicate candidates, `maxPolls = 0`, malformed intake rules; assert field paths and zero side effects.                                                 |
+| CC-016 | Seam without `observeWorkItemComments`; assert `seam-contract` error naming the method and zero mutations.                                                           |
+| CC-017 | Three candidates, one corrupt artifact; assert isolated `ledger-recovery` failure and two normal completions.                                                        |
+| CC-018 | Seam returns bodies, authors, and a credential-bearing URL; snapshot durable state, result, and errors for leaks.                                                    |
+| CC-019 | Pull-request entry with a thread but no comment identifier; assert no PR cursor persisted and stable reason.                                                         |
+| CC-020 | Full pass under the static dependency assertion with no network-capable module in the graph.                                                                         |
 
 ## Success Verification
 
@@ -545,8 +621,8 @@ On abort the pass releases every held claim, reports every already-acknowledged 
 | SC-001    | 1,000 repeated passes over frozen state compared by deep equality of outcomes, reason codes, and counts.                                                                            |
 | SC-002    | 1,000 interleaved two-owner trials asserting exactly one actor each time, run in bounded concurrent batches over disjoint work items so the committed default meets the stated bar. |
 | SC-003    | Stale-fencing trials assert zero cursor advances and zero revision changes.                                                                                                         |
-| SC-004    | Cursor-advance-then-replay trials assert exactly one signal per observed event across passes.                                                                                       |
-| SC-005    | Budget matrix over poll count, duration, and abort asserting termination and a stable stop reason.                                                                                  |
+| SC-004    | At-most-once batched signal trials, including durable-unacknowledged and host-crash loss; host reconciliation remains required.                                                     |
+| SC-005    | Scheduling/window/abort matrix under settling dependencies, maximum cooperative active-operation counters and explicit noncooperation limitation.                                   |
 | SC-006    | Claim-lifecycle assertions on every exit path plus a negative force-release assertion.                                                                                              |
 | SC-007    | Automated string scan of durable artifacts, results, signals, and errors for bodies, URLs, and tokens.                                                                              |
 | SC-008    | Candidate-isolation trials comparing untouched candidates' revisions before and after a failure.                                                                                    |
@@ -589,6 +665,27 @@ On abort the pass releases every held claim, reports every already-acknowledged 
    - RED→GREEN TEST-021, TEST-024, TEST-025.
 
 Every step ends with passing tests before refactoring or proceeding.
+
+### Approved recovery sequence and traceability
+
+W029 amended these existing artifacts only. W030 → W031 → W032 → W033 → W034 → W035 → W036 → W037 implementation is complete, with subsequent RC14 remediation and regression evidence in the review log. W038 independently FAILED and awaits fresh parent-owned re-review; green implementation tests are not an independent PASS. No factory, live clients, discovery/filtering orchestration, or outbox is added.
+
+| Finding / additional review                           | Requirements / conformance             | Owning task / required tests                                    |
+| ----------------------------------------------------- | -------------------------------------- | --------------------------------------------------------------- |
+| R14-001 unchecked ledger success/errors               | FR-059; CC-024, CC-029                 | W030 / TEST-026                                                 |
+| R14-002 abort/preflight                               | FR-003, FR-051; CC-025                 | W031 / TEST-027                                                 |
+| R14-003 duplicate/opaque identity                     | FR-012, FR-034–FR-035b; CC-019, CC-026 | W032 / TEST-028                                                 |
+| R14-004 observation cancellation/liveness             | FR-048, FR-051–FR-053; CC-027          | W033 / TEST-029                                                 |
+| R14-005 count/UTF-8 resource limits                   | FR-035b; CC-026                        | W032 / TEST-028                                                 |
+| R14-006 revision semantics                            | FR-005, FR-044; CC-001, CC-002         | W035 / TEST-031                                                 |
+| R14-007 contradictory W007/anchor text                | FR-035a; CC-023                        | W029 artifact correction, W032 behavior verification / TEST-028 |
+| Release acknowledgement/accounting                    | FR-006, FR-029, FR-060; CC-028         | W034 / TEST-030                                                 |
+| PR staleness, takeover, intake metadata, idempotency  | FR-036a, FR-038, FR-044; CC-030        | W035 / TEST-031                                                 |
+| Full candidate/poll/duration/lease bounds             | FR-004; CC-015, CC-030                 | W036 / TEST-032                                                 |
+| Public reason union, cleanup export, README/changeset | FR-008, FR-060; TEST-025               | W037                                                            |
+| Evidence, superseded verdict, traceability            | CC-001–CC-030; TEST-001–TEST-032       | W038 independent verification                                   |
+
+Existing matrices above cover the earlier baseline; this recovery mapping adds FR-059/060 and CC-021–CC-030. CC-021/022 are owned by W035 (TEST-012/031); CC-023 by W032 (TEST-028); CC-024 by W030 (TEST-026). Implemented tests and actual command results are recorded in the review log, separately from the failed independent W038 verdict and pending re-review.
 
 ## Engineering Practices
 
@@ -666,6 +763,7 @@ npm test -- DevSquadAdoWorkflowWatcher
 - Claims are short-lived; a host reacting to a signal reacquires if it intends to mutate.
 - Intake delivery is at-most-once and never duplicating, and applies to ledger-mediated delivery only, never to external side effects. A checkpoint that becomes durable without its acknowledgement being observed advances the cursor while its signal is never returned, so hosts reconcile completeness from the durable record rather than from the signal stream.
 - A pass examines at most 1,000 candidates, inside ledger schema-v1 capacity bounds.
+- Ledger operations and delays settle; observation timeout assumes a valid delay. Noncooperating dependencies may remain physically active after abort; no hard runtime guarantee is implied.
 
 ### Discarded alternatives
 

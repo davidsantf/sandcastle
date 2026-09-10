@@ -472,11 +472,13 @@ describe("DevSquadAdoWorkflowWatcher candidate isolation", () => {
 
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
-    // Release is best-effort: an acknowledged cursor advance stays reported,
-    // and the lease expiry is what retires the claim the ledger would not drop.
+    // Cleanup failure cannot retract the acknowledged cursor or intake.
     expect(outcome.value.outcomes[0]).toMatchObject({
-      kind: "acted",
-      reason: "new-work-item-comment",
+      kind: "failed",
+      reason: "ledger-unavailable",
+      revision: 6,
+      cursorChanges: ["work-item-comment"],
+      cleanup: { status: "indeterminate", ledgerErrorKind: "ledger-fault" },
     });
     expect(outcome.value.signals).toHaveLength(1);
     expect(JSON.stringify(outcome.value)).not.toContain("transport exploded");

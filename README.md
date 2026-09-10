@@ -179,8 +179,10 @@ valid initialized record; the host decides which ones should resume.
 caller-supplied candidate set. It reads ledger records, asks an injected seam
 what is new, advances opaque observation cursors through fenced ledger
 checkpoints, and returns token-free per-candidate outcomes plus at most one
-intake signal per candidate. It is not a daemon: a pass always terminates, and
-composing it into a loop is the host's job.
+intake signal per candidate. It is not a daemon: poll scheduling is bounded, and
+composing passes into a loop is the host's job. Termination requires injected
+ledger operations and delays to settle; observation timeouts require a valid
+delay. Cancellation is cooperative and cannot forcibly stop dependencies.
 
 ```typescript
 import {
@@ -264,6 +266,18 @@ order, oldest first, and the window is **anchor-inclusive**: whenever you are
 given a `since` anchor and have a non-empty window to return, that anchor must
 appear in it. Return the anchor alone, or an empty window, when nothing is new.
 
+Each window permits at most **1,000 entries** and **1,048,576 aggregate UTF-8
+identifier bytes**, inclusive, with at most **1,024 bytes per identifier**.
+Work-item IDs within a window and PR `(threadId, commentId)` pairs must be
+unique. Only missing/undefined and null PR comment IDs are equivalent; blank
+strings are invalid identifiers. Malformed envelopes/collections, unreadable
+identifier-bearing accessors, and duplicate or oversized windows fail the entire
+candidate as `invalid-observation-window`, without deduplication or truncation.
+Individual invalid identifiers remain `invalid-observation-identifier`.
+Windows and candidate arrays use bounded indexed traversal, ignoring custom
+iterators. Observed growth or shrinkage during traversal rejects the input or
+whole window, including mutation by the final getter.
+
 The watcher never parses, sorts, or arithmetically compares identifier text; it
 locates the persisted cursor by exact comparison and treats everything after it
 as new. A non-empty window that omits the anchor is therefore undecidable — it
@@ -276,9 +290,12 @@ did drop it, the host must re-anchor the record deliberately.
 Only identifier fields are read. `commentIds`, `threadId`, and `commentId` are
 projected out and every other property of a returned entry is discarded before
 it can reach durable state, results, errors, or diagnostics. A pull-request
-entry without a usable `commentId` is never persisted as a cursor; the candidate
-reports `incomplete-pull-request-cursor` and records `pull-request-thread` in
-`skippedCursorKinds`. The seam is never invoked to write.
+entry with a missing/null `commentId` is never persisted as a cursor. In mixed
+windows, the newest complete pair is persisted, even if incomplete entries
+follow it. Only when no new complete pair exists is `pull-request-thread`
+included in `skippedCursorKinds`; it never overlaps `cursorChanges`. Without
+another persistable change the reason is `incomplete-pull-request-cursor`.
+The seam is never invoked to write.
 
 ### Pass identity and replay parity
 
@@ -326,11 +343,12 @@ A pass stops at the first of: all candidates resolved, `maxPolls` reached,
 `maxPollStartElapsedMs` bounds **scheduling, not duration**. It is checked once
 per poll, before that poll begins, and the first poll always starts. Work
 already in flight — candidate steps, seam observations, ledger mutations —
-always runs to completion, so a pass can overrun the value and a single poll is
-not bounded by it at all. Hard termination comes from `maxPolls`; a single
-observation is bounded by `observationTimeoutMs`; an immediate stop comes from
-`signal`. If you need a wall-clock ceiling on the whole call, impose it in the
-host with your own abort signal.
+can overrun the value, and a single poll is not bounded by it at all. `maxPolls`
+bounds the number of polls, not physical runtime. Each observation receives its
+own child abort signal: timeout or parent abort cancels that signal and the
+timer, and late results are ignored. Ledger methods and delays must settle.
+Noncooperating dependencies may remain physically active after cancellation;
+an abort signal is not a hard wall-clock ceiling.
 
 The clock is read once per poll and that single reading drives every eligibility,
 lease, and timestamp decision in that poll. Between polls the watcher asks the
@@ -349,28 +367,59 @@ deletes, or resets another owner's claim.
 A record is read before its observation and again as part of the acquisition,
 and the two are compared. If another owner advanced a cursor in that window, the
 selection in hand was computed from anchors that are no longer durable, so the
-watcher releases the claim without writing and reports `no-change` /
-`stale-observation`; a later poll re-observes from the advanced anchor. A cursor
-is never moved backwards.
+watcher attempts cleanup once without writing. Only an acknowledged release
+allows `no-change` / `stale-observation` and a later poll to re-observe from the
+advanced anchor. Unconfirmed cleanup instead finalizes a failed candidate with
+explicit cleanup evidence. The stale selection never moves a cursor backwards.
 
-Cancellation is observed before each seam call, before each ledger mutation, and
-between polls. An aborted pass still releases every claim it acquired and still
-reports every outcome that was already acknowledged. A seam call that fails
+Cancellation is observed before each seam call, before each non-cleanup ledger
+mutation, and at candidate completion and poll/budget exits. An aborted pass
+still attempts cleanup once for every validated
+claim authority and reports all acknowledged effects. A seam call that fails
 because its signal aborted is reported as `cancelled`, not as an observation
 fault.
+
+Required signal getters are inspected before injected side effects; unreadable
+ones return a sanitized validation error at `signal`. Listener methods are
+captured once while `aborted` remains live. If abort state becomes unreadable
+after preflight, the pass stops as cancelled and still performs mandatory cleanup.
+Ledger acknowledgements are likewise projected into fresh method-specific public
+fields before validation; unrelated response getters are never read.
+
+Every candidate has mandatory `cleanup` evidence:
+
+| Status          | Meaning                                                                    |
+| --------------- | -------------------------------------------------------------------------- |
+| `released`      | A validated release acknowledgement, with its original `acceptedRevision`. |
+| `failed`        | A known release rejection, including storage `unchanged`.                  |
+| `indeterminate` | Ambiguous/faulting release, or acquire without validated authority.        |
+| `not-required`  | No claim acquired and no acquisition uncertainty.                          |
+
+Cleanup includes a stable `reason` and `ledgerErrorKind`; it never includes a
+capability token. No release is attempted without validated authority, and
+cleanup is never retried or guessed. Inclusive lease expiry is the backstop.
+An acknowledged release replay describes the original release, not the absence
+of a later owner's claim.
+
+Failed/indeterminate cleanup promotes an otherwise nonfailed candidate to
+`claim-cleanup-unconfirmed` (or `ledger-unavailable` for `ledger-fault`), while
+preserving an existing primary failure. It **does not retract** acknowledged
+checkpoint revisions, cursor changes, or intake signals. `counts.acted` counts
+returned signals, `counts.suppressed` counts acknowledged suppressed advances,
+and either may overlap `counts.failed`. `cleanupReleased`, `cleanupFailed`,
+`cleanupIndeterminate`, and `cleanupNotRequired` partition all candidates.
 
 ### Delivery model and the DevSquad boundary
 
 Intake signals are **returned in the pass result**. There is no callback, queue,
 retry, or transport: host code never runs inside a claimed step. A candidate's
-cursor checkpoint is acknowledged as durable before its signal enters the result,
-so a crash before the pass returns loses only signals whose cursors never
-advanced.
+cursor checkpoint is acknowledged as durable before its signal enters the result.
+A crash before return can therefore lose a signal whose cursor already advanced.
 
 Delivery is **at-most-once, and never duplicating** — it is not lossless. The
 guarantee is that no observed event is delivered twice: a cursor advance is
 durable before the signal derived from it is reported. The converse does not
-hold. If a checkpoint is acknowledged as durable but the pass cannot confirm it
+hold. If a checkpoint becomes durable but the pass cannot confirm it
 (the process dies, or storage reports an indeterminate outcome and the budget
 ends first), the cursor has moved while the signal was never returned, and a
 later pass sees nothing new for that window. Hosts that cannot tolerate a lost
@@ -381,10 +430,21 @@ claim about external side effects: fencing protects ledger mutations, not
 anything the host does after reading a signal.
 
 An injected ledger that throws, rejects, or answers with something that is not a
-typed result is never allowed to escape. It resolves as `failed` /
+valid method-specific result is never allowed to escape. Full public records,
+original mutation metadata, request identity/authority/checkpoint consistency,
+and known error variants are runtime-validated against an independent request
+snapshot, never the mutable request handed to the adapter. A replay at its
+accepted revision must agree with that record; an older acknowledgement can
+coexist with valid later mutations. Recovery from checkpoint history uses the
+same acknowledgement checks against the original submitted request, not a
+refreshed retry revision: acceptance must be at the submitted expected revision
+plus one, and a same-revision record must match the cursor, state, and authority.
+Unknown or malformed responses
+resolve as `failed` /
 `ledger-unavailable` with `ledgerErrorKind: "ledger-fault"`, the candidate's
-claim is still released, and no message, stack, or foreign value reaches the
-result.
+validated authority receives one cleanup attempt, and no message, stack, or
+arbitrary error category reaches the result. A malformed acquire establishes
+no authority; a malformed mutation acknowledgement never fabricates durability.
 
 The host keeps everything else. It chooses the candidate set (the watcher never
 discovers work items), initializes ledger records (a missing record is a stable
@@ -395,8 +455,12 @@ tracker write and pull-request action.
 Note that every ledger mutation advances the record revision, including claim
 acquisition, renewal, and release. A candidate outcome therefore reports
 `sourceRevision` (the revision the decision was derived from) alongside
-`revision` (the revision the cursor checkpoint was accepted at); they are not
-adjacent. Candidate outcomes and ledger errors are reduced to stable categories —
+`revision` (the revision the cursor checkpoint was accepted at) and
+`cleanup.acceptedRevision` (the acknowledged release revision). For example,
+read 4 -> acquire 5 -> checkpoint 6 -> release 7 yields source 4, checkpoint 6,
+cleanup 7. An unchanged repeat leaves revision 7 unchanged with no cleanup
+required. A replay may acknowledge an older revision than its latest record.
+Candidate outcomes and ledger errors are reduced to stable categories —
 `ledgerErrorKind` carries the ledger's own category and never raw JSON, artifact
 contents, or an operating-system message.
 

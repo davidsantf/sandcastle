@@ -409,6 +409,16 @@ describe("DevSquadAdoWorkflowWatcher claim contention", () => {
     if (!durable.ok) return;
     expect(durable.value.observations.workItemCommentId).toBe("480");
     expect(durable.value.activeClaim).toMatchObject({ ownerId: "watch-b" });
+    expect(durable.value.revision).toBe(beforeTakeover.value.revision + 2);
+    expect(durable.value.fencingCounter).toBe(
+      beforeTakeover.value.fencingCounter + 2,
+    );
+    expect(outcome.value.outcomes[0]?.cleanup).toEqual({
+      status: "failed",
+      reason: "release-rejected",
+      ledgerErrorKind: "stale-fencing",
+      acceptedRevision: null,
+    });
     expect(durable.value.checkpoints).toEqual(beforeTakeover.value.checkpoints);
   }, 120_000);
 
@@ -429,19 +439,19 @@ describe("DevSquadAdoWorkflowWatcher claim contention", () => {
       const competing: string[] = [];
       const driftingLedger: DevSquadAdoWorkflowLedger = {
         ...fixture.ledger,
+        checkpoint: async (input) =>
+          fixture.ledger.checkpoint(
+            scenario === "state-conflict" && input.workItemId === "137"
+              ? { ...input, expected: { ...input.expected, status: "drifted" } }
+              : input,
+          ),
         acquireClaim: async (input) => {
           const acquired = await fixture.ledger.acquireClaim(input);
           if (!acquired.ok || drifted || input.workItemId !== "137")
             return acquired;
           drifted = true;
           if (scenario === "state-conflict") {
-            return {
-              ok: true,
-              value: {
-                ...acquired.value,
-                record: { ...acquired.value.record, status: "drifted" },
-              },
-            };
+            return acquired;
           }
           const authority = acquired.value.outcome.authority;
           const written = await fixture.ledger.checkpoint({
@@ -567,7 +577,7 @@ describe("DevSquadAdoWorkflowWatcher claim authority outcomes", () => {
     expect(durable.value.activeClaim).toMatchObject({ ownerId: "watch-a" });
   }, 60_000);
 
-  it("[TEST-009] reports an unusable claim capability as claim-authorization", async () => {
+  it("[TEST-026] rejects a mismatched acquisition capability without trusting authority", async () => {
     const fixture = await createWatcherLedgerFixture(ledgerClock);
     await seedWatcherRecord(fixture.ledger, {
       workItemId: 137,
@@ -617,9 +627,11 @@ describe("DevSquadAdoWorkflowWatcher claim authority outcomes", () => {
     expect(outcome.value.outcomes[0]).toMatchObject({
       workItemId: "137",
       kind: "failed",
-      reason: "claim-authorization",
+      reason: "ledger-unavailable",
       revision: null,
-      ledgerErrorKind: null,
+      ledgerErrorKind: "ledger-fault",
+      claim: null,
+      cleanup: { status: "indeterminate", reason: "authority-unvalidated" },
     });
     expect(outcome.value.signals).toEqual([]);
     expect(outcome.value.counts).toMatchObject({ acted: 0, failed: 1 });

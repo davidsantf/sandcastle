@@ -1,4 +1,5 @@
 import type {
+  DevSquadAdoLedgerError,
   DevSquadAdoPullRequestCursor,
   DevSquadAdoWorkflowLedger,
   DevSquadAdoWorkItemId,
@@ -85,6 +86,9 @@ export interface DevSquadAdoWatcherPullRequestObservation {
  * Read-oriented seam through which every external observation passes.
  *
  * Entries must be returned in the tracker's authoritative order, oldest first.
+ * Each window is unique and bounded to 1,000 entries and 1,048,576 aggregate
+ * UTF-8 identifier bytes, with at most 1,024 bytes per identifier. PR identity
+ * is the exact thread/comment pair, normalizing only missing/null comments.
  * The watcher reads only the identifier fields declared above and discards
  * every other property.
  *
@@ -126,11 +130,11 @@ export interface DevSquadAdoWatchIntakeRules {
 }
 
 /**
- * Caller-declared bounds that guarantee pass termination.
+ * Caller-declared scheduling bounds under cooperating dependencies.
  *
- * Termination is guaranteed by `maxPolls` — the only hard bound — together
- * with the per-observation timeout and cooperative cancellation. The elapsed
- * bound governs scheduling, not wall-clock duration; see
+ * Poll counts and per-observation timeouts bound scheduling. Ledger methods
+ * and delays must settle; abort cannot forcibly stop noncooperating work.
+ * The elapsed bound governs scheduling, not wall-clock duration; see
  * {@link DevSquadAdoWatchBudgets.maxPollStartElapsedMs}.
  */
 export interface DevSquadAdoWatchBudgets {
@@ -146,7 +150,7 @@ export interface DevSquadAdoWatchBudgets {
    * pass takes. The first poll always starts.
    *
    * For a bound on any single observation use `observationTimeoutMs`; for a
-   * hard stop use `maxPolls` or `signal`.
+   * scheduling stop use `maxPolls` or cooperative `signal` cancellation.
    */
   readonly maxPollStartElapsedMs: number;
   /** Per-observation timeout in milliseconds, enforced via injected delay. */
@@ -183,7 +187,7 @@ export interface RunDevSquadAdoWorkflowWatchPassOptions {
   readonly passId: string;
   /** Diagnostic coordinator identity used for ledger claims. */
   readonly ownerId: string;
-  /** Work items to examine; deduplicated and canonically ordered. */
+  /** Work items to examine; canonical duplicates are rejected, then byte-ordered. */
   readonly candidates: readonly DevSquadAdoWorkItemId[];
   /** Exact-match phase and status sets that admit intake signals. */
   readonly intakeRules: DevSquadAdoWatchIntakeRules;
@@ -193,7 +197,7 @@ export interface RunDevSquadAdoWorkflowWatchPassOptions {
   readonly lease?: DevSquadAdoWatchLeaseConfig;
   /** Optional deterministic backoff configuration. */
   readonly backoff?: DevSquadAdoWatchBackoffConfig;
-  /** Injected UTC clock; read exactly once per poll. */
+  /** Injected UTC clock; read at pass start and once before each poll. */
   readonly clock: () => Date;
   /** Injected delay source; the watcher never waits on wall-clock time. */
   readonly delay: (ms: number, signal?: AbortSignal) => Promise<void>;
@@ -232,6 +236,8 @@ export type DevSquadAdoWatchReasonCode =
   | "observation-anchor-missing"
   | "pull-request-observation-unavailable"
   | "invalid-observation-identifier"
+  | "invalid-observation-window"
+  | "claim-cleanup-unconfirmed"
   | "ledger-recovery"
   | "ledger-capacity"
   | "ledger-unavailable"
@@ -254,6 +260,28 @@ export interface DevSquadAdoWatchClaimMetadata {
   readonly expiresAt: string;
 }
 
+/** Validated ledger categories only; injected arbitrary text is never exposed. */
+export type DevSquadAdoWatchLedgerErrorKind =
+  | DevSquadAdoLedgerError["kind"]
+  | "ledger-fault";
+
+/** Evidence of the single cleanup attempt, independent of checkpoint acceptance. */
+export interface DevSquadAdoWatchCleanup {
+  /** Whether release was acknowledged, rejected, uncertain, or unnecessary. */
+  readonly status: "released" | "failed" | "indeterminate" | "not-required";
+  /** Stable explanation of the cleanup evidence. */
+  readonly reason:
+    | "release-acknowledged"
+    | "release-rejected"
+    | "release-indeterminate"
+    | "authority-unvalidated"
+    | "no-claim-acquired";
+  /** Validated error category, never a dependency message or token. */
+  readonly ledgerErrorKind: DevSquadAdoWatchLedgerErrorKind | null;
+  /** Original accepted release revision, not the checkpoint or latest revision. */
+  readonly acceptedRevision: number | null;
+}
+
 /** Stable per-work-item result of one watch pass. */
 export interface DevSquadAdoWatchCandidateOutcome {
   /** Canonical ledger work-item identifier. */
@@ -273,7 +301,9 @@ export interface DevSquadAdoWatchCandidateOutcome {
   /** Token-free claim metadata, or null when no claim was acquired. */
   readonly claim: DevSquadAdoWatchClaimMetadata | null;
   /** Stable ledger error category, or null when no ledger error occurred. */
-  readonly ledgerErrorKind: string | null;
+  readonly ledgerErrorKind: DevSquadAdoWatchLedgerErrorKind | null;
+  /** Mandatory independent evidence of claim cleanup. */
+  readonly cleanup: DevSquadAdoWatchCleanup;
 }
 
 /** Token-free intake proposal handed back to the DevSquad host. */
@@ -308,6 +338,14 @@ export interface DevSquadAdoWatchPassCounts {
   readonly skipped: number;
   /** Candidates that failed in isolation. */
   readonly failed: number;
+  /** Candidates with acknowledged release. */
+  readonly cleanupReleased: number;
+  /** Candidates whose release was rejected. */
+  readonly cleanupFailed: number;
+  /** Candidates whose acquire or release acknowledgement is uncertain. */
+  readonly cleanupIndeterminate: number;
+  /** Candidates requiring no claim cleanup. */
+  readonly cleanupNotRequired: number;
 }
 
 /** Complete token-free result of one bounded watch pass. */
@@ -353,7 +391,7 @@ export interface DevSquadAdoWatchValidatedPass {
   readonly passId: string;
   /** Diagnostic coordinator identity. */
   readonly ownerId: string;
-  /** Canonical, deduplicated, byte-ordered work-item identifiers. */
+  /** Unique canonical, byte-ordered work-item identifiers. */
   readonly candidates: readonly string[];
   /** Exact-match phases admitted for intake. */
   readonly intakePhases: readonly string[];

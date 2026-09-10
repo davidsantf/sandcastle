@@ -3,6 +3,13 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import * as packageEntryPoint from "./index.js";
 import type {
+  DevSquadAdoWatchCandidateOutcome,
+  DevSquadAdoWatchCleanup,
+  DevSquadAdoWatchLedgerErrorKind,
+  DevSquadAdoWatchPassCounts,
+} from "./index.js";
+import type { DevSquadAdoLedgerError } from "./DevSquadAdoWorkflowLedger.js";
+import type {
   DevSquadAdoWatchCandidateOutcomeKind,
   DevSquadAdoWatchReasonCode,
   DevSquadAdoWatchStopReason,
@@ -30,6 +37,7 @@ const WATCHER_MODULES = [
   "DevSquadAdoWorkflowWatcherValidation.ts",
   "DevSquadAdoWorkflowWatcherObservation.ts",
   "DevSquadAdoWorkflowWatcherPass.ts",
+  "DevSquadAdoWorkflowWatcherLedger.ts",
 ] as const;
 
 const FORBIDDEN =
@@ -69,6 +77,8 @@ const REASON_CODES = [
   "observation-anchor-missing",
   "pull-request-observation-unavailable",
   "invalid-observation-identifier",
+  "invalid-observation-window",
+  "claim-cleanup-unconfirmed",
   "ledger-recovery",
   "ledger-capacity",
   "ledger-unavailable",
@@ -100,6 +110,29 @@ const SEAM_METHODS = [
 const REASON_UNION_IS_EXACT: Equals<
   DevSquadAdoWatchReasonCode,
   (typeof REASON_CODES)[number]
+> = true;
+const CLEANUP_IS_REQUIRED: Equals<
+  DevSquadAdoWatchCandidateOutcome["cleanup"],
+  DevSquadAdoWatchCleanup
+> = true;
+const LEDGER_CATEGORIES_ARE_EXACT: Equals<
+  DevSquadAdoWatchLedgerErrorKind,
+  DevSquadAdoLedgerError["kind"] | "ledger-fault"
+> = true;
+const CLEANUP_COUNTS_ARE_REQUIRED: Equals<
+  Pick<
+    DevSquadAdoWatchPassCounts,
+    | "cleanupReleased"
+    | "cleanupFailed"
+    | "cleanupIndeterminate"
+    | "cleanupNotRequired"
+  >,
+  {
+    readonly cleanupReleased: number;
+    readonly cleanupFailed: number;
+    readonly cleanupIndeterminate: number;
+    readonly cleanupNotRequired: number;
+  }
 > = true;
 const STOP_UNION_IS_EXACT: Equals<
   DevSquadAdoWatchStopReason,
@@ -166,6 +199,7 @@ describe("DevSquadAdoWorkflowWatcher dependency boundary", () => {
       [
         "DevSquadAdoWorkflowLedgerSchema.ts",
         "DevSquadAdoWorkflowWatcher.ts",
+        "DevSquadAdoWorkflowWatcherLedger.ts",
         "DevSquadAdoWorkflowWatcherObservation.ts",
         "DevSquadAdoWorkflowWatcherPass.ts",
         "DevSquadAdoWorkflowWatcherValidation.ts",
@@ -274,6 +308,8 @@ describe("DevSquadAdoWorkflowWatcher public surface", () => {
       "DevSquadAdoWatchCandidateOutcome",
       "DevSquadAdoWatchCandidateOutcomeKind",
       "DevSquadAdoWatchClaimMetadata",
+      "DevSquadAdoWatchCleanup",
+      "DevSquadAdoWatchLedgerErrorKind",
       "DevSquadAdoWatchError",
       "DevSquadAdoWatchIntakeRules",
       "DevSquadAdoWatchIntakeSignal",
@@ -310,7 +346,10 @@ describe("DevSquadAdoWorkflowWatcher public surface", () => {
     expect(OUTCOME_UNION_IS_EXACT).toBe(true);
     expect(STEP_UNION_IS_EXACT).toBe(true);
     expect(SEAM_UNION_IS_EXACT).toBe(true);
-    expect(REASON_CODES).toHaveLength(25);
+    expect(REASON_CODES).toHaveLength(27);
+    expect(CLEANUP_IS_REQUIRED).toBe(true);
+    expect(LEDGER_CATEGORIES_ARE_EXACT).toBe(true);
+    expect(CLEANUP_COUNTS_ARE_REQUIRED).toBe(true);
     expect(STOP_REASONS).toHaveLength(4);
 
     const source = await readModule("DevSquadAdoWorkflowWatcher.ts");

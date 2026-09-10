@@ -660,7 +660,7 @@ describe("DevSquadAdoWorkflowWatcher cancellation", () => {
     expect(outcome.value.stopReason).toBe("cancelled");
     expect(outcome.value.signals).toEqual([]);
     expect(outcome.value.outcomes[0]).toMatchObject({
-      kind: "no-change",
+      kind: "failed",
       reason: "cancelled",
       claim: null,
     });
