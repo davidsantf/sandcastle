@@ -1,5 +1,7 @@
 # Review: DevSquad/ADO Workflow Watcher (slice 14)
 
+**Authoritative final status:** [2026-09-10 publication and evidence correction](#final-2026-09-10-publication-and-evidence-correction) at the end of this log; [portable original worker evidence](final-review-evidence.json). Implementation publication is complete at `d5aecf0`; the documentation correction does not rerun review.
+
 ## Current recovery status — 2026-09-10
 
 ### Final fresh independent review - turn 4 (W038 completed TECHNICAL only)
@@ -55,9 +57,9 @@ The following commands/results were freshly executed by the independent reviewer
 
 #### Scope, residual limits and authority
 
-Scope remains supplied candidates plus host-owned exact phase/status rules only: no discovery/filtering orchestration, live seam implementation, factory or outbox. At-most-once delivery is potentially lossy; the host must reconcile durable cursors with intake processing. Cooperative abort cannot force-stop noncooperators; ledger/delay settlement and a valid timeout delay remain assumptions. Exactly one cleanup attempt does not guarantee release when state is unknown; inclusive lease expiry is the backstop.
+The original broader discovery/filtering requirement is a **deferred capability, not fully delivered**. The current API consumes host-supplied candidates and exact host-owned phase/status rules; it does not discover or filter tracker candidates or orchestrate lifecycle. No live seam implementation, factory or outbox is included. At-most-once delivery is potentially lossy; the host must reconcile durable cursors with intake processing. Cooperative abort cannot force-stop noncooperators; ledger/delay settlement and a valid timeout delay remain assumptions. Exactly one cleanup attempt does not guarantee release when state is unknown; inclusive lease expiry is the backstop.
 
-ADR-0025 and ADR-0026 remain **Proposed**, with authorized acceptance pending. This local slice has no linked board item. No commit, push, PR update, merge, other checkout or governance acceptance is performed here. Publication remains the parent's responsibility: #20 must merge before #21. Only after parent publication, the recommended next-slice base is the updated #21 head, `users/davidsant/symmetrical-train`; slice 15 remains blocked until the creator's explicit decision. **W038 is completed TECHNICAL only, PASSED with no blockers and TB001 acknowledged.**
+ADR-0025 and ADR-0026 remain **Proposed**, with authorized acceptance pending. This local slice has no linked board item. Implementation publication is complete: local and published PR #21 head are `d5aecf0ba1e276642ddfc683fc756320598642f6`, normally fast-forwarded from `fb6a238`; no merge occurred. #20 must merge before #21. The recommended next-slice base is the updated #21 head, `users/davidsant/symmetrical-train`, but slice 15 remains blocked until the creator's explicit decision. This documentation-only follow-up preserves the implementation source tree; the parent will record its resulting documentation commit SHA in the PR/handoff. **W038 is completed TECHNICAL only, PASSED with no blockers and TB001 acknowledged; publication does not grant governance acceptance or merge readiness.**
 
 ## Historical recovery reviews and implementation evidence (superseded by final turn 4)
 
@@ -781,11 +783,13 @@ changed in this turn — the only `src/` edits are test additions and test-title
 tags — so the validated behaviour of the preserved commits is unaltered.
 The then-current clearance for PR is superseded. Current status at that historical review was REMEDIATION REQUIRED; approval remains the authorized reviewer's act.
 
-## 2026-09-10: W030-W037 implementation evidence (not independent approval)
+## Historical 2026-09-10: W030-W037 implementation evidence (312-test implementation turn, superseded)
 
-The approved recovery is implemented in this worktree. W038 remains pending for
-the parent coordinator's independent review and publication decision. This entry
-does not reinstate any historical PASS verdict or accept either Proposed ADR.
+At that historical implementation turn, the approved recovery was implemented
+in this worktree and W038 remained pending for the parent coordinator's
+independent review and publication decision. This entry is not the final
+401-test independent review or current publication status; it does not
+reinstate any historical PASS verdict or accept either Proposed ADR.
 
 ### Finding coverage
 
@@ -814,7 +818,7 @@ incorrectly rejected. Both were reproduced as failing tests and corrected.
 This is implementation evidence, not a claim that every new matrix was first
 run against the unmodified baseline.
 
-### Final local validation
+### Historical local implementation validation (312 tests, not the final review)
 
 | Command                                                                 | Actual result                                                                                                                                                                                                                                                                                                                  |
 | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -825,13 +829,71 @@ run against the unmodified baseline.
 | `npx prettier --check --ignore-path .gitignore <changed .ts/.md files>` | **Passed** for all changed files, including both changesets and the pre-existing amended feature documents. No whole-repository formatting.                                                                                                                                                                                    |
 | `git diff --check`                                                      | **Passed**, no whitespace errors. Explicit diff checks also confirmed ledger implementation/schema, ADR-0025, `package.json`, and `package-lock.json` were unchanged.                                                                                                                                                          |
 
-### Remaining boundaries
+### Boundaries at that historical implementation turn
 
-- W038 independent review and publication remain the parent's responsibility.
-- No commit, push, PR update, merge, board change, factory, slice-15 work, or ADR
-  acceptance was performed. ADR-0025, ledger code/schema, and dependency manifests
-  remain unchanged.
+- At that historical implementation turn, W038 independent review and publication
+  remained the parent's responsibility; both technical review and implementation
+  publication subsequently completed as recorded below.
+- At that historical implementation turn, no commit, push, PR update, merge,
+  board change, factory, slice-15 work, or ADR acceptance was performed.
+  ADR-0025, ledger code/schema, and dependency manifests remained unchanged.
 - Scheduling/window bounds and cooperative cancellation are not a hard runtime
   guarantee for nonsettling dependencies.
 - Durable-but-unacknowledged writes and host crashes can lose at-most-once intake
   signals; the host reconciles durable cursors against intake processing.
+
+## FINAL 2026-09-10 publication and evidence correction
+
+**Authoritative current disposition: W029-W037 complete; W038 completed TECHNICAL only. Final independent turn 4 PASSED: 0 Critical, 0 Major, 1 nonblocking Minor TB001. Implementation publication is complete, not pending.** This dated entry corrects documentary ambiguity only; no independent review, tests, probes or build were rerun for this correction. Earlier 312-test implementation evidence and pending/no-publication statements are explicitly historical, not the final gate.
+
+### Portable original evidence and attribution
+
+[final-review-evidence.json](final-review-evidence.json) preserves the exact user-visible content of seven `assistant.message` records from authorized local session `9cfd7f94-8a2a-415f-afc6-c21a45276485`. Each record contains only event ID, timestamp, supplied worker/agent attribution, parent tool-call ID and original content. The export includes the final aggregate report verbatim, not invented reports or probe source. Raw logs, prompts, tool arguments, reasoning and encrypted fields are not exported. Original report-time pending-publication/HEAD statements remain verbatim historical evidence; this entry records the subsequent publication.
+
+| Worker / role                                                 | Exact event ID (2026-09-10 UTC)                        | Verdict and limits                                                                                                                                                           |
+| ------------------------------------------------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `gate-spec` / `devsquad:devsquad.review.spec`                 | `77864725-73d1-42e8-9fef-b8282ef970f7` (18:34:49.259Z) | Bounded static conformance PASS; mappings inspected, no runtime probes or W038 approval.                                                                                     |
+| `gate-adr` / `devsquad:devsquad.review.adr`                   | `ef24b250-1a2a-4c89-ac3c-f2350583b507` (18:34:21.236Z) | Scoped static architecture PASS; no runtime certification or ADR acceptance.                                                                                                 |
+| `gate-code` / `devsquad:devsquad.review.code`                 | `a82f29e2-8757-4b89-b600-6c4be02f3562` (18:34:08.271Z) | No new blocker in bounded static source inspection; no tests/probes or exhaustive repository audit.                                                                          |
+| `gate-security` / `devsquad:devsquad.review.security`         | `6d15c272-4b5c-4df1-92a6-4d122830b206` (18:34:14.540Z) | Triggers detected, no static finding; explicitly not a completed specialist gate and no exploit probes. Separate specialist below completed that gate.                       |
+| `gate-tests` / `devsquad:devsquad.review.tests`               | `4839c254-aefd-455a-accf-ea8cf6009bb5` (18:35:21.957Z) | Independently executed 401/19 selectors and checks below; TB-001 Minor; no build/full-suite rerun or real-ledger enforcement certification from the fakes.                   |
+| `gate-security-specialist` / `security-review`                | `3ed80047-0faa-4fd6-8f5f-f002914d6b90` (18:37:07.681Z) | “No security vulnerabilities found in the reviewed changes.” No additional execution detail is asserted by this short report.                                                |
+| `slice14-final-independent-gate` / `devsquad:devsquad.review` | `e5c8f458-36c9-48fb-b5f3-d978a165a05d` (18:41:14.783Z) | Aggregate PASS, 0 Critical/0 Major/1 nonblocking Minor; parent independently authored/executed 36 public-pass probes and traced receipt behavior. Not governance acceptance. |
+
+The static spec, ADR and code guardians did **not** execute the aggregate parent's runtime probes. Five guardians plus the separate security specialist supplied the final aggregate review; technical completion was subsequently recorded by the parent.
+
+### Final independent evidence versus inherited implementation evidence
+
+- Combined watcher/ledger selector: **401 passed, 2 existing Windows skips, 11 files**, exit 0.
+- Third-history selector: **19 passed, 244 deselected**, exit 0.
+- Aggregate parent's independently authored in-memory public-pass probes: **36 passed = 31 boundary + 5 receipt/renewal**. The initial 31-probe harness exited 13 because polling delay and observation timer fixtures were confused; the corrected fixture passed, with no product defect inferred.
+- `npm run typecheck`: exit 0. Public Effect-free type guard: exit 0 against existing generated declarations, not fresh declaration generation.
+- Changed-path Prettier: 20 paths supplied, existing changeset ignore respected. Tracked/untracked whitespace checks: no diagnostics.
+- **No final-review build rerun.** Latest implementation build evidence: ESM PASS in 16.296s and DTS PASS in 24.107s, followed by canonical lifecycle exit 1 at unchanged Windows postbuild `'rm' is not recognized`; template copy was **not reached**. No fresh packaging, full-suite, live-system or deployment success is claimed.
+
+All R14-001–007, RC14-001–008, SC-01/02, SL14-001 and DOC14-001 findings are closed/preserved within the reviewed slice, including the cleanup, preflight, bounds, metadata and traceability extras in the final closure matrix above. **TB001 (original worker spelling TB-001)** remains a nonblocking Minor: older internal-guard/object-identity test coupling at remediation test report-time lines 953, 1021, 1288 and 2423. No implementation change is required for this gate.
+
+### Publication and code identity
+
+Local and published implementation commit: **`d5aecf0ba1e276642ddfc683fc756320598642f6`**, a normal fast-forward from `fb6a2389dbbbd504c220653c6258d850e466225c`. [PR #21](https://github.com/davidsantf/sandcastle/pull/21) head is `users/davidsant/symmetrical-train`; base is `users/davidsant/ubiquitous-train` at `9ff6e8e9f74792e131e927bd9bf41358e36cea95`. No merge occurred.
+
+The independent reviewer ran on the **uncommitted implementation tree over `fb6a238`**, subsequently committed as `d5aecf0`. The commit attribution below is documentary metadata added now; there is no claim that the original reviewer recorded a pre-commit cryptographic snapshot. The unchanged source comparison proves this documentation-only correction preserves the published implementation, while the original reports establish review provenance.
+
+| Published implementation object | Git object ID                              |
+| ------------------------------- | ------------------------------------------ |
+| `src` tree                      | `f8cc4221f4c2ebd787ad9740acc6bfb1bbd6bf06` |
+| `package.json` blob             | `d61b96a3bd64d8465e2f430f217800d31983650a` |
+| `package-lock.json` blob        | `e27a973b594ed8a5438e2e3e2962697b53958819` |
+| `tsconfig.json` blob            | `200835416a6ed7e7a2a400f66efd5d0b28344ff4` |
+| `tsup.config.ts` blob           | `aab0be72f61782bba2d124de02a07a2e778fcbb7` |
+| `vitest.config.ts` blob         | `8730a5bbf61f37f4f6a3dc35c816de6f2387af78` |
+
+Documentation-only validation is restricted to the two Markdown files and JSON export: targeted Prettier, JSON parsing with all seven contents compared exactly against the original selected messages, `git diff --check`, and `git diff --exit-code d5aecf0ba1e276642ddfc683fc756320598642f6 -- src package.json package-lock.json tsconfig.json tsup.config.ts vitest.config.ts scripts`. The parent will record the resulting documentation-only commit SHA in the PR/handoff; that follow-up SHA is not yet known here and does not make implementation publication pending.
+
+### Explicit deferred capability and remaining authority
+
+The **original broader discovery/filtering requirement is deferred and not fully delivered**: the current API consumes host-supplied candidates and exact host-owned phase/status rules. It does not discover or filter tracker candidates or orchestrate lifecycle. No factory, live client or outbox is supplied.
+
+At-most-once signals can be lost and require host reconciliation. Cancellation is cooperative; nonsettling dependencies cannot be forcibly terminated and valid delay/settlement assumptions remain. One cleanup attempt does not guarantee release when state is unknown; inclusive lease expiry is the backstop.
+
+ADR-0025/0026 remain **Proposed**, pending authorized acceptance. W038 technical completion and implementation publication are not governance acceptance or merge readiness. **PR #20 must precede #21. Slice 15 remains blocked pending the creator's explicit decision; no slice-15 work or archival is authorized by this entry.**
