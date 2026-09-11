@@ -1,3 +1,8 @@
+import {
+  copyDesignTarget,
+  copyTargetRequest,
+  verifyGateTarget,
+} from "./DevSquadAdoDesignApprovalTarget.js";
 import { gateRevisions } from "./DevSquadAdoDesignApprovalHistory.js";
 import { resolveGateDecision } from "./DevSquadAdoDesignApprovalDecision.js";
 import type {
@@ -26,7 +31,7 @@ export interface DevSquadAdoDesignInput {
   /** Immutable version witnesses, sorted canonically by the gate. */
   readonly artifacts: readonly DevSquadAdoDesignArtifact[];
   /** Explicit absence of execution-target binding. */
-  readonly target: readonly ["none"];
+  readonly target: import("./DevSquadAdoDesignApprovalTarget.js").DevSquadAdoDesignTarget;
 }
 /** Host-authorized request to consume one publication attempt. */
 export interface DevSquadAdoDesignStartRequest extends DevSquadAdoDesignRecoveryRequest {
@@ -73,6 +78,8 @@ export interface DevSquadAdoDesignMutationRequest {
 }
 /** Trusted offline adapters; no hidden retries or live clients are constructed. */
 export interface DevSquadAdoDesignStartDependencies {
+  /** Independent current target observation; descriptive only. */
+  readonly verifyCurrentTarget?: import("./DevSquadAdoDesignApprovalTarget.js").DevSquadAdoDesignTargetVerifier;
   /** Certified immutable event pages; never current-comments-only evidence. */
   readonly readDecisionPage?: import("./DevSquadAdoDesignApprovalDecision.js").DevSquadAdoDesignDecisionDependencies["readDecisionPage"];
   /** Immutable event-specific human authorization, independent of mutation authority. */
@@ -202,13 +209,7 @@ function materialCopy(input: DevSquadAdoDesignInput): DevSquadAdoDesignInput {
       Buffer.from(JSON.stringify([b[0], b[1]])),
     ),
   );
-  if (
-    !Array.isArray(input.target) ||
-    input.target.length !== 1 ||
-    input.target[0] !== "none"
-  )
-    throw new GateFault("design-mismatch");
-  return { content, artifacts, target: ["none"] };
+  return { content, artifacts, target: copyDesignTarget(input.target) };
 }
 function makeEnvelope(
   W: string,
@@ -293,6 +294,9 @@ export async function startGatePublication(
     const G = request.occurrence;
     if (W === null || !isB32(G) || !validGateProvenance(request.provenance, W))
       throw new GateFault("invalid-input");
+    const targetRequest = copyTargetRequest(request.targetVerification);
+    const verifyCurrentTarget =
+      dependencies.verifyCurrentTarget?.bind(dependencies);
     const scope = scopeCopy(request.scope);
     const material = materialCopy(request.design);
     const envelope = makeEnvelope(W, G, scope, material);
@@ -329,6 +333,14 @@ export async function startGatePublication(
       request.signal,
       dependencies.monotonicNow ?? (() => performance.now()),
     );
+    const finish = (value: DevSquadAdoDesignApprovalResult) =>
+      verifyGateTarget(
+        value,
+        targetRequest,
+        verifyCurrentTarget,
+        lifecycle,
+        utcNow,
+      );
     if (typeof utcNow !== "function") throw new GateFault("invalid-input");
     const response = await lifecycle.call("read", () => read(W));
     if (!response || response.ok !== true)
@@ -385,19 +397,21 @@ export async function startGatePublication(
           verificationStatus: "conflicting-evidence",
           reason: "design-mismatch",
         };
-      return confirmGatePublication(result, {
-        lifecycle,
-        envelope,
-        scope,
-        authority,
-        read,
-        checkpoint,
-        authorize,
-        verifyPublication,
-        readDecisionPage,
-        authorizeHumanDecision,
-        utcNow,
-      });
+      return finish(
+        await confirmGatePublication(result, {
+          lifecycle,
+          envelope,
+          scope,
+          authority,
+          read,
+          checkpoint,
+          authorize,
+          verifyPublication,
+          readDecisionPage,
+          authorizeHumanDecision,
+          utcNow,
+        }),
+      );
     }
     if (mode === "reconcile") return result;
     if (!authority) throw new GateFault("authority-required");
@@ -513,20 +527,22 @@ export async function startGatePublication(
     const hint = await lifecycle.call("publisher", (signal) =>
       publish(structuredClone(envelope), signal),
     );
-    return confirmGatePublication(result, {
-      lifecycle,
-      envelope,
-      scope,
-      authority,
-      read,
-      checkpoint,
-      authorize,
-      verifyPublication,
-      readDecisionPage,
-      authorizeHumanDecision,
-      utcNow,
-      hint,
-    });
+    return finish(
+      await confirmGatePublication(result, {
+        lifecycle,
+        envelope,
+        scope,
+        authority,
+        read,
+        checkpoint,
+        authorize,
+        verifyPublication,
+        readDecisionPage,
+        authorizeHumanDecision,
+        utcNow,
+        hint,
+      }),
+    );
   } catch (error) {
     const reason = error instanceof GateFault ? error.reason : "invalid-input";
     return {

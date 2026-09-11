@@ -1,3 +1,7 @@
+import {
+  copyTargetRequest,
+  verifyGateTarget,
+} from "./DevSquadAdoDesignApprovalTarget.js";
 import { gateLedgerRejection } from "./DevSquadAdoDesignApprovalLedger.js";
 import {
   GateFault,
@@ -23,6 +27,8 @@ export interface DevSquadAdoDesignRecoveryRequest {
   readonly workItemId: DevSquadAdoWorkItemId;
   /** Host-selected canonical 32-byte occurrence identity. */
   readonly occurrence: string;
+  /** Optional descriptive current-target observation, never execution permission. */
+  readonly targetVerification?: import("./DevSquadAdoDesignApprovalTarget.js").DevSquadAdoDesignTargetRequest;
   /** Optional minimized historical signal; never claim authority or a current revision. */
   readonly provenance?: DevSquadAdoDesignProvenance;
   /** Live cooperative cancellation; never authority. */
@@ -42,6 +48,10 @@ export type DevSquadAdoDesignProvenance =
     };
 /** Read-only host dependency boundary. */
 export interface DevSquadAdoDesignRecoveryDependencies {
+  /** Optional independent current-target verifier. */
+  readonly verifyCurrentTarget?: import("./DevSquadAdoDesignApprovalTarget.js").DevSquadAdoDesignTargetVerifier;
+  /** UTC authority/observation clock. */
+  readonly utcNow?: () => number;
   /** Monotonic deadline clock; defaults to performance.now. */
   readonly monotonicNow?: () => number;
   /** Public read only; no claim or checkpoint operations are needed. */
@@ -67,7 +77,11 @@ export interface DevSquadAdoDesignApprovalResult {
     | "decision-pending"
     | "conflicting-evidence";
   /** Recovery does not infer an execution target. */
-  readonly targetHandoff: "not-requested";
+  readonly targetHandoff:
+    | "not-requested"
+    | "not-bound"
+    | "verified-current"
+    | "blocked";
   /** Stable category, never dependency-controlled diagnostics. */
   readonly reason:
     | "unreserved"
@@ -99,7 +113,9 @@ export interface DevSquadAdoDesignApprovalResult {
     | "capacity-exceeded"
     | "corrupt-ledger"
     | "unsupported-schema"
-    | "unsupported-platform";
+    | "unsupported-platform"
+    | "target-proof-unavailable"
+    | "target-mismatch";
   /** Canonical requested binding, only after validation. */
   readonly binding: {
     readonly workItemId: string;
@@ -141,6 +157,7 @@ export async function recoverDevSquadAdoDesignApproval(
     knownRevision: null,
   });
   try {
+    const targetRequest = copyTargetRequest(request.targetVerification);
     const workItemId = canonicalWorkItem(request.workItemId);
     const occurrence = request.occurrence;
     const signal = request.signal;
@@ -186,31 +203,37 @@ export async function recoverDevSquadAdoDesignApproval(
     if (!history.ok) return failed("conflicting-gate-history");
     const gate = history.gate;
     if (gate)
-      return {
-        durableState:
-          gate.action === "approve-design"
-            ? "approved"
-            : gate.action === "request-changes"
-              ? "changes-requested"
-              : gate.publication
-                ? "publication-confirmed"
-                : "attempt-consumed",
-        verificationStatus: gate.publication
-          ? "evidence-unavailable"
-          : "publication-unverified",
-        targetHandoff: "not-requested",
-        reason: "publication-evidence-unavailable",
-        binding: {
-          workItemId,
-          occurrence,
-          design: gate.design,
-          proposal: gate.proposal,
-          manifest: gate.manifest,
-          target: gate.target,
+      return verifyGateTarget(
+        {
+          durableState:
+            gate.action === "approve-design"
+              ? "approved"
+              : gate.action === "request-changes"
+                ? "changes-requested"
+                : gate.publication
+                  ? "publication-confirmed"
+                  : "attempt-consumed",
+          verificationStatus: gate.publication
+            ? "evidence-unavailable"
+            : "publication-unverified",
+          targetHandoff: "not-requested",
+          reason: "publication-evidence-unavailable",
+          binding: {
+            workItemId,
+            occurrence,
+            design: gate.design,
+            proposal: gate.proposal,
+            manifest: gate.manifest,
+            target: gate.target,
+          },
+          knownRevision: record.revision,
+          checkpointRevisions: gateRevisions(gate),
         },
-        knownRevision: record.revision,
-        checkpointRevisions: gateRevisions(gate),
-      };
+        targetRequest,
+        dependencies.verifyCurrentTarget?.bind(dependencies),
+        lifecycle,
+        dependencies.utcNow ?? Date.now,
+      );
     return {
       durableState: "unreserved",
       verificationStatus: "verified",

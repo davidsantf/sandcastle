@@ -397,7 +397,7 @@ Every task inherits the saved spec and plan, including:
 
 ### W060: Return independently verified target metadata
 
-- [ ] **W060** Implement initial and current target proof in `src/DevSquadAdoDesignApprovalTarget.ts`, `src/DevSquadAdoDesignApproval.ts`, and `src/DevSquadAdoDesignApproval.target.test.ts`.
+- [x] **W060** Implement initial and current target proof in `src/DevSquadAdoDesignApprovalTarget.ts`, `src/DevSquadAdoDesignApproval.ts`, and `src/DevSquadAdoDesignApproval.target.test.ts`.
   - Parent: US15-05.
   - Dependency: W059.
   - Estimate: M, 1 to 1.5 engineer-days. Risk: High.
@@ -916,3 +916,13 @@ All execution CLI calls explicitly select the authorized worktree. No LSP tools 
 - Typed real watcher signal shapes compose through minimized structural provenance. Historical revisions/states need not match current CAS; claim/cleanup metadata is not read or retained. Both intake kinds with missing independent capability remain blocked. Stale fence, wrong token, inclusive expiry and zero claim-operation spies covered.
 - No watcher production/type contract changes or runtime graph import. No fabricated discovery comments, execution authority, development approval bypass or live adapter.
 - Commit: feat(design-gate): separate intake from authority W059. Trailer: Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>.
+
+### W060 executed evidence
+
+- Baseline W059 26ab825. FR-001/002/018/019/022–026, CC-09/15; SEC-001/003/006/007.
+- RED: npm test -- DevSquadAdoDesignApproval.target.test --reporter=dot exit 1: 15 behavioral failures. Bound targets and independent handoff were unsupported before this task.
+- First implementation verification found a missing wrapper opening call (syntax, not behavioral RED); one localized correction restored compilation. Final npm run typecheck exit 0. GREEN affected selector npm test -- DevSquadAdoDesignApproval DevSquadAdoWorkflowLedger --reporter=dot exit 0: 257 passed / 2 existing skips, 18 files (193 feature + 64 ledger passes).
+- Exact target tuple is independently verified before reservation, committed in T, and compared with original/request-challenge-bound current proof. Every repository/source/branch/worktree/agent/session descriptor field mismatch blocks descriptive handoff without rewriting durable approval. Read-only recover also supports independent current observation. No-target is explicitly not-bound.
+- Fixed descriptor/path/evidence bounds, UTC observation age <=5000ms, no current ledger reference inference, no executable instruction or lock. Target proof final-return hardening remains W061.
+- Changed TS formatting and diff checks pass. Scope: target module, API/composition, target tests/evidence. No filesystem/network/execution in target implementation.
+- Commit: feat(design-gate): verify current target evidence W060. Trailer: Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>.
