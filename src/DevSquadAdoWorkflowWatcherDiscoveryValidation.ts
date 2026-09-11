@@ -449,6 +449,19 @@ export const prepareDiscoveryPage = (
   try {
     const page = record(input),
       limits = configuration.limits;
+    // W043 / CC-036: check the remaining invocation capacity before indexed
+    // traversal/copying. At the exact limit, empty terminal-tail pages are valid.
+    const items = page.items;
+    if (
+      Array.isArray(items) &&
+      items.length <= limits.maxEntriesPerPage &&
+      items.length > limits.maxItems - seen.size
+    )
+      return { ok: false, reason: "item-budget-exhausted" };
+    const maximumEntries = Math.min(
+      limits.maxEntriesPerPage,
+      limits.maxItems - seen.size,
+    );
     const budget = new DiscoveryJsonBudget(limits.maxPageBytes);
     const projected = budget.object({
       binding: () => {
@@ -471,7 +484,7 @@ export const prepareDiscoveryPage = (
         return budget.scalar(ordinal);
       },
       items: () =>
-        budget.array(page.items, limits.maxEntriesPerPage, (item) => {
+        budget.array(items, maximumEntries, (item) => {
           const raw = record(item);
           const projectedItem = budget.object({
             workItemId: () => {

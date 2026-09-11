@@ -51,7 +51,7 @@ const noClaim = {
   acceptedRevision: null,
 } as const;
 
-/** W040/W041: one bounded traversal and shared guarded item effects, no durable continuation. */
+/** W043 / FR-061-064: bounded invocation-local traversal and retained guarded item steps. */
 export const runDevSquadAdoDiscoveryWatchPass = async (
   input: RunDevSquadAdoDiscoveryWatchPassOptions,
 ): Promise<DevSquadAdoDiscoveryPassOutcome> => {
@@ -93,7 +93,34 @@ export const runDevSquadAdoDiscoveryWatchPass = async (
     pagesValidated = 0,
     terminalPageSeen = false;
   let reason: DevSquadAdoDiscoveryTraversal["reason"] = "invalid-page";
-  const pending = () => states.some((s) => s.admission?.pending);
+  const isPending = (state: DiscoveredState): boolean =>
+    state.admission !== null ? state.admission.pending : state.outcome === null;
+  const pending = () => states.some(isPending);
+  const finishObservation = async (state: DiscoveredState): Promise<void> => {
+    if (
+      state.observation === null ||
+      state.admission !== null ||
+      state.outcome !== null
+    )
+      return;
+    state.outcome = {
+      ...(await finalizeWatcherCandidate(context, state.observation)),
+      category: "observation",
+      matching: state.item.matching,
+    };
+  };
+  // Terminal evidence ends ordinary no-change states, not unfinished mutations.
+  const finishQuietObservations = async (): Promise<void> => {
+    for (const state of states) {
+      const observation = state.observation;
+      if (
+        observation !== null &&
+        observation.pendingCheckpoint === null &&
+        observation.claim === null
+      )
+        await finishObservation(state);
+    }
+  };
   const step = async (state: DiscoveredState, now: Date): Promise<void> => {
     if (options.signal?.aborted) return;
     if (state.admission) {
@@ -127,10 +154,11 @@ export const runDevSquadAdoDiscoveryWatchPass = async (
       state.observation ?? createWatcherCandidateState(item.workItemId);
     state.observation = observation;
     await runCandidateStep(context, observation, now);
-    const result = await finalizeWatcherCandidate(context, observation);
     for (const signal of context.signals.splice(0))
       signals.push({ ...signal, kind: "comment-observation" });
-    if (result.reason === "record-not-found") {
+    // W043: never finalize a pending step here: finalization clears its original
+    // checkpoint submission and releases the authority needed on the next poll.
+    if (observation.resolved?.reason === "record-not-found") {
       state.admission = createDiscoveryAdmission(
         item.workItemId,
         item.matching,
@@ -146,12 +174,7 @@ export const runDevSquadAdoDiscoveryWatchPass = async (
       );
       if (signal) signals.push(signal);
       state.outcome = state.admission.outcome;
-    } else
-      state.outcome = {
-        ...result,
-        category: "observation",
-        matching: item.matching,
-      };
+    } else if (observation.resolved !== null) await finishObservation(state);
   };
   for (;;) {
     if (options.signal?.aborted) {
@@ -176,8 +199,7 @@ export const runDevSquadAdoDiscoveryWatchPass = async (
       break;
     }
     polls++;
-    for (const state of states)
-      if (state.admission?.pending) await step(state, now);
+    for (const state of states) if (isPending(state)) await step(state, now);
     if (options.signal?.aborted) {
       reason = "cancelled";
       break;
@@ -254,6 +276,7 @@ export const runDevSquadAdoDiscoveryWatchPass = async (
       reason = "cancelled";
       break;
     }
+    if (terminalPageSeen) await finishQuietObservations();
     if (terminalPageSeen && !pending()) {
       reason = "terminal-page";
       break;
@@ -282,6 +305,10 @@ export const runDevSquadAdoDiscoveryWatchPass = async (
       break;
     }
   }
+  // W043: budget/invalid-page exits still clean up each retained validated claim
+  // exactly once; do not turn this finalization into terminal traversal evidence.
+  context.cancelled = options.signal?.aborted === true;
+  for (const state of states) await finishObservation(state);
   const outcomes: DevSquadAdoDiscoveryCandidateOutcome[] = states.map(
     (s) =>
       s.outcome ?? {
