@@ -1,4 +1,11 @@
 import type {
+  DevSquadAdoDiscoveryPageRequest,
+  DevSquadAdoDiscoveryFacts,
+  DevSquadAdoDiscoveryMatchingEvidence,
+  DevSquadAdoDiscoveryTraversal,
+} from "./DevSquadAdoWorkflowWatcher.js";
+import { matchDevSquadAdoDiscovery } from "./DevSquadAdoWorkflowWatcherDiscoveryMatching.js";
+import type {
   DevSquadAdoDiscoveryAuthorization,
   DevSquadAdoDiscoveryBinding,
   DevSquadAdoDiscoveryError,
@@ -408,5 +415,185 @@ export const prepareDevSquadAdoDiscovery = (
     };
   } catch {
     return invalid(field);
+  }
+};
+
+/** One bounded page retains only identities and minimized decisions, never facts. */
+export interface PreparedDiscoveryItem {
+  readonly workItemId: string;
+  readonly matching: DevSquadAdoDiscoveryMatchingEvidence;
+}
+
+/** W040 / SEC-A03/04: validate the entire recognized page before any item effect. */
+export const prepareDiscoveryPage = (
+  input: unknown,
+  identity: Omit<DevSquadAdoDiscoveryPageRequest, "signal">,
+  configuration: DevSquadAdoWatchDiscoveryConfiguration,
+  seen: ReadonlySet<string>,
+  continuations: ReadonlySet<string>,
+):
+  | {
+      readonly ok: true;
+      readonly items: readonly PreparedDiscoveryItem[];
+      readonly next:
+        | { readonly kind: "terminal" }
+        | { readonly kind: "continue"; readonly continuation: string };
+    }
+  | {
+      readonly ok: false;
+      readonly reason: Exclude<
+        DevSquadAdoDiscoveryTraversal["reason"],
+        "terminal-page"
+      >;
+    } => {
+  try {
+    const page = record(input),
+      limits = configuration.limits;
+    const budget = new DiscoveryJsonBudget(limits.maxPageBytes);
+    const projected = budget.object({
+      binding: () => {
+        const raw = record(page.binding);
+        return budget.object({
+          scopeId: () => budget.scalar(discoveryText(raw.scopeId, 256, true)),
+          partitionId: () =>
+            budget.scalar(discoveryText(raw.partitionId, 256, true)),
+          stabilityId: () =>
+            budget.scalar(discoveryText(raw.stabilityId, 256, true)),
+          policyVersion: () =>
+            budget.scalar(discoveryText(raw.policyVersion, 256, true)),
+        });
+      },
+      traversalId: () =>
+        budget.scalar(discoveryText(page.traversalId, 64, true)),
+      pageOrdinal: () => {
+        const ordinal = page.pageOrdinal;
+        if (ordinal !== identity.pageOrdinal) throw Error("ordinal");
+        return budget.scalar(ordinal);
+      },
+      items: () =>
+        budget.array(page.items, limits.maxEntriesPerPage, (item) => {
+          const raw = record(item);
+          const projectedItem = budget.object({
+            workItemId: () => {
+              const id = canonicalizeWorkItemId(
+                raw.workItemId as DevSquadAdoWorkItemId,
+              );
+              if (!id.ok) throw Error("id");
+              return budget.scalar(id.value);
+            },
+            facts: () => {
+              const rawFacts = record(raw.facts);
+              const fields: Record<string, () => unknown> = {};
+              for (const dimension of [
+                "state",
+                "teams",
+                "tags",
+                "area",
+                "iteration",
+              ] as const) {
+                if (
+                  !configuration.policy.filters.some(
+                    (f) =>
+                      (f.dimension === "team" ? "teams" : f.dimension) ===
+                      dimension,
+                  )
+                )
+                  continue;
+                fields[dimension] = () => {
+                  const value = rawFacts[dimension];
+                  const fact =
+                    value === undefined ? { kind: "missing" } : record(value);
+                  const kind = fact.kind;
+                  if (kind === "missing")
+                    return budget.object({ kind: () => budget.scalar(kind) });
+                  if (kind !== "known") throw Error("fact");
+                  return budget.object({
+                    kind: () => budget.scalar(kind),
+                    value: (): string | readonly string[] =>
+                      dimension === "state"
+                        ? budget.scalar(
+                            discoveryText(
+                              fact.value,
+                              limits.maxOpaqueValueBytes,
+                            ),
+                          )
+                        : budget.array(
+                            fact.value,
+                            dimension === "area" || dimension === "iteration"
+                              ? limits.maxPathSegments
+                              : limits.maxCollectionValues,
+                            (value) =>
+                              budget.scalar(
+                                discoveryText(
+                                  value,
+                                  limits.maxOpaqueValueBytes,
+                                ),
+                              ),
+                          ),
+                  });
+                };
+              }
+              return budget.object(fields) as DevSquadAdoDiscoveryFacts;
+            },
+          });
+          return Object.freeze({
+            workItemId: projectedItem.workItemId,
+            matching: matchDevSquadAdoDiscovery(
+              configuration.policy,
+              projectedItem.facts,
+            ),
+          });
+        }),
+      next: () => {
+        const raw = record(page.next),
+          kind = raw.kind;
+        if (kind === "terminal")
+          return budget.object({ kind: () => budget.scalar(kind) });
+        if (kind !== "continue") throw Error("next");
+        return budget.object({
+          kind: () => budget.scalar(kind),
+          continuation: () =>
+            budget.scalar(
+              discoveryText(
+                raw.continuation,
+                limits.maxContinuationBytes,
+                true,
+              ),
+            ),
+        });
+      },
+    });
+    if (projected.traversalId !== identity.traversalId)
+      return { ok: false, reason: "invalid-page" };
+    for (const key of [
+      "scopeId",
+      "partitionId",
+      "stabilityId",
+      "policyVersion",
+    ] as const)
+      if (projected.binding[key] !== identity.binding[key])
+        return { ok: false, reason: "unstable-scope" };
+    if (
+      projected.next.kind === "continue" &&
+      continuations.has(projected.next.continuation)
+    )
+      return { ok: false, reason: "repeated-continuation" };
+    const local = new Set<string>();
+    for (const item of projected.items) {
+      if (seen.has(item.workItemId) || local.has(item.workItemId))
+        return { ok: false, reason: "duplicate-item" };
+      local.add(item.workItemId);
+    }
+    if (seen.size + local.size > limits.maxItems)
+      return { ok: false, reason: "item-budget-exhausted" };
+    return {
+      ok: true,
+      items: [...projected.items].sort((a, b) =>
+        Buffer.compare(Buffer.from(a.workItemId), Buffer.from(b.workItemId)),
+      ),
+      next: projected.next,
+    };
+  } catch {
+    return { ok: false, reason: "invalid-page" };
   }
 };

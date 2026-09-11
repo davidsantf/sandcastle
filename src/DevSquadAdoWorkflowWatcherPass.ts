@@ -69,7 +69,8 @@ interface PendingCheckpoint {
   readonly status: string;
 }
 
-interface CandidateState {
+/** Shared invocation-local candidate state; never a persisted discovery cursor. */
+export interface CandidateState {
   readonly workItemId: string;
   resolved: DevSquadAdoWatchCandidateOutcome | null;
   examined: boolean;
@@ -84,7 +85,8 @@ interface CandidateState {
   suppressed: boolean;
 }
 
-interface PassContext {
+/** Shared guarded observation context for both intake modes (W040). */
+export interface PassContext {
   readonly ledger: ReturnType<typeof guardDevSquadAdoWatcherLedger>;
   readonly seam: DevSquadAdoWatcherObservationSeam;
   readonly validated: DevSquadAdoWatchValidatedPass;
@@ -714,7 +716,8 @@ const resumeCheckpoint = async (
   await issueCheckpoint(context, state, now, pending);
 };
 
-const runCandidateStep = async (
+/** Run the common claimed/fenced observation step, retaining pending recovery. */
+export const runCandidateStep = async (
   context: PassContext,
   state: CandidateState,
   now: Date,
@@ -958,25 +961,7 @@ export const runDevSquadAdoWorkflowWatchPassImplementation = async (
 
   const states = new Map<string, CandidateState>();
   for (const workItemId of validated.candidates) {
-    states.set(workItemId, {
-      workItemId,
-      resolved: null,
-      examined: false,
-      eligible: false,
-      pendingReason: "no-new-observations",
-      sourceRevision: null,
-      skippedCursorKinds: [],
-      claim: null,
-      renewOrdinal: 0,
-      pendingCheckpoint: null,
-      cleanup: {
-        status: "not-required",
-        reason: "no-claim-acquired",
-        ledgerErrorKind: null,
-        acceptedRevision: null,
-      },
-      suppressed: false,
-    });
+    states.set(workItemId, createWatcherCandidateState(workItemId));
   }
 
   let lastReading = startedAtDate;
@@ -1130,4 +1115,47 @@ export const runDevSquadAdoWorkflowWatchPassImplementation = async (
       signals: [...context.signals],
     },
   };
+};
+
+/** W040: shared state construction; discovery never forks checkpoint authority. */
+export const createWatcherCandidateState = (
+  workItemId: string,
+): CandidateState => ({
+  workItemId,
+  resolved: null,
+  examined: false,
+  eligible: false,
+  pendingReason: "no-new-observations",
+  sourceRevision: null,
+  skippedCursorKinds: [],
+  claim: null,
+  renewOrdinal: 0,
+  pendingCheckpoint: null,
+  cleanup: {
+    status: "not-required",
+    reason: "no-claim-acquired",
+    ledgerErrorKind: null,
+    acceptedRevision: null,
+  },
+  suppressed: false,
+});
+/** W040: shared finalization preserves mandatory cleanup and accepted effects. */
+export const finalizeWatcherCandidate = async (
+  context: PassContext,
+  state: CandidateState,
+): Promise<DevSquadAdoWatchCandidateOutcome> => {
+  if (state.resolved === null) {
+    state.resolved = outcomeFor(
+      state,
+      state.claim !== null ? "failed" : "no-change",
+      state.claim !== null
+        ? context.cancelled
+          ? "cancelled"
+          : "checkpoint-indeterminate"
+        : state.pendingReason,
+    );
+    state.pendingCheckpoint = null;
+    await releaseClaim(context, state);
+  }
+  return withCleanup(state.resolved, state.cleanup);
 };

@@ -326,3 +326,9 @@ export type {
   DevSquadAdoDiscoveryPassResult,
   DevSquadAdoDiscoveryPassOutcome,
 } from "./DevSquadAdoWorkflowWatcher.js";
+
+export type {
+  DevSquadAdoDiscoveryMatchingEvidence,
+  DevSquadAdoDiscoveryIntakeSignal,
+  DevSquadAdoDiscoveryCandidateOutcome,
+} from "./DevSquadAdoWorkflowWatcher.js";

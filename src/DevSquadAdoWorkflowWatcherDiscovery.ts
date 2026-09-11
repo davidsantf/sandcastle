@@ -1,3 +1,15 @@
+import type {
+  DevSquadAdoDiscoveryCandidateOutcome,
+  DevSquadAdoDiscoveryIntakeSignal,
+} from "./DevSquadAdoWorkflowWatcher.js";
+import { guardDevSquadAdoWatcherLedger } from "./DevSquadAdoWorkflowWatcherLedger.js";
+import {
+  createWatcherCandidateState,
+  runCandidateStep,
+  finalizeWatcherCandidate,
+  type PassContext,
+  type CandidateState,
+} from "./DevSquadAdoWorkflowWatcherPass.js";
 import { randomBytes } from "node:crypto";
 import type {
   DevSquadAdoDiscoveryPageRequest,
@@ -6,10 +18,8 @@ import type {
   RunDevSquadAdoDiscoveryWatchPassOptions,
 } from "./DevSquadAdoWorkflowWatcher.js";
 import {
-  DiscoveryJsonBudget,
-  discoveryText,
+  prepareDiscoveryPage,
   prepareDevSquadAdoDiscovery,
-  record,
 } from "./DevSquadAdoWorkflowWatcherDiscoveryValidation.js";
 import { raceDevSquadAdoWatcherSeamCall } from "./DevSquadAdoWorkflowWatcherObservation.js";
 import { computeDevSquadAdoWatcherBackoffDelayMs } from "./DevSquadAdoWorkflowWatcherValidation.js";
@@ -42,6 +52,18 @@ export const runDevSquadAdoDiscoveryWatchPass = async (
       },
     };
   const limits = validated.discovery.limits;
+  const context: PassContext = {
+    ledger: guardDevSquadAdoWatcherLedger(options.ledger),
+    seam: options.seam,
+    validated: { ...validated, candidates: [] },
+    delay: options.delay,
+    signal: options.signal,
+    signals: [],
+    cancelled: false,
+  };
+  const states: CandidateState[] = [];
+  const outcomes: DevSquadAdoDiscoveryCandidateOutcome[] = [];
+  const seen = new Set<string>();
   const traversalId = randomBytes(32).toString("hex");
   const continuations = new Set<string>();
   let continuation: string | null = null;
@@ -113,77 +135,15 @@ export const runDevSquadAdoDiscoveryWatchPass = async (
       reason = response.kind === "timeout" ? "page-timeout" : "page-failed";
       break;
     }
-    let next:
-      | { readonly kind: "terminal" }
-      | { readonly kind: "continue"; readonly continuation: string };
-    try {
-      const page = record(response.value);
-      const budget = new DiscoveryJsonBudget(limits.maxPageBytes);
-      const projected = budget.object({
-        binding: () => {
-          const raw = record(page.binding);
-          return budget.object({
-            scopeId: () => budget.scalar(discoveryText(raw.scopeId, 256, true)),
-            partitionId: () =>
-              budget.scalar(discoveryText(raw.partitionId, 256, true)),
-            stabilityId: () =>
-              budget.scalar(discoveryText(raw.stabilityId, 256, true)),
-            policyVersion: () =>
-              budget.scalar(discoveryText(raw.policyVersion, 256, true)),
-          });
-        },
-        traversalId: () =>
-          budget.scalar(discoveryText(page.traversalId, 64, true)),
-        pageOrdinal: (): number => {
-          const ordinal = page.pageOrdinal;
-          if (ordinal !== identity.pageOrdinal) throw new Error("ordinal");
-          return budget.scalar(ordinal);
-        },
-        // W040 owns whole-page item/fact matching; the W039 tracer accepts only empty pages.
-        items: () =>
-          budget.array(page.items, 0, () => {
-            throw new Error("item");
-          }),
-        next: () => {
-          const raw = record(page.next);
-          const kind = raw.kind;
-          if (kind === "terminal")
-            return budget.object({ kind: () => budget.scalar(kind) });
-          if (kind !== "continue") throw new Error("next");
-          return budget.object({
-            kind: () => budget.scalar(kind),
-            continuation: () =>
-              budget.scalar(
-                discoveryText(
-                  raw.continuation,
-                  limits.maxContinuationBytes,
-                  true,
-                ),
-              ),
-          });
-        },
-      });
-      if (projected.traversalId !== identity.traversalId) {
-        reason = "invalid-page";
-        break;
-      }
-      if (
-        Object.keys(validated.binding).some(
-          (key) =>
-            projected.binding[key as keyof typeof validated.binding] !==
-            validated.binding[key as keyof typeof validated.binding],
-        )
-      ) {
-        reason = "unstable-scope";
-        break;
-      }
-      next = projected.next;
-      if (next.kind === "continue" && continuations.has(next.continuation)) {
-        reason = "repeated-continuation";
-        break;
-      }
-    } catch {
-      reason = "invalid-page";
+    const page = prepareDiscoveryPage(
+      response.value,
+      identity,
+      validated.discovery,
+      seen,
+      continuations,
+    );
+    if (!page.ok) {
+      reason = page.reason;
       break;
     }
     if (options.signal?.aborted) {
@@ -191,6 +151,71 @@ export const runDevSquadAdoDiscoveryWatchPass = async (
       break;
     }
     pagesValidated++;
+    const next = page.next;
+    for (const item of page.items) {
+      seen.add(item.workItemId);
+      const cleanup = {
+        status: "not-required",
+        reason: "no-claim-acquired",
+        ledgerErrorKind: null,
+        acceptedRevision: null,
+      } as const;
+      if (item.matching.decision !== "matched") {
+        outcomes.push({
+          category: "matching",
+          workItemId: item.workItemId,
+          kind: "skipped",
+          reason:
+            item.matching.decision === "facts-missing"
+              ? "matching-facts-missing"
+              : "matching-paused",
+          matching: item.matching,
+          cleanup,
+        });
+        continue;
+      }
+      if (options.signal?.aborted) {
+        outcomes.push({
+          category: "unprocessed",
+          workItemId: item.workItemId,
+          kind: "skipped",
+          reason: "discovery-not-processed",
+          matching: item.matching,
+          cleanup,
+        });
+        continue;
+      }
+      const state = createWatcherCandidateState(item.workItemId);
+      states.push(state);
+      await runCandidateStep(context, state, now);
+      const result = await finalizeWatcherCandidate(context, state);
+      if (result.reason === "record-not-found") {
+        const authorization = validated.discovery.authorizations?.find(
+          (a) => a.workItemId === item.workItemId,
+        );
+        outcomes.push({
+          category: "admission",
+          workItemId: item.workItemId,
+          kind: "skipped",
+          reason:
+            authorization?.kind === "unavailable" &&
+            authorization.reason === "initial-state-missing"
+              ? "admission-initial-state-missing"
+              : "admission-not-authorized",
+          matching: item.matching,
+          cleanup,
+        });
+      } else
+        outcomes.push({
+          ...result,
+          category: "observation",
+          matching: item.matching,
+        });
+    }
+    if (options.signal?.aborted) {
+      reason = "cancelled";
+      break;
+    }
     if (next.kind === "terminal") {
       terminalPageSeen = true;
       reason = "terminal-page";
@@ -253,26 +278,37 @@ export const runDevSquadAdoDiscoveryWatchPass = async (
       counts: {
         pageCalls,
         pagesValidated,
-        discovered: 0,
-        evaluated: 0,
+        discovered: seen.size,
+        evaluated: seen.size,
         admitted: 0,
-        paused: 0,
-        processed: 0,
+        paused: outcomes.filter((o) => o.category === "matching").length,
+        processed: outcomes.filter((o) => o.category !== "unprocessed").length,
         initializationReplayed: 0,
-        examined: 0,
-        eligible: 0,
-        acted: 0,
-        noChange: 0,
-        suppressed: 0,
-        skipped: 0,
-        failed: 0,
-        cleanupReleased: 0,
-        cleanupFailed: 0,
-        cleanupIndeterminate: 0,
-        cleanupNotRequired: 0,
+        examined: states.filter((s) => s.examined).length,
+        eligible: states.filter((s) => s.eligible).length,
+        acted: context.signals.length,
+        noChange: outcomes.filter((o) => o.kind === "no-change").length,
+        suppressed: states.filter((s) => s.suppressed).length,
+        skipped: outcomes.filter((o) => o.kind === "skipped").length,
+        failed: outcomes.filter((o) => o.kind === "failed").length,
+        cleanupReleased: outcomes.filter((o) => o.cleanup.status === "released")
+          .length,
+        cleanupFailed: outcomes.filter((o) => o.cleanup.status === "failed")
+          .length,
+        cleanupIndeterminate: outcomes.filter(
+          (o) => o.cleanup.status === "indeterminate",
+        ).length,
+        cleanupNotRequired: outcomes.filter(
+          (o) => o.cleanup.status === "not-required",
+        ).length,
       },
-      outcomes: [],
-      signals: [],
+      outcomes,
+      signals: context.signals.map(
+        (signal): DevSquadAdoDiscoveryIntakeSignal => ({
+          ...signal,
+          kind: "comment-observation",
+        }),
+      ),
     },
   };
 };

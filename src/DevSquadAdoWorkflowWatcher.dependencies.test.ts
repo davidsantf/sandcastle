@@ -35,6 +35,7 @@ const WATCHER_ENTRY_POINT = "DevSquadAdoWorkflowWatcher.ts";
 const WATCHER_MODULES = [
   "DevSquadAdoWorkflowWatcher.ts",
   "DevSquadAdoWorkflowWatcherDiscovery.ts",
+  "DevSquadAdoWorkflowWatcherDiscoveryMatching.ts",
   "DevSquadAdoWorkflowWatcherDiscoveryValidation.ts",
   "DevSquadAdoWorkflowWatcherValidation.ts",
   "DevSquadAdoWorkflowWatcherObservation.ts",
@@ -202,6 +203,7 @@ describe("DevSquadAdoWorkflowWatcher dependency boundary", () => {
         "DevSquadAdoWorkflowLedgerSchema.ts",
         "DevSquadAdoWorkflowWatcher.ts",
         "DevSquadAdoWorkflowWatcherDiscovery.ts",
+        "DevSquadAdoWorkflowWatcherDiscoveryMatching.ts",
         "DevSquadAdoWorkflowWatcherDiscoveryValidation.ts",
         "DevSquadAdoWorkflowWatcherLedger.ts",
         "DevSquadAdoWorkflowWatcherObservation.ts",

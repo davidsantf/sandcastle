@@ -786,10 +786,50 @@ export interface DevSquadAdoDiscoveryPassCounts extends DevSquadAdoWatchPassCoun
   readonly initializationReplayed: number;
 }
 
+/** Fixed predicate evidence, ordered independently of caller filter order (W040). */
+export interface DevSquadAdoDiscoveryMatchingEvidence {
+  readonly policyVersion: string;
+  readonly decision: "matched" | "excluded" | "facts-missing";
+  readonly predicates: readonly {
+    readonly predicate:
+      | "state"
+      | "team"
+      | "tags-all"
+      | "tags-any"
+      | "tags-none"
+      | "area"
+      | "iteration";
+    readonly outcome: "matched" | "unmatched" | "missing";
+  }[];
+}
+/** Discovery observation signals preserve the supplied signal fields unchanged. */
+export type DevSquadAdoDiscoveryIntakeSignal = DevSquadAdoWatchIntakeSignal & {
+  readonly kind: "comment-observation";
+};
+/** Policy pauses and unavailable admission have no claim or invented cursor. */
+export type DevSquadAdoDiscoveryCandidateOutcome =
+  | (DevSquadAdoWatchCandidateOutcome & {
+      readonly category: "observation";
+      readonly matching: DevSquadAdoDiscoveryMatchingEvidence;
+    })
+  | {
+      readonly category: "matching" | "admission" | "unprocessed";
+      readonly workItemId: string;
+      readonly kind: "skipped";
+      readonly reason:
+        | "matching-paused"
+        | "matching-facts-missing"
+        | "admission-not-authorized"
+        | "admission-initial-state-missing"
+        | "discovery-not-processed";
+      readonly matching: DevSquadAdoDiscoveryMatchingEvidence;
+      readonly cleanup: DevSquadAdoWatchCleanup;
+    };
+
 /** Discovery result for the traversal; item contracts are extended by their owning slices. */
 export interface DevSquadAdoDiscoveryPassResult extends Omit<
   DevSquadAdoWatchPassResult,
-  "stopReason" | "counts"
+  "stopReason" | "counts" | "outcomes" | "signals"
 > {
   readonly mode: "discovery";
   readonly stopReason:
@@ -800,6 +840,8 @@ export interface DevSquadAdoDiscoveryPassResult extends Omit<
     | "poll-start-budget-exhausted";
   readonly counts: DevSquadAdoDiscoveryPassCounts;
   readonly traversal: DevSquadAdoDiscoveryTraversal;
+  readonly outcomes: readonly DevSquadAdoDiscoveryCandidateOutcome[];
+  readonly signals: readonly DevSquadAdoDiscoveryIntakeSignal[];
 }
 
 /** Separate discovery outcome envelope; never widens a supplied caller's signals. */
