@@ -557,7 +557,7 @@ export async function startGatePublication(
     checkAuthority();
     // No ticket escapes. There is exactly one call site, reached only via this direct acknowledgement.
     const hint = await lifecycle.call("publisher", (signal) =>
-      publish!(structuredClone(envelope), signal),
+      publish!(structuredClone(envelope), signal).then(boundedPublicationHint),
     );
     // W056: retire this stage frame before awaiting later stages/target proof.
     return confirmGatePublication(result, {
@@ -631,7 +631,7 @@ export interface PublicationContinuation {
   readonly authorize: DevSquadAdoDesignStartDependencies["authorizeMutation"];
   readonly verifyPublication: DevSquadAdoDesignPublicationVerifier | undefined;
   readonly utcNow: () => number;
-  readonly hint?: unknown;
+  readonly hint?: string;
 }
 function publicationWitness(
   value: unknown,
@@ -667,6 +667,18 @@ function publicationWitness(
     return null;
   }
 }
+/** W065 SKEP01 / FR-024 / SEC-006: discard raw publisher output synchronously.
+ * Only the bounded hint settles the lifecycle promise or enters a later stage;
+ * no gate async frame carries an unknown publisher payload across an await.
+ */
+function boundedPublicationHint(value: unknown): string | undefined {
+  return typeof value === "string" &&
+    value.length <= 1024 &&
+    unicode(value) &&
+    Buffer.byteLength(value, "utf8") <= 1024
+    ? value
+    : undefined;
+}
 /** W051: receipt verification confirms the original attempt, never publication permission. */
 async function confirmGatePublication(
   initial: DevSquadAdoDesignApprovalResult,
@@ -686,13 +698,7 @@ async function confirmGatePublication(
   } = context;
   if (!verifyPublication) return result;
   try {
-    const hint =
-      typeof context.hint === "string" &&
-      context.hint.length <= 1024 &&
-      unicode(context.hint) &&
-      Buffer.byteLength(context.hint, "utf8") <= 1024
-        ? context.hint
-        : undefined;
+    const hint = context.hint;
     const proof = await lifecycle.call("publication", (signal) =>
       verifyPublication(
         structuredClone({
