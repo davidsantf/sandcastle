@@ -1851,3 +1851,820 @@ Before any production edit, the new public-entry real-ledger regression failed i
 ### Disposition and limits
 
 POST-SKEP-001 is **implemented with local regression evidence; independent closure remains pending W047**. Historical W039–W046 are unchanged; implementer GREEN does not reverse the new independent FAIL. Retain at-most-once/permanent-loss, trusted-adapter, bounded-prefix and settling-dependency limitations, and existing CC-F01, BUILD-WIN, TB046-001–003 and TB001 dispositions. Canonical packaging remains failed/uncertified on Windows. No full-project suite, coverage certification, packaging success or remote-CI PASS is claimed. ADR-0025/0026 remain **Proposed**; #20-before-#21 ordering, governance, publication and merge authority remain separate. The complete local implementation handoff is the session artifact `files/post-publication-implementation.md`.
+
+## W047 Post-publication Independent Reports — 2026-09-11
+
+This append preserves all six complete independent reports, followed by a **separate conductor-evidence synthesis**. The reports are supplied reviewer-authored evidence, **not reviews performed or assertions independently re-proved by this documentation worker**. Their first-person statements, original verdicts, source identities, citations, execution limits and historical status statements belong to their named perspectives and rounds.
+
+Raw source artifacts reside in `C:\Users\davidsant\.copilot\session-state\10e9bfee-da0b-4283-9d49-b5e1e9fe43d7\files`. Each dedicated section names its original filename. Complete report text is reproduced inside an open details block, with only CRLF-to-LF line-ending normalization; Markdown formatting-ignore ranges preserve the original report layout and wording. The original artifacts remain unchanged. In particular, the first-round Skeptic **High FAIL** is retained in full, not overwritten by the later PASS.
+
+The first round reviewed published `91554b9d2c9dfceaa3bd0adb9ef0d9b9241503ee`. The final round independently reviewed the actual published repair `27e09de6e23976a2c103671800eb542bcf9c90dd` after parent publication and policy confirmation. These are static reviews with inherited implementer execution, not six test runs or remote-CI success. Historical review-log bytes preceding this append remain an exact prefix of the current file.
+
+## W047 First-round Advocate — Full Attributed Report
+
+**Attribution:** Independent Advocate; source `files/post-publication-advocate.md`; first-round verdict **PASS** at `91554b9`. This is the complete supplied report, not the closeout worker's review.
+
+<!-- prettier-ignore-start -->
+
+<details open>
+<summary>Original first-round Advocate report — PASS</summary>
+
+## Advocate Analysis
+
+### Scope, provenance and verdict
+
+**Verdict: PASS for the complete integration-base source delta, by fresh independent static Advocate review. No new material production blocker or unsupported approval claim requiring source remediation was established.** This is not a new test run, package certification, remote-CI success, ADR acceptance or permission to merge/start another slice.
+
+Reviewed `davidsantf/sandcastle#21` in the designated `users-davidsant-automatic-tribble` workspace:
+
+| Identity | Value |
+| --- | --- |
+| Exact integration base | `9ff6e8e9f74792e131e927bd9bf41358e36cea95` |
+| Exact reviewed HEAD | `91554b9d2c9dfceaa3bd0adb9ef0d9b9241503ee` |
+| Complete HEAD tree | `d6a9a45fbe56ce917147102bc8b5571e2b5eb7a7` |
+| Source subtree | `3d6ff0e8a00861c271ca6349852580b7b6b5ed12` |
+| Delta | 33 files; 25,595 insertions |
+
+**Fresh evidence:** Local read-only Git inspection verified HEAD, tree, source identity and a clean worktree. The exact base-to-head inventory was reviewed, rather than only the latest remediation patch. All nine production watcher modules were read through EOF: `DevSquadAdoWorkflowWatcher.ts`, `...Admission.ts`, `...Discovery.ts`, `...DiscoveryMatching.ts`, `...DiscoveryValidation.ts`, `...Ledger.ts`, `...Observation.ts`, `...Pass.ts`, and `...Validation.ts`. Root exports were inspected. The unchanged ledger's receipt replay and initialization-publication implementation was inspected directly. The base comparison produced no changed ledger-source, package.json or package-lock.json paths.
+
+The documentation scope included the complete added README watcher section, both changesets, ADR-0026, approved discovery requirements/plan/tasks, retained shared recovery requirements and latest review-log dispositions. The historical portable evidence file was inspected as provenance, not treated as a new execution transcript. Test review covered the inventory of all 12 changed suites and relevant assertion bodies, including all 15 `.w046.test.ts` cases, admission intake-snapshot cases, matching semantics, real-ledger admission races, pause/reentry and real-ledger traversal/reopen. Test-support seams were inspected as context. This is full production-source scope with targeted test-body review, not a claim to have reread every historical test or every historical review-log paragraph.
+
+**Supplied publication/policy evidence, not queried by this reviewer:** The conductor reports fresh authentication/publication verification of OPEN PR #21 at the exact head/base above; base protection returned 404, applicable branch rules returned `[]`, and this head has zero check runs and an empty status rollup. These support the conductor's no-configured-required-CI disposition; empty checks alone would not. No remote tests ran. I made no network calls.
+
+**Inherited execution evidence:** `review-log.md:1731-1742` preserves independent turn-8 results: 711 passed / 2 existing Windows skips, focused history 19 passed / 244 selector exclusions, typecheck and Effect-free declaration checks passed, ESM/DTS generated, then canonical build failed at unchanged Windows postbuild `rm`. The history subset overlaps the total. Same-source attribution is supported by the freshly verified source subtree above. None of these commands was rerun here. Previous three-role PASS reports at b0ac were read as historical evidence, not substituted for this review.
+
+### Author's Intent
+
+The author is moving coordination mechanics out of each host's bespoke polling loop without moving lifecycle authority into Sandcastle. The feature is an offline, explicitly invoked pass: observe through host seams, durably coordinate existing-record cursor advances, optionally admit explicitly authorized first-seen items, and return minimized intake proposals. It does not choose a DevSquad phase, execute an agent, write a tracker, or dispatch the proposals.
+
+This is confirmed intent, not inference. `spec.md` under **Objective** calls the watcher “an observation and coordination component”; ADR-0026 under **Host boundary and modes** says the host alone authorizes admission and supplies exact initial phase/status. The implementation corresponds: `DevSquadAdoWorkflowWatcher.ts:531-564` dispatches two explicit modes; `...Discovery.ts:136-178` separates matching, guarded observation and admission; `...Admission.ts:25-38` constructs only the authorized initialization request.
+
+The author's principal trade-off is also explicit: prioritize nonduplicating, durable-before-report coordination over lossless delivery. `README.md:603-614` says replay does not redeliver admission and acknowledgement loss or a crash can permanently lose intake. ADR-0026's **Alternatives Considered** rejects an outbox, synthetic checkpoints and durable discovery continuation. Criticism based on those deliberately excluded capabilities would be a request to change the approved design, not evidence this implementation failed to deliver it.
+
+### Design Decisions Defended
+
+- **Keep a dedicated read-oriented seam and reuse the existing claimed checkpoint engine.**
+  - **Evidence:** ADR-0026, **A watcher-specific read seam, not the existing control plane**, explains the different cursor and data-minimization contract. `AdoControlPlaneFactory.ts:15-26,156-174` confirms an existing, different read-only injected-client surface. `DevSquadAdoWorkflowWatcherDiscovery.ts:155-180` calls the shared candidate step rather than copying checkpoint logic; `...Pass.ts:91-104` carries the shared guarded context. `...dependencies.test.ts:212-288` inventories/walks all nine production modules and the schema dependency, and explicitly describes its guard as static regression protection, not a sandbox.
+  - **Why correct:** Discovery gains the same staleness, authority, original-submission acknowledgement and cleanup protections as supplied candidates. It does not couple this feature to tracker-writing or agent-execution APIs.
+  - **Trade-off:** A separate seam requires host adaptation. The runtime dependency guarantee is about this code, not arbitrary behavior inside injected host methods.
+
+- **Treat matching, admission authorization and intake-rule permission as three different decisions.**
+  - **Evidence:** `...Discovery.ts:136-154` finalizes excluded/missing-fact items before any ledger read. `...Pass.ts:757-767` records method-valid initial absence; `...Discovery.ts:163-178` uses that provenance to enter admission. `...Admission.ts:19-49` requires explicit authorization, while `:118-121` uses validated phase/status arrays to gate a signal. `...discovery.admission.test.ts:281-452` asserts original intake decisions survive caller array-method overrides and page/retry mutations.
+  - **Why correct:** A match neither invents workflow state nor authorizes initialization by itself. A later checkpoint's `record-not-found` is not retroactively treated as first discovery. The distinction prevents losing existing-record failure/cleanup evidence in an admission-shaped outcome.
+  - **Trade-off:** Hosts must supply explicit per-item declarations and intake sets. That verbosity preserves ownership instead of inferring permission from tracker facts.
+
+- **Use fresh-only, claim-free initialization, with original request binding.**
+  - **Evidence:** ADR-0026, **Authorized first admission**, requires the existing initializer and forbids fabricated cursors/claims. `...Admission.ts:25-38,95-148` retains one request and signals only a validated nonreplayed acceptance. `...Ledger.ts:447-480,636-671` applies an initialization-specific guard, including pristine revision-one state and request isolation. The actual existing ledger at `DevSquadAdoWorkflowLedgerStorage.ts:879-994` publishes revision one, returns replay for the matching winning receipt, and otherwise reports already-exists. Receipt identity/digest conflict is checked at `:637-655`.
+  - **Why correct:** The no-claim exception belongs to first creation, not mutation of an existing record. The publishing winner is the only fresh acceptance under the real ledger protocol. The watcher does not have to invent a delivery checkpoint to identify it. Tests at `...discovery.admission.test.ts:57-280` assert pristine initialization, zero observation/claim effects, stable cross-pass requests, no replay signal and one combined signal under same/different-submission races.
+  - **Trade-off:** Reconciliation can establish durable admission, not reconstruct a lost discovery signal. Later-record validation relies on the trusted ledger receipt/history contract; it is not a cryptographic proof of adapter honesty.
+
+- **Implement exact matching before minimizing its evidence.**
+  - **Evidence:** `...DiscoveryMatching.ts:12-65` implements fixed-order predicate evidence, dimension AND, state/team OR, tag all/any/none, exact segment paths and missing-fact precedence. `...DiscoveryValidation.ts:496-557` reads only configured fact dimensions and returns matching evidence instead of facts. `...discovery.matching.test.ts:17-218` exercises the seven predicates, path siblings, roots, empty collections, no team inference and exact comparisons. `README.md:500-551` explains normalized host facts and the public/private boundary.
+  - **Why correct:** The author did not substitute an upstream `eligible` flag for the approved policy semantics. Raw facts are available where they are needed to make the decision, then excluded from public evidence. Public validation returns only its summary (`...Validation.ts:586-592`; `...Watcher.ts:849-857`), while the private prepared configuration remains internal (`...DiscoveryValidation.ts:310-318,405-416`).
+  - **Trade-off:** Hosts own normalization, resolved teams and meaningful nonsecret policy versions. Exact matching deliberately does not guess separators, case folding or synonyms.
+
+- **Pause excluded records without moving anchors; distinguish this from intake suppression.**
+  - **Evidence:** `...Discovery.ts:136-154` performs no item effects for paused candidates. `...Observation.ts:177-199` recognizes explicit retention loss before reading a window. `...Pass.ts:492-510` still checkpoints otherwise eligible observations when intake rules suppress a signal. `...discovery.lifecycle.test.ts:96-217` checks unchanged paused state, real-ledger reopen/reentry at cursor 480, one signal for 481 and either-kind retention loss blocking both cursor advances.
+  - **Why correct:** This preserves activity that arrives while matching excludes an item. Neither a synthetic latest baseline nor an empty-window fallback silently discards known retention loss. Supplied-mode empty-window compatibility is preserved.
+  - **Trade-off:** Long pauses can outlive tracker retention and require host reconciliation. Fail-closed anchor loss is intentional, not permission for automatic reset.
+
+- **Bound an invocation-local traversal, and distinguish enumeration from successful actions.**
+  - **Evidence:** `...Discovery.ts:83-96,206-285,314-388` keeps local seen/token/state sets, counts initiated page calls, accepts explicit terminal evidence and reports traversal separately from outcomes. `...DiscoveryValidation.ts:95-145,429-614` meters recognized JSON incrementally, bounds indexed traversal and rejects a whole page for invalidity, duplicate identity, repeated token or drift. `...discovery.bounds.test.ts:728-877` asserts empty continued pages, terminal versus continued final calls, failure counting, and real-ledger reopen with fresh ordinal-one/null traversal and unchanged durable artifacts.
+  - **Why correct:** Earlier acknowledged work remains observable even if a later page is rejected. A processed prefix cannot masquerade as complete discovery. Page-local canonical order supports bounded processing without collecting the entire traversal for a global sort.
+  - **Trade-off:** At most one new page per poll means hosts need adequate page and poll budgets. Prefix rescans provide no eventual tail-progress guarantee; `README.md:652-676` states that limitation plainly.
+
+- **Separate idempotency identity, capability authority and historical acceptance.**
+  - **Evidence:** `...Validation.ts:625-661` gives checkpoint generations and acquisition epochs different identity arms; `...Pass.ts:835-849` generates the capability independently. ADR-0026, **Deterministic operation identifiers**, explains why reusing a claim identifier with a fresh token poisons retries. `...Pass.ts:629-646,702-724` stores the submitted checkpoint request and validates history before updating retry preconditions. `...Ledger.ts:539-599` shares direct/replay/history acknowledgement rules.
+  - **Why correct:** A later acquisition does not validate an older observation. The explicit anchor/PR identity comparison at `...Pass.ts:893-908` closes that gap before checkpointing. A newer latest record also does not erase a valid older acknowledgement; original accepted revision, source revision and cleanup revision stay distinct.
+  - **Trade-off:** More metadata and method-specific guards are necessary. This is defensible complexity tied to real concurrency/replay distinctions, not gratuitous validation duplication.
+
+- **Preserve acknowledged effects across cancellation and cleanup failures.**
+  - **Evidence:** `...Observation.ts:95-139` contains executable listener registration/removal failures and retires child/timer state. `...Pass.ts:216-284` records one validated-authority release attempt and promotes cleanup failure without retracting an acknowledged result; `:513-529` records the signal before cleanup. `...Discovery.ts:314-335` finalizes retained observation authority on traversal exits. `...w046.test.ts:301-419` asserts retained earlier signals, retry identity, one cleanup attempt and redacted listener faults.
+  - **Why correct:** An aborted caller cannot undo a ledger mutation already accepted. Likewise, failure to acknowledge release is not evidence that a checkpoint failed. Counts deliberately allow acted and failed to overlap, while cleanup counts partition outcomes.
+  - **Trade-off:** Cleanup is one attempt, not a release guarantee. Listener removal cannot be guaranteed when the host's removal method throws. Ledger/delay liveness remains cooperative.
+
+### Anticipated Criticisms
+
+- **“A large change with many tests must conceal unrelated scope.”**
+  - **Why not established:** The complete delta is additive and concentrated on this feature: nine production modules, two support modules, twelve test suites, exports and its documentation/release evidence. The exact comparison found no ledger-schema/storage or manifest/lockfile modification. Discovery is explicitly within approved slice 14, not an opportunistic later-slice implementation (`tasks.md:407-614`; ADR-0026, **Approved discovery decision**).
+  - **Limit:** Size still makes maintenance harder; I do not equate test volume with coverage or correctness.
+
+- **“No-op initialization cleanup or no replay signal means unfinished implementation.”**
+  - **Why not a problem:** Initialization has acquired no authority to release. `...Admission.ts:51-57` reports that fact, and `:124-137` distinguishes fresh/replayed acceptance without inventing signal delivery. Those are positive contract requirements, corroborated by the real ledger and public admission assertions above.
+
+- **“The elapsed budget should forcibly stop all activity.”**
+  - **Why not a problem:** `README.md:347-359` and `...Watcher.ts:144-156` explicitly limit new poll scheduling, not runtime. Awaiting ledger writes preserves durability/authority evidence. Both modes own native Date snapshots (`...Pass.ts:172-179`; `...Discovery.ts:33-40`), so the limitation is not a mutable-clock bypass. `...w046.test.ts:422-479` asserts the 6000ms reading exceeds the 5000ms next-poll budget without changing the start timestamp.
+
+- **“The validation and dependency tests prove protection against hostile in-process code.”**
+  - **Why that is not the author's claim:** `README.md:498-501`, `plan.md:483-485`, and the dependency guardian comment distinguish trusted adapters and static regression guards from sandboxing. Public data minimization is defensible; cryptographic authorization or cross-principal isolation is not inferred.
+
+- **“Earlier PASS or now-empty remote checks proves this head passed CI.”**
+  - **Why not a problem with the current disposition:** This report explicitly separates fresh local static inspection, supplied publication/policy observations and inherited same-source execution. Nothing here claims remote tests passed. Historical permission-blocked statements remain historical; the conductor's planned evidence append should record the newer publication facts without rewriting old failures.
+
+### Genuine Weaknesses and Retained Limits
+
+No new material source-remediation finding was established in this Advocate lane. The following weaknesses remain real; none is silently cleared by this PASS.
+
+- **Canonical package validation remains failed/uncertified.**
+  - **Priority:** **Critical, inherited BUILD-WIN classification**, retained in the environment/package dimension, not a newly introduced production-source blocker.
+  - **Evidence:** `package.json:39` retains POSIX `rm`/`cp` postbuild; `review-log.md:1737-1742` distinguishes successful ESM/DTS generation from the failing canonical command and missing package certification.
+  - **Notes:** I cannot defend a claim that the package built successfully on Windows. No such claim is required for this bounded source verdict. No tests/build were rerun and no packaging workaround was applied.
+
+- **Stateful recording-ledger fixture duplication has maintenance risk.**
+  - **Priority:** **Major, inherited CC-F01 classification**, retained as nonblocking maintainability debt.
+  - **Evidence:** `...w046.test.ts:42-166` and `...remediation.test.ts:43-167`; the original finding/disposition is preserved at `review-log.md:1584-1590` and the final closure's retained-findings table.
+  - **Notes:** The newer fixture explicitly identifies its origin and its public-boundary, nonphysical-persistence purpose (`...w046.test.ts:13-14`). `plan.md:499` permits recording injected fakes. No actual divergence, false passing assertion or production defect was established here. That defends its nonblocking disposition, not a claim that duplication has no cost.
+
+- **Operational and global assurance remain narrower than local source conformance.**
+  - **Priority:** No new severity assigned; preserve inherited **TB046-001-003 Major** and **TB001 Minor** dispositions unchanged.
+  - **Evidence:** `review-log.md:1737-1742` records platform skips and absence of global-suite, coverage, package and remote-CI certification. ADR-0026 remains Proposed at `:3-5`; `tasks.md:592-605` explicitly separates technical closure from authority.
+  - **Notes:** Public assertion bodies and real-ledger fixtures support the implementation narrative, but do not independently prove a live host supplies stable partitions, truthful retention indications, correct normalization or a complete reconciliation process. Those responsibilities are explicitly assigned to the host, not omitted from the design. Live integration is outside this review and the approved offline feature; it should not be backfilled with an invented success claim.
+
+**Final disposition:** Fresh static Advocate **PASS** at exact `91554b9d2c9dfceaa3bd0adb9ef0d9b9241503ee`. SKEP1/SKEP2/SKEP3 and ARC14-001 have directly inspected source and public regression defenses; W046-001's validated-intake correction remains present. ADV-01's historical-checkpoint framing is present in spec/plan/ADR. Prior defect severities and package/global/governance caveats remain intact. No source changes, test execution, network activity, nested agents, publication action or later-slice work was performed. Only this authorized report artifact was written.
+
+</details>
+
+<!-- prettier-ignore-end -->
+
+## W047 First-round Skeptic — Full Attributed Report
+
+**Attribution:** Independent Skeptic; source `files/post-publication-skeptic.md`; first-round verdict **FAIL, High POST-SKEP-001** at `91554b9`. This is the complete original finding and report; the later repair does not change this verdict's historical validity.
+
+<!-- prettier-ignore-start -->
+
+<details open>
+<summary>Original first-round Skeptic report — High FAIL</summary>
+
+## Skeptic Analysis
+
+### Verdict and scope
+
+**FAIL — one new High correctness finding; no new Critical findings.** The same-pass checkpoint identity can collide across different pull requests belonging to one work item, rejecting genuinely new activity. This is a fresh static finding, not a restatement of the inherited remediation findings.
+
+Reviewed PR: `davidsantf/sandcastle#21`.
+
+- Exact integration base: `9ff6e8e9f74792e131e927bd9bf41358e36cea95`.
+- Exact head: `91554b9d2c9dfceaa3bd0adb9ef0d9b9241503ee`.
+- Freshly inspected local tree: `d6a9a45fbe56ce917147102bc8b5571e2b5eb7a7`.
+- Freshly inspected `src` tree: `3d6ff0e8a00861c271ca6349852580b7b6b5ed12`.
+- Workspace: `C:\repos\copilot-worktrees\sandcastle\users-davidsant-automatic-tribble`; clean at both local status inspections.
+
+Scope was the complete integration-base production delta, not just the last remediation: all nine watcher production modules (`Watcher`, `Validation`, `Pass`, `Observation`, `Ledger`, `Discovery`, `DiscoveryValidation`, `DiscoveryMatching`, `Admission`), root exports, supplied-mode behavior, checkpoint recovery, and approved D1-B/D2/D2-A/D3-A discovery behavior. Read the approved discovery spec/plan/task/ADR contracts, current closure evidence, README contracts/examples and both changesets. Inspected relevant regression bodies and test inventories, including the public W046 cases, operation identity/real-ledger replay tests, PR staleness tests, and dependency guardians. Followed the candidate finding into the unchanged ledger schema/storage implementation. This is not a claim to have reread every line of all test files or historical review entries.
+
+Citation shorthand such as `Pass.ts` and `Discovery.ts` denotes `src/DevSquadAdoWorkflowWatcherPass.ts` and `src/DevSquadAdoWorkflowWatcherDiscovery.ts`; `w046.test.ts` denotes `src/DevSquadAdoWorkflowWatcher.w046.test.ts`.
+
+### Evidence provenance
+
+**Fresh in this review:** local exact-revision/tree/status/delta inspection; independent source and contract tracing; static comparison of the two checkpoint identity inputs and the actual ledger digest/rejection path below. No production code, test, build, or reproduction was executed.
+
+**Supplied conductor evidence, not independently queried here:** fresh authenticated publication inspection established PR #21 OPEN at the exact head/base above; base protection returned 404, applicable rules were empty, and current-head check runs/status rollup were empty. The absence-of-required-CI conclusion is based on that supplied policy inspection, not on empty checks alone. No network operation was performed by this reviewer.
+
+**Inherited execution only:** 711 passing focused tests / two existing Windows skips, typecheck and ESM/DTS/Effect-free results. None was rerun. Canonical Windows postbuild remains failed/packaging uncertified; global-suite and coverage certification remain unavailable. The earlier same-source static PASS verdicts remain historical evidence and do not establish this review's verdict.
+
+### Issues Found
+
+#### POST-SKEP-001 — New PR activity reuses the previous PR's checkpoint identity
+
+- **Priority:** High.
+- **Location:** `src/DevSquadAdoWorkflowWatcherPass.ts:913-930`; `src/DevSquadAdoWorkflowWatcherValidation.ts:627-654`.
+- **Contract falsified:** `README.md:317-323` says a genuinely different advance derives a different identifier, so reusing a pass ID for later work is never falsely rejected. `docs/adr/0026-devsquad-ado-workflow-watcher.md:208` makes the same guarantee. A PR cursor is meaningful in the PR selected by the observation input, but that PR identity is not included in checkpoint generation.
+
+**Concrete trigger, using a correct ledger and valid seam responses:**
+
+1. Initialize work item `137` with phase `implement`, status `ready`, WI cursor `"480"`, PR ID `"A"`, and PR cursor `null`. Use intake rules admitting that phase/status and sufficient budgets. All following claims are valid and released normally.
+2. Run a supplied pass with `passId: "P"`. WI observation returns `["480"]`; PR A observation returns `[{ threadId: "1", commentId: "1" }]`. The watcher checkpoints the PR pair and returns one signal.
+3. Between invocations, the authorized host uses the ledger's ordinary acquire/checkpoint/release operations to change the record to PR ID `"B"` and reset its PR cursor to `null`, retaining WI cursor `"480"` and workflow state. Both fields are legal public checkpoint patches: `DevSquadAdoWorkflowLedgerSchema.ts:673-739`; storage applies them independently at `DevSquadAdoWorkflowLedgerStorage.ts:1444-1468`.
+4. Run again with the same `passId: "P"`. PR B has its own valid first pair `{ threadId: "1", commentId: "1" }`; WI observation again returns only `"480"`. The seam contract does not require pairs to be globally unique across different PRs: observations are requested for a specific `pullRequestId` (`DevSquadAdoWorkflowWatcherObservation.ts:347-369`).
+5. Both invocations construct exactly this same generation:
+
+   ```text
+   {
+     fromWorkItemCommentId: "480",
+     fromPullRequest: null,
+     toWorkItemCommentId: null,
+     toPullRequest: { threadId: "1", commentId: "1" }
+   }
+   ```
+
+   Their `v`, `passId`, `workItemId`, step and ordinal also match. `Validation.ts:631-645` therefore hashes identical input and returns the identical checkpoint operation ID. PR A/B is absent.
+6. The second checkpoint's expected revision and claim authority differ. The actual ledger hashes the complete normalized request (`DevSquadAdoWorkflowLedgerSchema.ts:740-752,1065-1070`), looks up the old operation ID before attempting publication (`DevSquadAdoWorkflowLedgerStorage.ts:1369-1384`), and rejects the unequal digest as `idempotency-conflict` (`:638-654`).
+7. The watcher treats that conflict as terminal, emits no PR B signal and releases its claim (`DevSquadAdoWorkflowWatcherPass.ts:412-417,644-662`). Repeating `"P"` with the same new-PR window continues to fail.
+
+An illustrative revision sequence with successful initialization, claims and cleanup is: initialize 1; first watcher acquire 2/checkpoint 3/release 4; host acquire 5/change PR and clear cursor at checkpoint 6/release 7; second watcher acquire 8/checkpoint rejected/release 9. The PR B cursor remains null.
+
+**Impact:** Legitimate new activity in a replacement PR is not checkpointed or reported, despite valid input and no crash, uncertain acknowledgement, expired claim, or dishonest adapter. Both supplied mode and discovery's shared existing-record path are affected. Discovery may correctly finish enumeration while reporting this candidate failure; enumeration completeness does not rescue its intake.
+
+**Why nearby safeguards do not prevent it:**
+
+- The acquisition staleness check includes PR identity (`Pass.ts:473-484,901-910`), but here the host switch finishes before the second invocation. That invocation's initial and acquired records both name B, so the staleness check succeeds.
+- Fresh claim epochs correctly prevent acquire collisions, but are deliberately absent from checkpoint identity.
+- This is not the approved at-most-once loss window: the new PR checkpoint is definitely rejected before publication.
+- Changing the caller's pass ID can work around it, but the documented contract expressly permits reusing that ID for later work.
+
+**Suggested fix:** Include the observed PR identity in the checkpoint generation namespace whenever PR observation is involved, with an explicit version/compatibility decision for the public identity helper and existing operation-ID contract. Preserve the original identity and submitted request during retries; do not mint a replacement ID after a conflict. Add a public-pass real-ledger regression for A → B with repeated local thread/comment IDs and the same pass ID, covering both modes. Assert distinct checkpoint IDs, exactly one signal for each distinct PR's activity, and no redelivery on an unchanged repeat.
+
+### Edge Cases Not Handled
+
+- **Distinct PRs reuse the same local thread/comment pair after the host changes the tracked PR.**
+  - **What happens:** The observation destination changes but the mutation namespace does not; the second checkpoint encounters the old receipt and fails.
+  - **Should happen:** Distinct observation destinations produce distinct checkpoint identities, while retries against the same destination retain their identity.
+  - This is POST-SKEP-001, not a second finding.
+
+### Suspicious Patterns
+
+- **PR identity participates in staleness but not in generation identity.**
+  - **Location:** `Pass.ts:473-484` versus `:912-917`.
+  - **Concern:** The code already recognizes PR identity as an input to selecting activity, then discards it at the persistent deduplication boundary. The demonstrated cross-invocation sequence makes this a correctness issue rather than architectural preference.
+- **Existing related tests exercise different boundaries.**
+  - **Location:** `DevSquadAdoWorkflowWatcher.concurrency.test.ts:775-890` varies cursor-generation fields; `DevSquadAdoWorkflowWatcher.remediation.test.ts:2465-2501` changes PR identity/cursor during acquisition.
+  - **Concern:** Neither inspected case exercises an authorized PR switch completed between two passes with equal cursor text. Their assertions can pass while POST-SKEP-001 remains. This is supporting evidence, not a separate test-coverage finding.
+
+### Could Not Break
+
+Within the static paths inspected:
+
+- **Authorized fresh-only admission:** Configuration is snapshotted and canonical-item-bound; discovery routes to admission from initial guarded absence, not later checkpoint errors. Initializer retries retain their request; replay suppresses admission delivery. See `DiscoveryValidation.ts:253-306`, `Discovery.ts:159-180`, `Admission.ts:60-148`, `Ledger.ts:448-480,637-671`. Actual initialization publication races distinguish fresh winner/replay/already-exists in the underlying storage at `DevSquadAdoWorkflowLedgerStorage.ts:879-993`.
+- **Matching and pause/reentry:** Exact predicates operate on bounded projected facts; excluded/missing-fact items do not reach the ledger. Explicit retention loss blocks both-kind checkpointing rather than inventing a baseline. See `DiscoveryMatching.ts:12-66`, `DiscoveryValidation.ts:434-614`, `Discovery.ts:136-155`, `Observation.ts:177-199,331-411`.
+- **Traversal boundaries:** Whole-page validation precedes effects; duplicate items, token cycles, binding drift and remaining-item overflow fail closed. Terminal enumeration does not erase pending mutation recovery, and finalization preserves earlier effects. See `DiscoveryValidation.ts:450-614`, `Discovery.ts:186-335`.
+- **Historical checkpoint recovery and cleanup:** Pending original submitted metadata is retained independently from refreshed expected revision; history passes the shared acknowledgement validator. Validated claims get cleanup without retracting acknowledged intake. See `Pass.ts:614-661,666-721`, `Ledger.ts:539-599`, `Pass.ts:216-280,1149-1176`.
+- **Prior remediations:** The current initial-missing provenance, contained listener method failures, native Date snapshots and minimized public discovery validation summary have the intended mechanisms. The public W046 tests at `w046.test.ts:202-616` assert the relevant boundaries; their execution remains inherited.
+- **Dependency boundary:** The nine production modules and their shared schema dependency introduce no live tracker client, execution dispatch, durable traversal state, or new ledger storage fields. Root exports preserve the separate supplied/discovery contracts. Dependency tests are regression guards, not a sandbox guarantee.
+
+Retain the accepted permanent-loss, bounded-prefix, settling-dependency and trusted-adapter limitations; they are not new findings. Retain original severities/dispositions for CC-F01, BUILD-WIN, TB046-001–003 and TB001. Historical publication-blocked statements awaiting the conductor's evidence append were not treated as new runtime blockers. ADR-0025/0026 acceptance, #20-before-#21 ordering, merge authority and later slices remain separate.
+
+**Stop disposition:** Return POST-SKEP-001 for synthesis/remediation before technical sign-off. No repository edit, test rerun, network call, nested agent, publication change or task-status mutation was performed.
+
+</details>
+
+<!-- prettier-ignore-end -->
+
+## W047 First-round Architect — Full Attributed Report
+
+**Attribution:** Independent Architect; source `files/post-publication-architect.md`; first-round verdict **PASS** at `91554b9`. This is the complete supplied report, not an approval overriding the same round's Skeptic FAIL.
+
+<!-- prettier-ignore-start -->
+
+<details open>
+<summary>Original first-round Architect report — PASS</summary>
+
+## Architect Analysis
+
+### Direction Assessment
+
+**Overall: Good**
+
+**Verdict: PASS — independent static architecture review of the complete published integration-base delta.**
+
+The watcher remains a host-invoked coordination primitive rather than becoming a lifecycle owner or execution service. Discovery adds meaningful validation and scheduling complexity, but places that complexity in explicit preparation, matching, admission and traversal boundaries while sharing the existing-record checkpoint/authority machinery. No new material architectural blocker was substantiated.
+
+**New findings: 0 Critical / 0 High / 0 Medium / 0 Low.** This does not clear inherited findings, certify packaging, accept Proposed ADRs, or grant merge authority.
+
+### Scope and Evidence Provenance
+
+Reviewed `davidsantf/sandcastle#21` in the assigned `users-davidsant-automatic-tribble` workspace:
+
+| Identity | Value |
+| --- | --- |
+| Integration base | `9ff6e8e9f74792e131e927bd9bf41358e36cea95` |
+| Published head | `91554b9d2c9dfceaa3bd0adb9ef0d9b9241503ee` |
+| Head tree | `d6a9a45fbe56ce917147102bc8b5571e2b5eb7a7` |
+| Source subtree | `3d6ff0e8a00861c271ca6349852580b7b6b5ed12` |
+| Delta inventory | 33 files; 25,595 inserted lines |
+
+Fresh local Git inspection confirmed those identities, a clean workspace, and no tracked difference from the exact head. An initial unquoted PowerShell tree-expression query was malformed; the subsequently quoted query returned the tree above. No source operation resulted.
+
+The review covered the full feature, not only the final remediation:
+
+- Read all nine production watcher modules through EOF: public contracts/dispatch, common validation, discovery validation, matching, admission, discovery traversal, shared candidate pass, observation lifecycle, and ledger acknowledgement guards.
+- Inspected root exports, both changesets, README host contracts/examples, approved discovery sections in spec/plan/tasks and ADR-0026, retained supplied/shared requirements, latest review-log evidence and historical evidence provenance.
+- Inventoried the twelve watcher test suites and inspected relevant public assertions, fixtures, boundary guards, concurrency/reopen cases and recovery tests. This is architectural/test-design inspection, not an assertion that every test body was independently re-proved.
+- Compared adjacent control-plane and execution boundaries, ledger initialization/publication/replay behavior and persisted/public schemas. Exact-base diffs confirmed the ledger contract/storage/schema, ADR-0025 and package manifest are unchanged.
+
+**Fresh evidence from this reviewer:** read-only source/document/test inspection and local Git identity/delta checks. **No tests, builds, probes, network calls, nested agents, publication, board changes or source edits were performed.**
+
+**Supplied post-publication evidence, not independently fetched here:** the conductor reports PR #21 open at this exact head/base, protection GET returning “Branch not protected,” applicable rules `[]`, and zero current check runs/status rollup. The supplied combined policy observations support “no configured required CI on this target”; empty checks alone would not prove that. They do not establish that remote tests passed.
+
+**Inherited execution evidence:** the latest independent source gate reports 711 passed / 2 existing Windows skips, successful typecheck and fresh ESM/DTS generation plus a separate Effect-free declaration guard. The 19 historical-history tests are an overlapping subset, not additional passes. Canonical Windows postbuild still failed at `rm`; packaging, global-suite results and coverage remain uncertified. Provenance and limitations are preserved at `docs/features/devsquad-ado-workflow-watcher/review-log.md:1712-1745`. Prior static PASS reports were context, not substitutes for this fresh source inspection.
+
+### Pattern Analysis
+
+- **Separate public modes with shared existing-record processing**
+  - **Appropriate? Yes.**
+  - `src/DevSquadAdoWorkflowWatcher.ts:531-573` preserves supplied/discovery/union overloads; `:815-857` separates discovery requests and minimized validation summaries. `src/index.ts:265-343` exports contracts without exposing traversal/admission implementation helpers.
+  - Discovery invokes the shared candidate engine at `src/DevSquadAdoWorkflowWatcherDiscovery.ts:155-180`, rather than implementing another checkpoint protocol. That engine retains acquisition staleness checks and cursor-only patches at `src/DevSquadAdoWorkflowWatcherPass.ts:880-935`.
+  - This matches the planned boundaries at `docs/features/devsquad-ado-workflow-watcher/plan.md:17-70`. Supplied callers need not adopt initialization or narrow new discovery signal arms.
+
+- **Validate and minimize at the ingestion boundary**
+  - **Appropriate? Yes.**
+  - Configuration is projected into owned bounded structures; the whole recognized page is validated before item effects at `src/DevSquadAdoWorkflowWatcherDiscoveryValidation.ts:159-307,430-614`.
+  - The pure matcher implements the seven ordered predicate categories and immediately returns minimized evidence at `src/DevSquadAdoWorkflowWatcherDiscoveryMatching.ts:8-66`. Exclusion is applied before ledger/observation work at `src/DevSquadAdoWorkflowWatcherDiscovery.ts:136-154`.
+  - Compared with the existing public-record projection in `src/DevSquadAdoWorkflowLedgerSchema.ts:1334-1370`, this continues the separation between richer internal inputs and narrower public data. It does not push redaction responsibilities onto every consumer.
+  - Tests inspect exact matching, unused getters and whole-page rejection at `src/DevSquadAdoWorkflowWatcher.discovery.matching.test.ts:18-322`; these assertions were read, not run.
+
+- **Distinct admission and comment acknowledgement semantics**
+  - **Appropriate? Yes.**
+  - Explicit item authorization constructs a minimal immutable initialization request at `src/DevSquadAdoWorkflowWatcherAdmission.ts:20-38`; only validated fresh acceptance can produce admission intake at `:95-148`.
+  - This is grounded in existing storage behavior: `src/DevSquadAdoWorkflowLedgerStorage.ts:879-993` distinguishes the fresh publisher from receipt replay and already-existing records; `:638-681` binds replay to operation identity/digest.
+  - Comment recovery deliberately differs: `src/DevSquadAdoWorkflowWatcherPass.ts:608-626,669-720` retains the actual submitted request and validates history before refreshing retry preconditions. `src/DevSquadAdoWorkflowWatcherLedger.ts:543-599` uses one checkpoint acknowledgement rule for direct/replay/history evidence.
+  - Generalizing either delivery rule across both paths would erase an important contract distinction. The current structure keeps it explicit.
+
+### Coupling Assessment
+
+- **Watcher to host/lifecycle/execution: appropriate separation.**
+  - The existing control plane has work-item/CI/review APIs (`src/AdoControlPlaneFactory.ts:14-24`), whereas the watcher needs anchored identifier windows and stable pages (`src/DevSquadAdoWorkflowWatcher.ts:90-116,744-812`). Reusing the control plane would not remove the need for the watcher-specific contract.
+  - ADR-0024 assigns phase gates, scheduling and final PR authority to the host and restricts the execution adapter to one selected task (`docs/adr/0024-devsquad-sandcastle-execution-adapter-boundary.md:16-46`). The watcher imports and returned-data design preserve that separation.
+  - The dependency suite supplies a regression detection mechanism: inventory, runtime graph and forbidden-effects checks at `src/DevSquadAdoWorkflowWatcher.dependencies.test.ts:203-294`. These are static architecture guards, not a sandbox or proof of arbitrary adapter honesty.
+
+- **Watcher to ledger: intentionally contract-coupled, not storage-coupled.**
+  - Runtime watcher dependencies use schema helpers and injected ledger methods; no storage implementation is imported into the watcher.
+  - `src/DevSquadAdoWorkflowWatcherLedger.ts:30-210,409-579,602-671` owns public-response projection and request-relative acknowledgement validation. The persisted parser separately verifies receipts, integrity and storage schema (`src/DevSquadAdoWorkflowLedgerSchema.ts:1123-1332`). These are different boundaries; replacing one with the other would conflate storage trust with adapter-result trust.
+  - The initialization exception remains method-specific and does not relax the existing-record acknowledgement checks.
+
+- **Discovery configuration: justified complexity within this decision.**
+  - Limits, exact operators, explicit authorization and stability declarations are substantial host obligations, but correspond directly to approved D1-B/D2/D3-A requirements (`docs/features/devsquad-ado-workflow-watcher/plan.md:89-383`).
+  - The implementation does not add speculative transport selection, persistence strategies or lifecycle modes. No additional configuration/refactoring is needed for this gate.
+
+### Reversibility, Compatibility and Operability
+
+- **Rollback is host-controlled and requires no format migration.** Discovery is explicit opt-in, while supplied mode remains available. Traversal state is invocation-local (`src/DevSquadAdoWorkflowWatcherDiscovery.ts:83-96,186-335`); no durable continuation, pause marker or outbox is introduced. Stopping future discovery invocations does not undo already accepted initialization or cursor advances. That accepted irreversibility is documented, not hidden (`README.md:603-613,650-657`).
+- **Compatibility remains additive at the package boundary.** Existing supplied result/signal contracts remain separate. Durable state continues to use the unchanged ledger schema, avoiding a new old-reader/new-writer migration here. This is not a claim that an older package implements the newly added discovery API. #20-before-#21 ordering remains required.
+- **Incompletion and cleanup are observable without importing telemetry infrastructure.** Discovery exposes terminal evidence independently from traversal completion and candidate failures (`src/DevSquadAdoWorkflowWatcherDiscovery.ts:317-388`). The shared finalizer preserves accepted effects while reporting release uncertainty (`src/DevSquadAdoWorkflowWatcherPass.ts:216-294,1153-1176`). Host monitoring must consume those results; this package does not provide host alerting.
+- **Accepted trade-offs remain explicit:** permanent admission/intake loss after durable-but-unusable acknowledgements, no eventual tail-progress guarantee for oversized prefix rescans, and conditional liveness for settling dependencies. Reopen/no-token assertions exist at `src/DevSquadAdoWorkflowWatcher.discovery.bounds.test.ts:777-841`; pause/reentry and retention assertions exist at `src/DevSquadAdoWorkflowWatcher.discovery.lifecycle.test.ts:96-237`. No outbox, persistent continuation or automatic re-anchoring redesign is requested.
+
+### Technical Debt and Prior Findings
+
+- **ARC14-001 — original Medium; closure preserved by fresh inspection.** The fix is at the model boundary: `DevSquadAdoDiscoveryValidatedPass` no longer carries private configuration (`src/DevSquadAdoWorkflowWatcher.ts:849-857`); private preparation retains it separately (`src/DevSquadAdoWorkflowWatcherDiscoveryValidation.ts:310-318,402-420`); public validation returns only the summary (`src/DevSquadAdoWorkflowWatcherValidation.ts:586-592`). Exact-key/type/privacy and positive-use assertions at `src/DevSquadAdoWorkflowWatcher.w046.test.ts:482-616` prevent a merely cosmetic serialization fix.
+- **Other bounded remediations remain structurally placed correctly.** Initial absence is recorded separately from later mutation failure (`src/DevSquadAdoWorkflowWatcherPass.ts:757-767`; discovery routing `:163-180` in the discovery module). Executable listener failures are contained in the shared seam lifecycle (`src/DevSquadAdoWorkflowWatcherObservation.ts:95-139`). Native clock timestamps are owned at `src/DevSquadAdoWorkflowWatcherPass.ts:172-180`. Their public regression assertions are at `src/DevSquadAdoWorkflowWatcher.w046.test.ts:202-479`. This is fresh static confirmation, not fresh runtime closure.
+- **CC-F01 — original Major, nonblocking maintenance debt retained.** Comparing `src/DevSquadAdoWorkflowWatcher.w046.test.ts:42-166` with `src/DevSquadAdoWorkflowWatcher.remediation.test.ts:43-167` confirms duplicated stateful ledger fakes. The multi-item variant serves the new boundary tests; no divergent semantics or invalid production result was established. Preserve the existing disposition rather than turning consolidation into an unrelated closeout requirement.
+- **BUILD-WIN — original Critical environment/package finding retained.** No severity downgrade or packaging-success claim. TB046-001-003 retain their original Major dispositions; TB001 retains its nonblocking Minor test-coupling disposition. See `docs/features/devsquad-ado-workflow-watcher/review-log.md:1779-1789`.
+
+### Refactoring Opportunities
+
+**None required now.** A future separately authorized test-maintenance change could consolidate the duplicated recording fake while retaining public-boundary and real-ledger coverage. That is not part of this review's completion criteria or permission to edit.
+
+No removal requires a cleanup cascade in this delta. In particular, rollback must not be implemented by deleting accepted ledger evidence or adding a compensating cursor reset.
+
+### Recommendations
+
+- **Critical:** No new architectural finding. Retain the inherited packaging failure and its original classification.
+- **High:** No new architectural finding.
+- **Medium:** No new architectural finding; ARC14-001 remains closed by the public/private model separation.
+- **Low:** No new finding or cosmetic-refactoring requirement.
+
+**Final disposition: PASS for the exact published source's static architectural direction.** The latest historical publication-blocked/pending text is evidence awaiting the conductor's truthful post-publication append, not a newly discovered runtime blocker. Preserve prior history instead of relabeling old static/execution evidence as fresh CI. ADR-0025 and ADR-0026 remain **Proposed**; human governance acceptance, packaging/global certification, merge authority and work 15-19 remain separate.
+
+</details>
+
+<!-- prettier-ignore-end -->
+
+## W047 Final Advocate — Full Attributed Report
+
+**Attribution:** Independent Advocate; source `files/post-publication-final-advocate.md`; final verdict **PASS** at published repair `27e09de`. This is a fresh supplied static perspective, not a rerun of implementation checks or the documentation worker's own review.
+
+<!-- prettier-ignore-start -->
+
+<details open>
+<summary>Original final Advocate report — PASS at 27e09de</summary>
+
+## Advocate Analysis
+
+### Verdict, scope and provenance
+
+**PASS — independent static production-source review. POST-SKEP-001 is addressed in the exact published source. No new blocking finding from this Advocate review.** This is not packaging approval, remote-CI success, ADR acceptance, merge authorization or a retrospective replacement of the previous independent FAIL.
+
+- PR: `davidsantf/sandcastle#21`.
+- Integration base: `9ff6e8e9f74792e131e927bd9bf41358e36cea95`.
+- Exact inspected HEAD: `27e09de6e23976a2c103671800eb542bcf9c90dd`.
+- Exact inspected repository tree: `86891556bfaf52e27067b3ed8d1ed08fdaf72154`.
+- Exact inspected `HEAD:src` tree: `07cf78bfa7aff9fa6279151ff228f6ac41c5d74e`. This is a source-tree identity, not a separate implementation commit.
+- Workspace: `C:\repos\copilot-worktrees\sandcastle\users-davidsant-automatic-tribble`; clean at the initial and final source inspections.
+
+The review covers the full 35-file integration delta and approved supplied/shared plus D1-B/D2/D2-A/D3-A discovery scope, with direct source tracing through all nine production watcher modules, root exports, relevant unchanged ledger serialization/receipt handling, README and amended spec/ADR/plan/tasks. I read the complete new namespace regression suite, selected existing public W046 and dependency-guardian bodies, the repair handoff and the original Skeptic finding. Test/history inspection was selective, not a claim to have reread every line of the approximately 26,000-line integration delta or all historical review reports. The historical `final-review-evidence.json` identifies a different earlier implementation and was not used as current approval.
+
+**Fresh evidence here:** local status/tree/delta inspection, independent source and contract analysis, and file-hash comparison. The eleven paths changed since the original reviewed `91554b9d2c9dfceaa3bd0adb9ef0d9b9241503ee` match the repair handoff. The current hashes of `Watcher.ts`, `Pass.ts`, `Validation.ts` and `pr-namespace.test.ts` match all four handoff hashes exactly. The repair changes production behavior only in helper derivation and shared checkpoint preparation; watcher public-type edits are JSDoc. Ledger schema/storage/receipts, admission, discovery traversal, manifests and root exports are unchanged by this repair.
+
+**Conductor-supplied publication evidence, not independently queried:** refreshed context `deep-review-post-publication-context.yaml`, `review` and `observations[0–1]`, reports a normal fast-forward push followed by REST ref/PR confirmation at the exact head/base above, protection 404, applicable rules 200/empty, and no current-head checks/status rollup. The supplied policy inspection—not empty checks alone—supports absence of configured required CI. **No remote tests ran.**
+
+**Inherited execution, not rerun:** `post-publication-implementation.md`, “RED before source changes” and “Fresh validation and outputs,” reports the real-ledger two-mode RED followed by 21 focused passes, combined watcher/ledger **732 passed / 2 existing Windows skips**, and **19 history-selector passes / 244 selector exclusions** overlapping that combined suite. It reports final typecheck, scoped formatting/diff, ESM/DTS and standalone Effect-free guard success. Canonical build still exited 1 at the unchanged Windows `rm` postbuild; packaging remains uncertified. Matching source hashes establish provenance, not a new execution.
+
+No source edits, tests, builds, reviewed-code execution, network calls, board actions, nested agents or later-slice work occurred. Only this authorized report file was written. Prior Advocate/Architect PASS verdicts were not used as fresh approval.
+
+Citation shorthand below: `Watcher.ts`, `Pass.ts`, `Validation.ts`, `Ledger.ts`, `Observation.ts`, `Discovery.ts`, `DiscoveryValidation.ts`, `DiscoveryMatching.ts`, `Admission.ts` and `pr-namespace.test.ts` mean the corresponding `src/DevSquadAdoWorkflowWatcher*.ts` paths. `spec`, `plan`, `tasks` and `review-log` mean files under `docs/features/devsquad-ado-workflow-watcher/`; `ADR-0026` means `docs/adr/0026-devsquad-ado-workflow-watcher.md`. Line references are to this exact HEAD.
+
+### Author's Intent
+
+The integration supplies bounded, offline intake coordination around the existing ledger while leaving lifecycle meaning and execution authority with the host. It separates supplied-record observation from explicit discovery and authorized initialization. The repair corrects the identity of a PR-observing checkpoint without changing that division of responsibility or introducing durable discovery state.
+
+That intent is explicit, not inferred: ADR-0026:13–20 prioritizes host ownership, at-most-once intake, bounded scheduling and an offline core; ADR-0026:43–57 defines the two modes and forbids live queries, tracker writes and dispatch. The new decision at ADR-0026:216–236 explicitly qualifies the old cursor-only identity guarantee rather than hiding the discovered defect.
+
+The original Skeptic scenario was legitimate new work, not a retry: an authorized host replaces PR A with PR B between invocations, resets the PR cursor, and B reuses A's local `(threadId, commentId)` pair. The original report's “POST-SKEP-001” section and review-log:1819–1823 retain that High failure. The fix recognizes that the observation destination is part of the checkpoint generation; it does not weaken ledger idempotency to make the failure disappear.
+
+### Design Decisions Defended
+
+- **Add the PR destination at the shared preparation point, using the record actually observed.**
+  - **Evidence:** Observation.ts:347–369 selects the PR seam using `record.pullRequest.id`. Pass.ts:473–484 compares both anchors and that PR identity across acquisition; Pass.ts:891–910 retains the staleness gate. Pass.ts:912–944 constructs the generation and selects the overload using the original `record.pullRequest.id`, not `claimed` or a recovery read. Discovery.ts:150–180 calls the same candidate engine.
+  - **Why correct:** This directly repairs the demonstrated cross-invocation namespace collision in both modes. A and B now contribute different canonical identity input even when all local cursor strings and the pass ID match. It also covers WI-only advancement after a PR observation, as FR-037b expressly requires; it does not depend on `changedKinds` containing PR activity.
+  - **Trade-off:** Newly prepared PR-observing pass checkpoints intentionally change version. Keeping every pass-generated ID unchanged would preserve the defect.
+
+- **Preserve the legacy public helper bytes rather than silently redefining its input shape.**
+  - **Evidence:** Validation.ts:633–675 keeps the one-argument signature and adds a checkpoint-only overload. With no namespace, `version` remains 2 and the generation contains precisely the four legacy fields; claim-lifecycle identity remains `v: 2`. The unchanged canonical serializer sorts object keys and uses SHA-256 at `src/DevSquadAdoWorkflowLedgerSchema.ts:1047–1062`. Watcher.ts:459–516 preserves the exported generation/identity shapes. Validation.ts:722–731 preserves initialization derivation.
+  - **Why correct:** Static comparison with the pre-repair implementation shows the same canonical input and prefix for every valid legacy one-argument call, not merely equivalent behavior for one fixture. The new overload adds only `generation.pullRequestId` and `v: 3`, producing `dsw3.checkpoint.` plus 32 hexadecimal characters. No-PR checkpoints still call the one-argument helper.
+  - **Corroboration:** pr-namespace.test.ts:503–533 pins six pre-edit golden outputs across lifecycle, no-PR checkpoint, legacy PR checkpoint and initialization. Its formula/bounds and type-compatibility tests at :535–629 cover the exact v3 object, 48-byte output, long/multibyte inputs, the one-argument function assignment and rejected non-checkpoint namespace use.
+  - **Trade-off:** Legacy callers do not automatically obtain PR isolation. README.md:344–355 and Validation.ts:622–631 expressly say the one-argument helper “cannot isolate PR destinations.” This is honest compatibility, not an assertion that legacy generation has gained a new guarantee.
+
+- **Retain original-submission recovery; do not repair conflicts by minting replacement IDs.**
+  - **Evidence:** Pass.ts:49–70 separates readonly `operationId`, mutable next `expectedRevision` and the last `submittedRequest`. Renewal may refresh the next revision at :604–605; submission snapshots the actual request at :614–633. Recovery finds history by the retained ID, validates it against `pending.submittedRequest`, and only on absence refreshes the next revision at :702–721. Ledger.ts:539–599 applies the shared checkpoint acknowledgement validator, including exact accepted revision relative to that submission, previous/resulting state, durable entry and latest-record consistency where applicable.
+  - **Why correct:** “Original submission” is not shorthand for “all future retry bytes are identical.” The last request actually submitted must remain authoritative while examining its possible history; a definitely nonlanded retry may then refresh revision, including after renewal, while preserving identity, authority, patch and decision state. The v3 namespace is never recomputed from a later record. The new repair does not change this mechanism.
+  - **Corroboration:** pr-namespace.test.ts:308–448 covers durable history, nonlanded retry, renewal-aware retry, a later authorized A→B change and terminal conflict in both modes. It pins identical operation IDs and patches/authority across retry, but revisions `[2, 3]` after renewal. Its contradictory-history test at :450–498 requires failure without another checkpoint, renewal or signal.
+  - **Trade-off:** A real `idempotency-conflict` remains terminal at Pass.ts:412–417,644–653. That is necessary: the unchanged ledger rejects reuse with a different request digest at `src/DevSquadAdoWorkflowLedgerStorage.ts:638–654,1364–1384`. There is no migration, fallback or receipt reinterpretation to evade it.
+
+- **Use an actual public-pass regression to close the actual reported scenario.**
+  - **Evidence:** pr-namespace.test.ts:1–21 imports the public package entry and real-ledger helpers; :59–126 constructs both public modes. The A→B regression at :129–265 uses authorized host acquire/checkpoint/release, checks two distinct checkpoint IDs and one signal for each PR, verifies B at durable revision 10 with no active claim, then reopens the ledger and requires zero watcher mutations and zero repeat signals. WI-only/no-PR controls are at :267–306.
+  - **Why correct:** This is not a unit assertion that merely restates the hash formula. The test crosses observation selection, actual receipt collision handling, shared pass dispatch, signal generation, cleanup and restart behavior—the path that originally failed.
+  - **Trade-off:** Ambiguity cases use wrappers around the local real ledger; they are evidence about local recovery contracts, not live ADO or distributed-service validation.
+
+- **Keep admission authority separate from observation failures and claim authority.**
+  - **Evidence:** DiscoveryValidation.ts:253–306 snapshots canonical-item authorization and exact initial state. Discovery.ts:136–180 rejects matching-paused items before ledger work and admits only on `initialReadMissing`. Pass.ts:747–765 establishes that provenance from the initial guarded read. Admission.ts:20–58 constructs only the four initialization fields; :114–148 delivers only validated fresh initialization matching intake rules. Ledger.ts:637–671 independently guards initialization requests/responses.
+  - **Why correct:** Supplied mode still neither captures nor calls `initializeRecord`; Discovery's authorized no-comment path does not turn a later checkpoint rejection into permission to initialize. Existing-record discovery uses the same repaired checkpoint logic, not a parallel implementation.
+  - **Trade-off:** Fresh-only admission can permanently lose delivery after ambiguous acknowledgement or a crash. This is explicitly accepted at ADR-0026:95–103 and README.md:614–630, not an unimplemented promise of an outbox.
+
+- **Bound and validate discovery while preserving pause/reentry semantics.**
+  - **Evidence:** DiscoveryMatching.ts:12–66 implements exact configured predicates, missing-fact distinction and segment-aware paths. DiscoveryValidation.ts:434–614 validates the whole recognized page, remaining capacity, bindings, duplicate items and repeated continuations before returning accepted items. Discovery.ts:186–314 retains invocation counters, schedules at most one page per poll and does not finalize pending mutations merely because a terminal page appeared. Observation.ts:177–199,283–300,331–411 preserves explicit retention loss and anchor-relative selection.
+  - **Why correct:** D2/D2-A pause occurs before effects and leaves anchors untouched; reentry does not invent a baseline. D3-A completion requires explicit terminal evidence and finalized candidate dispositions. There is no conflation of an empty continued page, a processed prefix, or successful candidates with complete traversal.
+  - **Trade-off:** Repeated prefix scans do not guarantee tail progress. ADR-0026:117–135 and README.md:668–699 place partition/budget selection with the host.
+
+- **Preserve acknowledgement and cleanup truth independently.**
+  - **Evidence:** Pass.ts:216–280 attempts release once for validated authority and can promote the outcome to failed without removing accepted effects. Pass.ts:493–540 emits only after accepted checkpointing. Observation.ts:78–138 contains executable listener failures and retires child/timer resources. Pass.ts:170–180 and Discovery.ts:32–39 snapshot native Date values. Validation.ts:583–595 returns the minimized discovery summary; private prepared policy/authorization remains separate at DiscoveryValidation.ts:309–318,400–417.
+  - **Why correct:** The integration's earlier remediations still operate at the actual dependency and provenance boundaries. The namespace fix changes none of them. The inspected public W046 tests at `src/DevSquadAdoWorkflowWatcher.w046.test.ts:202–305` specifically preserve checkpoint-rejection/cleanup evidence and require method-valid initial absence.
+  - **Trade-off:** Defensive projections cannot sandbox a dishonest in-process adapter or force a ledger call to settle. ADR-0026:147–149 states that limit; dependency guardians call themselves architecture regression guards, not a sandbox, at `src/DevSquadAdoWorkflowWatcher.dependencies.test.ts:251–271`.
+
+### Anticipated Criticisms
+
+- **“Introducing v3 breaks the compatibility promise.”**
+  - **Why not a problem for this bounded amendment:** The approved promise now expressly distinguishes legacy one-argument helper compatibility from newly prepared PR-observing pass checkpoints. FR-037b/c at spec:193–194, ADR-0026:216–236 and README.md:306–359 agree with the implementation. Claim-lifecycle, initialization and no-PR paths remain v2. The new patch changeset documents precisely that exception at `.changeset/watcher-pr-checkpoint-namespace.md:1–5`.
+
+- **“Recovery should use the latest PR or refresh expected revision before validating history.”**
+  - **Why not correct here:** The latest record can describe later authorized work. It cannot redefine the historical request whose acknowledgement is uncertain. Pass.ts:702–721 validates history first; pr-namespace.test.ts:337–352,400–445 explicitly preserves A's acknowledgement after the record names B. Using B to rebuild the ID would abandon the original receipt.
+
+- **“Completion should imply every discovered item succeeded, and initialization should use claims.”**
+  - **Why not a problem:** Those are different contracts. Discovery.ts:326–388 reports traversal separately from outcomes/counts. Claim-free initialization is the approved D1-B exception, not an accidental bypass; only explicit authorization and fresh validated acceptance permit admission. Existing records remain claimed/fenced. See ADR-0026:85–115,125–133 and Admission.ts:20–148.
+
+- **“The checked-in evidence still contains failures, denied publication and pending W047.”**
+  - **Why not a new source blocker:** Those statements preserve their historical provenance. The current final source was published according to the refreshed conductor evidence; this reviewer did not query publication. The repair's independent gate intentionally remained pending in tasks:710–718 until fresh review, and review-log:1815–1853 explicitly refuses to turn implementer GREEN into independent approval. The parent should append the new disposition after synthesis rather than rewriting previous FAIL/403 records.
+
+### Genuine Weaknesses and Caveats
+
+- **Canonical Windows packaging is still not demonstrated successful.**
+  - **Priority:** Retain **BUILD-WIN: Critical**, the original classification; retained environment/package failure, not a newly found blocking production-source regression.
+  - **Notes:** The handoff's “Canonical build and declaration guard” reports successful ESM/DTS followed by failed Windows postbuild. Standalone Effect-free success does not prove template copy or packaging. review-log:1788 and :1841–1853 retain this distinction. No global-suite, global-coverage, packaging or remote-CI PASS is warranted.
+
+- **Maintainability and platform/test debt remain; this repair does not close them.**
+  - **Priority:** Preserve **CC-F01: Major/nonblocking**, **TB046-001–003: Major baseline/environment**, and **TB001: Minor/nonblocking**, exactly as recorded, without remapping their historical scales.
+  - **Notes:** review-log:1787–1789 preserves those dispositions. The repair is deliberately narrow and has strong public-boundary regressions; it does not justify claiming the full integration is free of debt.
+
+- **Operational guarantees remain conditional, and delivery can be lost.**
+  - **Priority:** Accepted contractual limitations, not new findings.
+  - **Notes:** Trusted host normalization/stability, settling dependencies, at-most-once permanent-loss behavior and bounded-prefix traversal are explicit in ADR-0026:59–149 and README.md:550–727. This review found no basis to defend a stronger guarantee or to require a new outbox, durable traversal cursor or live adapter within this approved scope.
+
+**Final disposition:** Advocate **PASS** for the exact source above; recommend the parent treat POST-SKEP-001 as independently addressed for technical synthesis. The original High finding and prior independent FAIL remain historical facts. W047/task publication is the parent's responsibility. ADR-0025/0026 remain Proposed; #20-before-#21 ordering, governance and merge authority remain separate. Stop after this report.
+
+</details>
+
+<!-- prettier-ignore-end -->
+
+## W047 Final Skeptic — Full Attributed Report
+
+**Attribution:** Independent Skeptic; source `files/post-publication-final-skeptic.md`; final verdict **PASS**, independently closing POST-SKEP-001 at published repair `27e09de`. This complete new report is separate from the preserved first-round High FAIL.
+
+<!-- prettier-ignore-start -->
+
+<details open>
+<summary>Original final Skeptic report — PASS at 27e09de</summary>
+
+## Skeptic Analysis
+
+### Verdict and scope
+
+**PASS — POST-SKEP-001 is independently closed for the exact reviewed publication. No new material correctness finding was demonstrated.**
+
+This is a new static technical verdict, not a rewrite of the original **High / FAIL** at `91554b9d2c9dfceaa3bd0adb9ef0d9b9241503ee`. The original counterexample was real; the repair changes the identity input that caused it. It does not merely alter expectations, suppress the conflict, or generate a replacement operation after rejection.
+
+- PR: `davidsantf/sandcastle#21`.
+- Integration base: `9ff6e8e9f74792e131e927bd9bf41358e36cea95`.
+- Exact local/published head under review: `27e09de6e23976a2c103671800eb542bcf9c90dd`.
+- Freshly verified local tree: `86891556bfaf52e27067b3ed8d1ed08fdaf72154`.
+- Conductor-supplied source reference: `07cf78bfa7aff9fa6279151ff228f6ac41c5d74e`; this is provenance, not a substitute for the integration base or reviewed head.
+- Only reviewed workspace: `C:\repos\copilot-worktrees\sandcastle\users-davidsant-automatic-tribble`.
+- Local tracked worktree and index were clean; final checks still reported the exact head above.
+
+The review retained the full integration scope: supplied mode, shared observation/claim/checkpoint/recovery/cleanup, and approved D1-B/D2/D2-A/D3-A discovery admission, matching and bounded traversal. I traced these across all nine watcher production modules, public dispatch/exports and the unchanged ledger receipt boundary. I read the complete original skeptic report and complete RED/GREEN implementation handoff, the complete new regression test file, and relevant current contracts/amendments. The full integration delta contains 35 changed files; the final repair changes eleven paths. This is not a claim to have reread every historical review entry or every line of all older tests.
+
+Citation shorthand: `Pass.ts`, `Validation.ts`, `Observation.ts`, `Ledger.ts`, `Discovery.ts`, `DiscoveryValidation.ts`, `DiscoveryMatching.ts`, `Admission.ts`, and `Watcher.ts` mean their respective `src/DevSquadAdoWorkflowWatcher*.ts` files. `pr-namespace.test.ts` means `src/DevSquadAdoWorkflowWatcher.pr-namespace.test.ts`.
+
+### Evidence provenance
+
+**Freshly obtained in this review**
+
+- Read-only local Git head/tree/status and integration/repair delta inspection.
+- Independent static reconstruction of the old collision, the new namespace selection, every production checkpoint-ID derivation/use found by search, retry/history flow, public mode routing, and related integration boundaries.
+- Static scrutiny of all 21 new regression cases, including their real-ledger/public-entry assertions.
+- File hashing confirmed that all four current source/test files named in the implementation handoff have exactly its reported SHA-256 values:
+
+| File | Fresh SHA-256, matching handoff |
+| --- | --- |
+| `Watcher.ts` | `55846968877cb56ea84e23ab8813de531bde043d41d362276c738b2c20e77e80` |
+| `Pass.ts` | `99c776b18889a92b26dda3e7cb39bc0869a9cef91d67735359ea9e14a3ad7b46` |
+| `Validation.ts` | `327980c1f01ae2862de51ce03fc9192b379b717e08b417a60052e4cf5f4bd0c8` |
+| `pr-namespace.test.ts` | `2113d3e012aaa149401683e66c7c8a74f771d21d3d32a97257bfbf36a8fed64d` |
+
+**Inherited implementation execution, not rerun here**
+
+`post-publication-implementation.md` records genuine pre-production-edit RED in both public modes: identical v2 IDs, PR B left with a null cursor, `idempotency-conflict`, and no B signal. Its GREEN reports 21 new focused passes, 732 combined watcher/ledger passes and two existing Windows skips. The 19 history-selector passes overlap that suite; the 244 selector exclusions are not additional platform skips. Typecheck, scoped formatting/diff checks, ESM/DTS generation and the separately run Effect-free declaration guard passed according to that handoff. Hash equality ties this inspection to the reported repair files; it does not make those executions this reviewer's executions.
+
+The same handoff truthfully records the intermediate missing-dependency/test-harness/type-assertion issues and canonical Windows postbuild failure. It does not claim successful packaging, global-suite/coverage certification or remote tests.
+
+**Conductor-supplied publication/policy evidence, not independently queried here**
+
+The refreshed context reports a normal fast-forward push, REST ref/PR verification of the exact head/base, target protection `404 Branch not protected`, applicable rules `200 []`, and no current-head check runs/status rollup. Absence of configured required CI rests on that supplied policy inspection, not merely on empty checks. **No remote tests ran.** No network operation was performed by this reviewer.
+
+### Issues Found
+
+**No new issues meeting the demonstrable-failure threshold.**
+
+#### POST-SKEP-001 — original High finding closed
+
+**Original failure:** A work item moves from PR A to PR B between passes, the host resets the PR cursor, and B reuses A's local `(threadId, commentId)` text. With the same pass ID and WI anchor, the old generation serialized identically. The unchanged ledger looks up receipts by operation ID and rejects a different normalized request digest as `idempotency-conflict` (`src/DevSquadAdoWorkflowLedgerStorage.ts:638-655,1365-1384`; `src/DevSquadAdoWorkflowLedgerSchema.ts:1065-1070`).
+
+**Why the actual repair closes that counterexample:**
+
+1. The observer selects its destination from the guarded pre-acquisition record and passes that exact string to the PR seam (`Observation.ts:347-370`). If a record names a PR, unavailable/failed/invalid PR observation prevents checkpoint preparation rather than quietly falling back to a WI-only observation path.
+2. The acquisition staleness comparison still includes both persisted anchors **and the PR ID** (`Pass.ts:473-484,895-910`). A destination changed during acquisition is not checkpointed using stale observations.
+3. The shared preparation point branches on `record.pullRequest.id`, not on whether a PR cursor advanced. Null uses the legacy helper; nonnull passes `{ pullRequestId: record.pullRequest.id }` to the new overload (`Pass.ts:913-939`).
+4. The helper puts that destination into the canonical generation and changes the identity version/prefix to v3 only for namespaced checkpoints (`Validation.ts:633-675`). A and B therefore no longer feed identical objects into SHA-256. This removes the demonstrated deterministic collision; it is not a claim of mathematical collision-freedom for a truncated cryptographic digest.
+5. Supplied execution and discovery existing-record processing both reach `runCandidateStep`; discovery has no alternative checkpoint derivation (`Watcher.ts:555-567`; `Discovery.ts:151-180`; `Pass.ts:741-744,913-939`).
+
+**Regression quality:** `pr-namespace.test.ts:127-264` reproduces the exact authorized A→B sequence through the public entry point and real ledger in both modes. It asserts distinct derived IDs, destination-specific seam calls, a second acted outcome at checkpoint revision 9, B's durable pair at released revision 10, no watcher initialization, and no signal or mutation after reopening unchanged B. The test would fail for the original implementation for the same reason the original report identified. This is materially stronger than testing the helper in isolation.
+
+**Closure disposition:** Original priority remains **High** in history. It is now independently **closed**, not downgraded or declared a false positive. The new verdict applies to `27e09de6...`, not to the earlier failed head.
+
+### Edge Cases Not Handled
+
+**No new unhandled edge case was demonstrated within the approved contract.** The following were explicitly attacked rather than assumed:
+
+| Scenario | Observed static behavior and evidence |
+| --- | --- |
+| WI advances while the PR window is empty or has no persistable new pair | Destination selection tests the observed record's PR ID, not `nextPullRequestCursor` or changed kinds. The namespace therefore remains present even when only WI advances (`Pass.ts:797-817,913-939`). Both-mode WI-only and no-PR controls are at `pr-namespace.test.ts:266-302`. Incomplete-only PR entries follow the same selection/preparation path (`Observation.ts:414-441`). |
+| Checkpoint did not land; next poll retries | Pending recovery is selected before another observation. The request uses `pending.operationId`; only retry preconditions are refreshed. No new helper call or namespace selection occurs (`Pass.ts:614-636,666-721,741-744`). |
+| Lease renewal is necessary before retry | Renewal updates expiry and expected revision, not the checkpoint operation ID. Claim authority and observation patch are retained (`Pass.ts:564-605,614-630`). Tests assert identical IDs/authority/patch with expected revisions `[2,3]` (`pr-namespace.test.ts:307-443`). |
+| Checkpoint landed ambiguously; a later authorized mutation switches PR A to B | History searches the retained A operation ID and validates against the submitted request. It does not derive an ID from the latest B record (`Pass.ts:700-721`; `Ledger.ts:539-599`). The later-PR recovery case asserts A's original ID and B's resulting record (`pr-namespace.test.ts:335-358,399-439`). |
+| History is contradictory | The guard requires the original operation ID, accepted revision equal to submitted expected revision plus one, consistent workflow states and matching durable history. Contradictory history fails without a signal or replacement retry (`Ledger.ts:539-599`; `pr-namespace.test.ts:446-512`). |
+| Definite idempotency conflict | The candidate fails and cleanup runs; no fallback v2/v3 ID is minted (`Pass.ts:644-662,290-303`). The new conflict regression asserts one submission and no signal (`pr-namespace.test.ts:316-443`). |
+| Upgrade after a legacy checkpoint already persisted | An unchanged observation finds no advance and never prepares a new v3 checkpoint. There is no receipt migration or legacy fallback. This does not add durable pending state or improve the existing crash-before-consumption loss guarantee (`Observation.ts:288-305,390-411`; `Pass.ts:814-823`). |
+
+Retained limitations are not newly fixed: deliberate at-most-once permanent signal loss, host-controlled re-anchoring, trusted/settling dependencies, no physical wall-clock termination guarantee, and incomplete bounded-prefix rescans when the host scope cannot fit its declared bounds. A manual reset that recreates an already-used generation in the same PR is not newly distinguished by the PR namespace; this repair distinguishes destinations, not arbitrary host-invented observation epochs.
+
+### Suspicious Patterns
+
+**No new suspicious pattern was promoted to a finding without a concrete violating path.**
+
+- **Compatibility deliberately retains a limited helper.** The one-argument API still cannot distinguish PR destinations. That is explicit in `Validation.ts:622-630`, `Watcher.ts:448-483`, `README.md:343-353`, and FR-037c (`spec.md:194`). The production PR path does not use that limited arm. Treating its intentional existence as an unclosed POST-SKEP-001 would conflate public backward compatibility with the repaired caller.
+- **Original-submission versus retry-precondition state remains separate.** `pending.submittedRequest` is cloned before each actual submission; history is checked before refreshing the next expected revision (`Pass.ts:630-631,700-721`). The added namespace is encoded once in the retained operation ID, so not duplicating a mutable PR field in retry state is not evidence that it was lost.
+- **Historical statements are visibly qualified, not erased.** ADR-0026's dated amendment explicitly qualifies the earlier cursor-only guarantee (`docs/adr/0026-devsquad-ado-workflow-watcher.md:216-236`). W047 remains pending in the reviewed repository snapshot (`tasks.md:710-718`), correctly distinguishing implementation from this later independent closure. A subsequent evidence append belongs to the conductor; this reviewer changed no task status.
+
+### Could Not Break
+
+#### Legacy behavior and compatibility
+
+- With no second argument, version remains 2 and the canonical object contains exactly the old fields. Lifecycle inputs ignore the checkpoint namespace path and retain their existing v2 identity (`Validation.ts:633-675`). The legacy exported union/generation shapes remain unchanged; only their explanatory comments changed (`Watcher.ts:448-517`).
+- No-PR checkpoints still take the old helper branch. Claim, renew and release still use their random acquisition epoch (`Pass.ts:225-232,577-584,842-849,926-932`). Discovery initialization is unchanged and separate (`Admission.ts:23-36`; `Validation.ts:691-709`).
+- Legacy golden-vector and overload/type assertions are concrete regression evidence, not merely updated snapshots (`pr-namespace.test.ts:515-630`). Their execution is inherited; the unchanged identity construction is freshly inspected.
+- The v3 serialization fields match FR-037b and the dated ADR amendment, and the prefix plus 32 hex characters is 48 ASCII bytes. The patch changes neither the ledger's schema/storage/receipts nor package manifests/lockfile. Local integration/repair diffs confirmed these boundaries. Public root reexports still expose the helper without an alternate wrapper (`src/index.ts:265-269`).
+
+#### Full integration boundaries retained
+
+- **Admission authority:** Matching does not fabricate authorization or workflow state. Only guarded initial absence routes an eligible item to initialization; mutation-time failures do not become admission (`Pass.ts:746-764`; `Discovery.ts:159-180`). Initial requests are canonical-item-bound and snapshotted; replay does not redeliver fresh admission (`DiscoveryValidation.ts:253-306`; `Admission.ts:23-148`; `Ledger.ts:448-480,637-671`).
+- **Supplied isolation:** Supplied preflight captures no initializer requirement, its guarded ledger exposes only observation-related methods, and public mode validation rejects mixed arms (`Validation.ts:267-290`; `Ledger.ts:601-635`; `DiscoveryValidation.ts:44-63`; `Watcher.ts:555-567`).
+- **Matching/pause/retention:** Exact state/team/tag predicates and segment-aware paths run before ledger effects. Excluded or missing-fact items retain cursors. Explicit discovery retention loss fails closed before either-kind publication (`DiscoveryMatching.ts:8-66`; `Discovery.ts:136-155`; `Observation.ts:177-199,390-411`).
+- **Bounded traversal:** Entire pages are projected/validated before item effects. Capacity, duplicate canonical items, repeated tokens and binding drift reject the page; empty continued pages are not terminal. Terminal evidence does not finalize retained mutation recovery early (`DiscoveryValidation.ts:450-614`; `Discovery.ts:112-125,186-335`).
+- **Cleanup/effect accounting:** Validated authority receives one release attempt; acknowledged signals are not retracted by later cleanup failure. Budget exit finalizes retained claims rather than silently abandoning them (`Pass.ts:216-303,1062-1096,1160-1182`; `Discovery.ts:319-335`).
+- **Projection and dependency failures:** Known record/history fields are bounded and validated; arbitrary payload properties are not copied into evidence. Captured listener registration/removal failures remain contained and native Date snapshots remain owned (`Ledger.ts:20-112,240-358`; `Observation.ts:83-145`; `Pass.ts:175-185`). The namespace fix adds no live tracker client, execution dispatch, durable traversal cursor, sidecar or outbox.
+
+### Caveats and stop disposition
+
+This is **technical static PASS**, not package/merge/governance approval. Preserve CC-F01's original Major/nonblocking debt disposition; preserve BUILD-WIN's returned Critical environment/package failure; preserve TB046-001–003 and TB001 dispositions. Canonical Windows postbuild still failed according to the implementation evidence, despite narrower ESM/DTS/Effect-free success. No global suite, global coverage, packaging or remote-CI PASS is asserted.
+
+ADR-0025/0026 remain Proposed. #20-before-#21 ordering, merge authority, board authorization and later slices remain outside this verdict. Earlier publication states and the original High FAIL remain historical evidence.
+
+No reviewed artifact was edited. No test/build/reproduction was executed, and no network, board, publication or nested-agent operation was performed. The only authored file is this expressly assigned raw report.
+
+**Final disposition: PASS; independently close POST-SKEP-001 at `27e09de6e23976a2c103671800eb542bcf9c90dd`; return for conductor synthesis and stop.**
+
+</details>
+
+<!-- prettier-ignore-end -->
+
+## W047 Final Architect — Full Attributed Report
+
+**Attribution:** Independent Architect; source `files/post-publication-final-architect.md`; final verdict **PASS** at published repair `27e09de`. This is the complete supplied static architecture report, not governance or packaging approval.
+
+<!-- prettier-ignore-start -->
+
+<details open>
+<summary>Original final Architect report — PASS at 27e09de</summary>
+
+## Architect Analysis
+
+### Direction Assessment
+
+**Overall: Good**
+
+**Verdict: PASS — independent static architectural review of the exact published integration, including POST-SKEP-001 remediation.**
+
+The repair restores the observation destination at the checkpoint identity boundary, rather than changing ledger semantics or working around a conflict after submission. The complete supplied/discovery integration continues to share existing-record authority and recovery machinery while keeping host-authorized admission, traversal, matching and execution ownership separate.
+
+**New architectural findings: 0 Critical / 0 High / 0 Medium / 0 Low.** POST-SKEP-001's structural concern is addressed. This perspective supports its independent closure through panel synthesis; it does not itself change W047, erase the previous High FAIL, accept ADRs, certify packaging, or authorize merge.
+
+### Scope and Evidence Provenance
+
+| Identity | Reviewed value |
+| --- | --- |
+| PR | `davidsantf/sandcastle#21` |
+| Integration base | `9ff6e8e9f74792e131e927bd9bf41358e36cea95` |
+| Exact head | `27e09de6e23976a2c103671800eb542bcf9c90dd` |
+| Head tree | `86891556bfaf52e27067b3ed8d1ed08fdaf72154` |
+| Source subtree | `07cf78bfa7aff9fa6279151ff228f6ac41c5d74e` |
+| Workspace | `C:\repos\copilot-worktrees\sandcastle\users-davidsant-automatic-tribble` |
+| Full integration inventory | 35 changed files; 26,360 inserted lines |
+
+**Fresh local evidence:** exact Git identities, clean starting worktree, full integration inventory, the eleven-file repair delta from `91554b9`, source/contract/test inspection, and SHA-256 comparisons of the four implementation/test files against the complete implementation handoff. All four hashes match. Git confirms no integration-base change to ledger source/schema/storage, ADR-0025, `package.json` or `package-lock.json`.
+
+Read the requested role, refreshed context, complete `post-publication-implementation.md`, and complete original `post-publication-skeptic.md`. Also read the prior architect report as historical context, not as proof of this verdict. The original skeptic reviewed `91554b9` and returned **High FAIL**; that result remains valid history.
+
+Review scope includes all nine watcher production modules, public dispatch/exports, the shared supplied/existing-record path, admission, exact matching, pause/retention, bounded traversal, validation/privacy boundaries, and recovery. Inspected the complete new namespace test file, dependency guardians, approved spec/ADR contracts, plan/task repair sections and current review-log evidence. Compared the actual unchanged ledger checkpoint/receipt behavior and adjacent ADR-0024/0025 ownership contracts. This is not a claim to have reread every historical review paragraph or every older test body.
+
+An initial unquoted PowerShell Git tree expression was malformed; a corrected quoted read returned the tree and source-subtree values above. The source identifier is a subtree, not a commit. Neither inspection changed repository state.
+
+**Conductor-supplied publication/policy evidence, not fetched by this reviewer:** normal fast-forward publication of this exact head; REST ref/PR head verification; target protection 404 “Branch not protected”; applicable rules `[]`; zero check runs and empty status rollup. The combined policy evidence supports absence of configured required CI, not merely absence of checks. **No remote tests ran.**
+
+**Inherited execution, not rerun here:** implementation handoff records genuine real-ledger RED in both modes, then 21 focused passing tests; combined watcher/ledger **732 passed / 2 existing Windows skips**; overlapping history selector **19 passed / 244 selector exclusions**; successful final typecheck, scoped formatting/diff, fresh ESM/DTS and separate Effect-free declaration guard. Canonical build still exited 1 at unchanged Windows `rm` postbuild. None of these is fresh reviewer execution or global-suite, coverage, packaging, or remote-CI certification.
+
+Only the assigned report artifact was written. No source edits, tests, builds, network, board actions, nested agents or later-slice work were performed.
+
+Citation shorthand below: `Pass`, `Validation`, `Ledger`, `Observation`, `Discovery`, `DiscoveryValidation`, `DiscoveryMatching`, and `Admission` refer to `src/DevSquadAdoWorkflowWatcher<suffix>.ts`. `Watcher` means `src/DevSquadAdoWorkflowWatcher.ts`.
+
+### Pattern Analysis
+
+- **Destination-aware identity at the shared preparation boundary**
+  - **Appropriate? Yes.**
+  - PR observation selects its destination from the pre-acquisition record (`Observation:347-369`). The shared pass verifies that destination and cursor anchors survived acquisition (`Pass:473-484,880-910`), then incorporates that same original PR ID into checkpoint identity (`Pass:912-944`).
+  - This now aligns selection, staleness and deduplication around the same namespace. Both supplied mode and discovery's existing-record path use it; discovery delegates to `runCandidateStep` rather than deriving another checkpoint (`Discovery:155-180`).
+  - Including the namespace for WI-only advances after PR observation is consistent with the approved decision and avoids a second rule based only on which cursor changed. No admission or storage-layer special case was added.
+
+- **Explicit version boundary with legacy compatibility**
+  - **Appropriate? Yes.**
+  - `Validation:630-675` retains the one-argument overload and original v2 construction, adds a checkpoint-only namespace overload, and uses the same canonical serializer/hash truncation for v3. Existing generation/identity shapes remain unchanged (`Watcher:449-512`).
+  - The intentional change is narrow: newly prepared PR-observing checkpoints use v3; no-PR checkpoints and claim lifecycle retain v2. Discovery initialization remains separately derived. This is a protocol distinction, not a user-selectable retry strategy or an extra mode matrix.
+  - The legacy helper's inability to isolate PR destinations is explicitly disclosed (`README.md:308-354`), rather than hidden behind an assertion of universal backward-compatible behavior.
+
+- **Original-submission recovery, not conflict escape**
+  - **Appropriate? Yes.**
+  - Pending state retains the operation ID separately from mutable retry revision and retains the submitted request (`Pass:49-70,614-627`). History is checked against that request before refreshing the next retry's revision (`Pass:666-721`).
+  - The same acknowledgement validator covers checkpoint history and normal/replay responses (`Ledger:539-599`). The repair does not substitute a recovered PR ID, rewrite a pending namespace, migrate receipts, or mint a fallback ID.
+  - This respects the actual ledger's identity/digest conflict boundary (`src/DevSquadAdoWorkflowLedgerStorage.ts:638-681,1369-1390`). Changing that boundary would have affected every ledger consumer; placing the repair in watcher identity construction avoids that blast radius.
+
+### Coupling Assessment
+
+- **Host, watcher and execution adapter: appropriate separation.**
+  - ADR-0024 assigns lifecycle, scheduling and final PR authority to the host and limits the execution adapter to one selected task (`docs/adr/0024-devsquad-sandcastle-execution-adapter-boundary.md:16-46`). ADR-0025 distinguishes a local ledger claim from external work-item authority (`docs/adr/0025-devsquad-ado-workflow-ledger.md:17-49`).
+  - The watcher remains a host-invoked primitive with typed proposals, not an execution dispatcher. Public overloads keep supplied and discovery results distinct (`Watcher:532-573`; `src/index.ts:265-343`).
+
+- **Admission and existing-record mutation: deliberately different contracts.**
+  - Admission requires canonical-item authorization and an immutable minimal initialization request (`Admission:20-58`; `DiscoveryValidation:253-306`). It is entered from initial-read absence, not a later failed checkpoint (`Discovery:163-180`).
+  - Only validated fresh acceptance returns admission intake; replay reconciles state without delivery (`Admission:95-148`). Initialization has a dedicated guard and does not create claim authority (`Ledger:448-480,637-671`).
+  - Existing records still use claims, staleness, revision/state preconditions, cursor-only patches and cleanup. The namespace repair shares that machinery without merging admission and checkpoint delivery semantics.
+
+- **Discovery policy and traversal: substantial but bounded complexity.**
+  - Exact matching is centralized in the pure matcher (`DiscoveryMatching:8-66`). Configuration and whole-page projection are bounded before effects, with only minimized decisions retained (`DiscoveryValidation:159-307,434-614`).
+  - Exclusion/missing facts prevents observation and ledger work (`Discovery:136-154`); discovery retention loss is distinguished at the observation boundary (`Observation:177-199`).
+  - Traversal retains only invocation-local identities/tokens and exposes incomplete outcomes instead of pretending a processed prefix is complete (`Discovery:83-96,186-335`). These controls implement approved D1-B/D2/D2-A/D3-A, not speculative configurability (`docs/adr/0026-devsquad-ado-workflow-watcher.md:38-149`; feature spec FR-062–069 at `spec.md:231-238`).
+
+- **Ledger coupling remains contract-level.**
+  - The watcher guard projects dependency responses and validates request-relative acceptance; it does not own persisted storage or receipt interpretation (`Ledger:30-210,409-599`).
+  - The unchanged storage accepts independently patched PR identity and observation cursors (`src/DevSquadAdoWorkflowLedgerSchema.ts:673-752`; `src/DevSquadAdoWorkflowLedgerStorage.ts:1444-1468`). The watcher now correctly namespaces its use of that existing flexibility rather than restricting the host's legal transitions.
+
+### Compatibility, Reversibility and Detection
+
+**Both reader directions remain structurally compatible with persisted state.** The unchanged ledger treats operation IDs as opaque request identities; it does not dispatch on `dsw2` versus `dsw3`. New watcher code can consume existing records/history without rewriting them, and the old ledger format needs no new field to retain v3 IDs. This is format compatibility, not a claim that old watcher code gains the repair.
+
+Existing v2 receipts are not translated into v3 receipts. A new invocation first observes durable anchors; an unchanged cursor yields no checkpoint, while a candidate that observed stale anchors is rejected after acquisition (`Pass:804-818,880-910`). Within an in-flight invocation, recovery retains the originally submitted ID. No cross-version pending-state serialization or hot-upgrade guarantee is introduced.
+
+**Rollback has no schema cleanup cascade, but does restore the old defect.** Stopping further host invocations needs no migration; reverting the narrow behavior does not require deleting v3 receipts or resetting cursors. It also does not undo accepted initialization, cursor advancement, or lost at-most-once delivery. Do not describe rollback to v2 generation as semantically equivalent for replacement PRs. The explicit compatibility/no-migration decision is recorded in FR-037b/c and the dated ADR amendment (`spec.md:193-194`; `docs/adr/0026-devsquad-ado-workflow-watcher.md:216-236`).
+
+**Regression detection is present at appropriate boundaries.** The new public-entry real-ledger tests cover A→B with equal local pairs, same pass ID, distinct checkpoint IDs, durable B cursor and unchanged reopened B with zero mutations (`src/DevSquadAdoWorkflowWatcher.pr-namespace.test.ts:127-268`). Additional cases cover WI-only/no-PR behavior, retained IDs through renewal/history/later PR changes, terminal conflict and contradictory history (`:270-509`). Literal legacy golden vectors and overload/formula assertions cover the compatibility contract (`:512-630`).
+
+The dependency inventory/graph guardian checks the complete watcher module set and forbidden execution/network dependencies (`src/DevSquadAdoWorkflowWatcher.dependencies.test.ts:203-294`). Structured candidate reasons, cleanup evidence and traversal completion supply host-consumable diagnostics (`Pass:216-280`; `Discovery:317-388`). These are detection mechanisms, not a sandbox, live monitoring deployment, or guarantee of truthful in-process adapters.
+
+### Technical Debt and Historical Dispositions
+
+- **Paid:** POST-SKEP-001's missing destination namespace. The change is centralized and documented through spec, ADR, plan, tasks, README and patch changeset. The bounded plan and W047 correctly distinguish implementation evidence from independent closure (`plan.md:1396-1408`; `tasks.md:709-718`; `.changeset/watcher-pr-checkpoint-namespace.md:1-5`).
+- **Preserved closure:** The public/private discovery-validation separation remains structural: private preparation owns configuration while public validation returns only the summary (`DiscoveryValidation:310-318,402-420`; `Validation:586-592`). The namespace change does not reopen ARC14-001.
+- **Retained, not reclassified:** CC-F01 remains original **Major, nonblocking** test-maintenance debt. BUILD-WIN remains original **Critical environment/package failure**, not a new production-source regression or a packaging PASS. TB046-001–003 retain their original **Major** baseline/environment dispositions; TB001 remains **Minor, nonblocking** test coupling. These inherited dispositions are recorded at `review-log.md:1779-1789`; this review does not independently rerun or recertify them.
+- **Accepted limitations remain:** at-most-once permanent-loss windows, trusted adapters, settling-dependency liveness and bounded-prefix traversal. No outbox, durable continuation, automatic cursor reset, or new lifecycle authority is warranted by this repair.
+
+### Refactoring Opportunities
+
+**None required for this gate.** Consolidating older test fakes remains separately scoped maintenance, not a reason to broaden this repair. A shared checkpoint engine and a checkpoint-only identity overload are preferable here to parallel supplied/discovery implementations or a general version-selection option.
+
+Historical documentary formulas/statuses are qualified by the dated amendment and explicit historical framing. The truthful post-publication synthesis should be appended by the conductor, not achieved by rewriting the previous FAIL, 403 evidence, or implementer's pending-W047 statements.
+
+### Recommendations
+
+- **Critical:** No new architectural finding. Preserve the inherited canonical-build/package limitation and classification.
+- **High:** No new architectural finding. POST-SKEP-001's architectural remedy is substantiated on this exact source.
+- **Medium:** No new architectural finding or required refactor.
+- **Low:** No new finding or cosmetic closeout request.
+
+**Final disposition: PASS for static architectural direction of `27e09de6e23976a2c103671800eb542bcf9c90dd`.** Keep ADR-0025 and ADR-0026 **Proposed**. W047 aggregation, governance acceptance, #20-before-#21 ordering, merge authority and any later slice remain separate. Published does not mean remotely tested, packaged, globally certified, or globally done.
+
+</details>
+
+<!-- prettier-ignore-end -->
+
+## W047 Current Technical Synthesis and Parent Publication Handoff — 2026-09-11
+
+### Current decision and exact scope
+
+**W047 COMPLETE TECHNICAL. POST-SKEP-001 is independently closed on actual repair commit `27e09de6e23976a2c103671800eb542bcf9c90dd`; all three final perspectives PASS with no new material blocker.** This is a synthesis of the six attributed reports, complete implementer handoff and fresh parent-supplied publication facts. It is not a seventh independent review, a new execution run, governance acceptance, packaging certification or permission to merge.
+
+The first-round result remains **FAIL** at `91554b9d2c9dfceaa3bd0adb9ef0d9b9241503ee`: Advocate PASS / Skeptic **High FAIL, POST-SKEP-001** / Architect PASS. The High counterexample was genuine. The actual repair in `27e09de`, followed by the three **new final** Advocate/Skeptic/Architect PASS reports reproduced above, resolves that earlier failure. No verdict is retroactively changed, no severity is downgraded, and no previous PASS is relabeled as post-CI review.
+
+The final reviewers identify:
+
+- PR `davidsantf/sandcastle#21`.
+- Integration base `9ff6e8e9f74792e131e927bd9bf41358e36cea95`.
+- Exact reviewed and parent-verified published source commit `27e09de6e23976a2c103671800eb542bcf9c90dd`.
+- Repository tree `86891556bfaf52e27067b3ed8d1ed08fdaf72154`.
+- `HEAD:src` subtree `07cf78bfa7aff9fa6279151ff228f6ac41c5d74e`, a source-tree identity **not a separate implementation commit**.
+- Full approved supplied/shared and D1-B/D2/D2-A/D3-A discovery integration, not only the namespace helper in isolation.
+
+### Why the new evidence closes the actual finding
+
+The first-round Skeptic demonstrated a cross-invocation collision: after the authorized host switches PR A to B and resets the PR cursor, equal local thread/comment text with the same pass ID and WI anchor reproduced the same v2 checkpoint identity. A valid real ledger rejected B's different request digest, leaving B unreported. Acquisition staleness was not a remedy because the switch completed before the new invocation.
+
+According to the implementation handoff and independently traced final reports, `27e09de` adds the checkpoint-only `{ readonly pullRequestId: string }` overload and uses the **pre-acquisition observed PR namespace** at shared checkpoint preparation, after unchanged staleness validation. PR-observing checkpoints use the exact v3 generation/prefix, including when only WI advances; no-PR checkpoints, lifecycle IDs, initialization, legacy exported type shapes and legacy one-argument v2 bytes remain unchanged. The legacy helper's inability to isolate PR destinations is explicit. Pending IDs and original submitted requests survive retry, renewal and history; history is guarded before retry-precondition refresh, with no recovered-PR substitution or replacement ID/version after conflict. Ledger storage/schema/receipts and admission remain unchanged.
+
+The final Skeptic explicitly closes the original **High** on that actual mechanism; final Advocate and Architect independently support the repair. The reports also inspect public-entry real-ledger A→B/same-pass/equal-local-pair tests in both modes, distinct IDs, durable B cursor, cleanup, no watcher initialization, unchanged reopened B with zero mutation/signal, legacy compatibility, WI-only/no-PR controls and recovery boundaries. This synthesis attributes that analysis to the reviewers; the docs worker did not rerun or independently reconstruct it.
+
+### Implementation execution versus static review
+
+The complete execution record is `files/post-publication-implementation.md` in the artifact directory stated above. Its original “uncommitted” and “pending W047” wording remains valid for its earlier implementation checkpoint, not a current publication claim. The final reports compare the four source/test file hashes with that handoff and report exact agreement.
+
+- **IMPLEMENTER RED:** Both public modes failed the real-ledger regression **before source edits**, with identical old checkpoint IDs, B's `idempotency-conflict`, no B signal and null B cursor. The earlier harness-authority projection correction was distinct from that genuine RED.
+- **IMPLEMENTER GREEN:** **21 new focused cases passed**; combined watcher/ledger **732 passed / 2 existing Windows skips**, 18 files. The history selector returned **19 passed / 244 selector exclusions**; those 19 overlap the combined result and are not additive. The 244 exclusions are not new platform skips.
+- **IMPLEMENTER checks:** Final `npm run typecheck`, scoped formatting and diff checks passed. Fresh ESM and DTS generation passed. The separate Effect-free declaration guard passed against those fresh declarations.
+- **Canonical build remains FAIL:** Windows postbuild still failed because `rm` was unavailable. Chained template copy/guard did not complete in that canonical command. The separately passing declaration guard does not certify template copy or packaging. Packaging, global suite and global coverage remain uncertified.
+- **Reviewers:** All three final independent perspectives are **STATIC** and did **not rerun** tests, builds or reproductions. Hash agreement establishes provenance, not a new execution. No remote tests ran.
+- **Docs worker:** Only document-preservation, scoped formatting and diff checks belong to this closeout. No source tests, typecheck or build are needed or rerun for this docs-only change.
+
+### Bounded amendment and authority provenance
+
+The user-authorized repair was routed through the bounded **DevSquad-refine handoff**: spec FR-037b/FR-037c, ADR-0026's dated PR-namespace amendment and the plan's W047 repair scope were applied before final review. The preceding DevSquad implementation orchestration stopped solely on an unavailable board prerequisite, without edits or board execution. That orchestration prerequisite did not prevent the separately authorized local general worker from implementing and validating the repair. It is neither a board authorization nor a claim that the unavailable workflow ran.
+
+This closeout changes only W047's checkbox and appends its current closure in tasks; every existing W039–W046 statement/status remains unchanged. The entire prior review log is preserved as an exact byte prefix. Old pending/local-only/403 entries remain historical evidence rather than being deleted or edited to fit the current outcome.
+
+### Fresh parent publication and target-policy evidence
+
+**The following are authoritative parent-supplied observations from 2026-09-11, not network queries by this documentation worker or the final reviewers.**
+
+1. Initial publication `91554b9d2c9dfceaa3bd0adb9ef0d9b9241503ee` was REST-verified on existing PR #21.
+2. Exact current remote/head/base concurrency checks and ancestor checks preceded a normal fast-forward **`91554b9` → `27e09de`** to existing `refs/heads/users/davidsant/symmetrical-train`. The push succeeded; REST ref and PR head both confirmed exact `27e09de6e23976a2c103671800eb542bcf9c90dd`.
+3. PR base `users/davidsant/ubiquitous-train` remained exact `9ff6e8e9f74792e131e927bd9bf41358e36cea95`; it was not changed as a workaround.
+4. API and Git used only the saved `davidsantf` credential, command-scoped in a child environment after verifying the user login. There was no global identity switch, logout or token storage. The historical 403 arose under the wrongly inherited `davidsant_microsoft` `GH_TOKEN`; that failure remains true provenance. New verified publication under saved `davidsantf` supersedes the publication block without erasing the earlier failed attempt.
+5. **After the repair push**, base branch protection GET returned **404 “Branch not protected”**; applicable branch rules GET returned **200 `[]`**. Exact head `27e09de` had **0 check runs** and **`statusCheckRollup: []`**.
+
+Together, the explicit protection/rule inspection establishes **NO CONFIGURED REQUIRED CI on this target**. The policy is not merely unknown, and empty checks alone would not establish this result. **No remote tests ran. This is post-publication/post-policy technical review, not post-CI success.** A waiting-for-required-checks gate is not invented for a target with no configured required CI.
+
+### Retained findings and non-approvals
+
+- **POST-SKEP-001:** Original **High**, now independently **closed** by the actual repair and fresh final reports. The original first-round FAIL is preserved in full.
+- **CC-F01:** Original **Major**, independently **nonblocking** maintenance/duplication debt; not silently cleared or reclassified.
+- **BUILD-WIN:** Original returned **Critical environment/package failure**, retained. Narrower ESM/DTS/Effect-free success is not a canonical build or packaging PASS.
+- **TB046-001–003:** Original **Major** baseline/environment dispositions retained.
+- **TB001:** Original **Minor/nonblocking** test-coupling disposition retained.
+- Accepted at-most-once permanent-loss, trusted-adapter, settling-dependency and bounded-prefix limitations remain. No stronger runtime or delivery guarantee is implied.
+- ADR-0025 and ADR-0026 remain **Proposed**. **#20 before #21** remains required. No merge authority, board authorization or governance acceptance is granted.
+
+### Documentation preservation and handoff boundary
+
+This closeout started with a clean worktree/index at exact `27e09de`, tree `86891556bfaf52e27067b3ed8d1ed08fdaf72154`, source subtree `07cf78bfa7aff9fa6279151ff228f6ac41c5d74e`. Initial installed Prettier 3.8.1 scoped checks passed both documents. The historical baselines are:
+
+- `review-log.md`: **329,122 bytes**, SHA-256 `4bfd9c8b58032325cf9c453f855cdde63820d90770174d78cc193c26c36a5faa`; all must remain the exact prefix.
+- `tasks.md`: **129,346 bytes**, SHA-256 `73da2c3d55ce22a9dd75f36cba67ef43723bbbde8c2a5ec41c744cd4d7b6a3eb`; restoring only W047's new checkbox to unchecked must reproduce the exact original prefix. All historical task bytes other than that checkbox are retained.
+
+No whole-log formatting write is performed. Raw reports are kept complete in dedicated attributed blocks, with only line-ending normalization, and checked against the original six artifacts. Current closeout prose is separate. Actual final preservation hashes, scoped Prettier/diff results and changed-path/non-document checks are returned in session artifact `files/publication-evidence-handoff.md`.
+
+**Current documentation state:** These tasks/review-log changes are **local and uncommitted**, awaiting the parent's separate documentation commit and normal fast-forward publication. They are **not already pushed**, and this worker has **not updated the PR body**. No new source review, commit, staging, branch/auth change, network, board operation, merge or later slice is performed here.
+
+Parent **`9273d263-84d5-453b-9dce-8ad5480316fd` alone owns work 15–19**; do not start 15. After the parent commits this evidence and verifies its publication, the correct next **published** base is `users/davidsant/symmetrical-train` at the **final documentation SHA returned externally**, not an earlier code/evidence hash or the historical local `bookish-doodle` handoff. The document deliberately does not embed its own future commit hash.
+
+The parent's remaining publication closeout must prove that **all non-document identity is unchanged** from reviewed `27e09de`, not merely the `src` subtree: enumerate the complete delta and require only the two authorized docs paths, covering unchanged tests, manifests, scripts, configuration and other artifacts as well. Parent must then verify the final remote ref/PR head and unchanged base, and obtain **fresh final-head protection/rule/check evidence** after that documentation push. Provided the non-document comparison remains empty, the evidence-only commit does not require an endless code re-review loop. Technical completion does not mean global completion, packaging certification, merge approval or authorization for any later slice.
