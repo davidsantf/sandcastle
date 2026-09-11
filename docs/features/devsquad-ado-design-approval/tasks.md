@@ -362,7 +362,7 @@ Every task inherits the saved spec and plan, including:
 
 ### W058: Require a new explicitly authorized review
 
-- [ ] **W058** Implement revised-design review isolation in `src/DevSquadAdoDesignApproval.ts`, `src/DevSquadAdoDesignApprovalDecision.ts`, and `src/DevSquadAdoDesignApproval.changes.test.ts`.
+- [x] **W058** Implement revised-design review isolation in `src/DevSquadAdoDesignApproval.ts`, `src/DevSquadAdoDesignApprovalDecision.ts`, and `src/DevSquadAdoDesignApproval.changes.test.ts`.
   - Parent: US15-03.
   - Dependency: W057; requires the shared two-action resolution from W052.
   - Estimate: M, 0.5 to 1 engineer-day. Risk: Medium.
@@ -898,3 +898,12 @@ All execution CLI calls explicitly select the authorized worktree. No LSP tools 
 - Injected public capacity failures at each stage preserve durable history and invocation limits; actual portable highest-generation corruption refuses older fallback. Unsupported schema/platform and secret-bearing adapter errors become fixed categories. Successful durable artifacts and results scanned for proposal, command, human witness and raw capability sentinels: none retained.
 - No sidecars, cursor/reference patches, claim lifecycle, private receipt inspection, eviction, repair, migration or capacity change in production feature. Existing ledger recovery/capacity tests included in affected regression.
 - Commit: fix(design-gate): fail closed on exhausted evidence W057. Trailer: Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>.
+
+### W058 executed evidence
+
+- Baseline W057 5f6d679. FR-001/002/008/012/016–018, CC-08/09/12/16; immutable review isolation.
+- RED: npm test -- DevSquadAdoDesignApproval.changes --reporter=dot exit 1: 2 behavioral failures / 3 passes. Supplied revised material was not classified as conflicting evidence separately from historical approval.
+- GREEN affected selector npm test -- DevSquadAdoDesignApproval DevSquadAdoWorkflowLedger --reporter=dot exit 0: 233 passed / 2 existing skips, 16 files. New changes file 5 tests. Typecheck exit 0; Prettier/diff pass.
+- Complete change-request to separately authorized revised occurrence tracer passes with two publications and fresh human review. Old occurrence/grant and changed content/artifact cannot transfer verification. Original change request survives later reconciliation; uncertainty creates no new occurrence.
+- Scope: result verification discriminator, design conflict projection, attached tests/evidence. No approval-to-execution conversion or automatic occurrence policy.
+- Commit: feat(design-gate): isolate revised design reviews W058. Trailer: Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>.

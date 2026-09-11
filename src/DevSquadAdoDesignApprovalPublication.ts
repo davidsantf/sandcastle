@@ -378,7 +378,11 @@ export async function startGatePublication(
         },
       };
       if (gate.design !== envelope.design || gate.target !== envelope.target)
-        return { ...result, reason: "design-mismatch" };
+        return {
+          ...result,
+          verificationStatus: "conflicting-evidence",
+          reason: "design-mismatch",
+        };
       return confirmGatePublication(result, {
         lifecycle,
         envelope,

@@ -49,7 +49,8 @@ export interface DevSquadAdoDesignApprovalResult {
     | "evidence-unavailable"
     | "publication-unverified"
     | "mutation-unconfirmed"
-    | "decision-pending";
+    | "decision-pending"
+    | "conflicting-evidence";
   /** Recovery does not infer an execution target. */
   readonly targetHandoff: "not-requested";
   /** Stable category, never dependency-controlled diagnostics. */
