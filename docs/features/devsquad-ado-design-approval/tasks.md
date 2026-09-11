@@ -277,7 +277,7 @@ Every task inherits the saved spec and plan, including:
 
 ### W053: Complete immutable multi-page decision ordering
 
-- [ ] **W053** Implement complete-prefix pagination and event-version handling in `src/DevSquadAdoDesignApprovalDecision.ts` and `src/DevSquadAdoDesignApproval.ordering.test.ts`.
+- [x] **W053** Implement complete-prefix pagination and event-version handling in `src/DevSquadAdoDesignApprovalDecision.ts` and `src/DevSquadAdoDesignApproval.ordering.test.ts`.
   - Parent: US15-01; supports US15-03.
   - Dependency: W052.
   - Estimate: M, 1 to 1.5 engineer-days. Risk: High.
@@ -850,3 +850,12 @@ All execution CLI calls explicitly select the authorized worktree. No LSP tools 
 - Exact commands, explicit event-bound immutable grants, single complete prefix, combined approval/change slot and durable-only results implemented. Multi-page extension remains W053. No execution or live transport.
 - Scope: API, publication continuation, decision reducer, portable fixture and attached tests plus this evidence. Learning disposition N already supplied; no learning files/prompts. No global/build/production durability claim.
 - Commit: feat(design-gate): persist authorized human decisions W052. Trailer: Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>.
+
+### W053 executed evidence
+
+- Baseline W052 c97c28c. FR-014–016/024–026, CC-06/07/12/14; immutable prefix controls SEC-003–006.
+- RED: npm test -- DevSquadAdoDesignApproval.ordering --reporter=dot exit 1: 6 behavioral failures / 8 passes. Single-page implementation blocked valid multi-page decisions.
+- GREEN: npm test -- DevSquadAdoDesignApproval DevSquadAdoWorkflowLedger --reporter=dot exit 0: 172 passed / 2 existing platform skips, 11 files. New ordering file 14 tests; no exclusions. npm run typecheck exit 0.
+- Fixed snapshot/cursor/anchor binding, contiguous ordinals, duplicate/cycle/gap/overlap rejection, event-version chains, denied versus unresolved authorization and page-independent semantic commitment integrated. Selection can stop at certified winner; empty/no-command result requires terminal completeness.
+- Changed TS Prettier write and git diff --check pass. No global suite or production platform claim. Scope: decision reducer, ordering tests, task evidence.
+- Commit: feat(design-gate): verify complete decision prefixes W053. Trailer: Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>.

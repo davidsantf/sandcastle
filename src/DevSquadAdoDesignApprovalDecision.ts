@@ -225,42 +225,6 @@ export async function resolveGateDecision(
       D = q.design,
       T = q.target;
     const anchor: DevSquadAdoDesignProposalAnchor = [w[9], w[10], w[11], w[12]];
-    const response = await lifecycle.call("page", (signal) =>
-      c.readDecisionPage!(
-        structuredClone({
-          envelope: q,
-          anchor,
-          snapshot: null,
-          cursor: null,
-          limit: 16,
-        }),
-        signal,
-      ),
-    );
-    if (!response || response.kind !== "verified")
-      throw new GateFault("decision-prefix-incomplete");
-    const p = copyTuple(response.page, 262144) as DevSquadAdoDesignDecisionPage;
-    if (
-      !Array.isArray(p) ||
-      p.length !== 14 ||
-      !identifier(p[0]) ||
-      !equal(p[1], c.scope) ||
-      p[2] !== W ||
-      p[3] !== w[9] ||
-      !equal(p[4], anchor) ||
-      !identifier(p[5]) ||
-      p[6] < w[11] ||
-      p[7] !== null ||
-      p[8] !== w[11] + 1 ||
-      p[9] !== p[6] ||
-      !Array.isArray(p[10]) ||
-      p[10].length > 16 ||
-      p[10].length !== p[9] - p[8] + 1 ||
-      p[11] !== null ||
-      p[12] !== true ||
-      !identifier(p[13])
-    )
-      throw new GateFault("decision-prefix-incomplete");
     let C = gateHash(["dg15.prefix-start.v1", W, G, D, T, X, anchor]);
     let selected:
       | {
@@ -272,112 +236,184 @@ export async function resolveGateDecision(
       | undefined;
     const ids = new Set<string>();
     const versions = new Map<string, string>();
-    for (let i = 0; i < p[10].length; i++) {
-      const e = p[10][i]!;
+    // W053: semantic prefix survives pagination; transport metadata never enters C.
+    let cursor: string | null = null,
+      snapshot: string | null = null,
+      end: number | null = null;
+    let nextOrdinal = w[11] + 1,
+      streamBytes = 0,
+      events = 0;
+    const cursors = new Set<string>();
+    while (!selected) {
+      const response = await lifecycle.call("page", (signal) =>
+        c.readDecisionPage!(
+          structuredClone({
+            envelope: q,
+            anchor,
+            snapshot,
+            cursor,
+            limit: 16,
+          }),
+          signal,
+        ),
+      );
+      if (!response || response.kind !== "verified")
+        throw new GateFault("decision-prefix-incomplete");
+      const p = copyTuple(
+        response.page,
+        262144,
+      ) as DevSquadAdoDesignDecisionPage;
       if (
-        !eventValid(e, w[9], p[8] + i) ||
-        ids.has(e[2]) ||
-        (e[4] === "create" ? versions.has(e[5]) : versions.get(e[5]) !== e[7])
+        !Array.isArray(p) ||
+        p.length !== 14 ||
+        !identifier(p[0]) ||
+        !equal(p[1], c.scope) ||
+        p[2] !== W ||
+        p[3] !== w[9] ||
+        !equal(p[4], anchor) ||
+        !identifier(p[5]) ||
+        !Number.isSafeInteger(p[6]) ||
+        p[6] < w[11] ||
+        (snapshot !== null && (p[5] !== snapshot || p[6] !== end)) ||
+        p[7] !== cursor ||
+        p[8] !== nextOrdinal ||
+        !Number.isSafeInteger(p[9]) ||
+        p[9] > p[6] ||
+        p[9] < p[8] - 1 ||
+        !Array.isArray(p[10]) ||
+        p[10].length > 16 ||
+        p[10].length !== p[9] - p[8] + 1 ||
+        (p[11] !== null &&
+          (typeof p[11] !== "string" ||
+            !unicode(p[11]) ||
+            !p[11].length ||
+            Buffer.byteLength(p[11]) > 1024 ||
+            cursors.has(p[11]))) ||
+        (p[11] === null
+          ? p[12] !== true || p[9] !== p[6]
+          : p[12] !== false || p[9] >= p[6] || p[10].length === 0) ||
+        !identifier(p[13])
       )
         throw new GateFault("decision-prefix-incomplete");
-      ids.add(e[2]);
-      versions.set(e[5], e[6]);
-      let classification = "not-command";
-      let grant: DevSquadAdoDesignHumanWitness | null = null;
-      let action: "approve-design" | "request-changes" | null = null;
-      if (e[4] === "delete") classification = "deleted";
-      else if (
-        e[11] === "unrelated" ||
-        !equal(e[11], [c.scope, W, w[7], w[8], G, D, "answers"])
-      )
-        classification = "unrelated";
-      else {
-        const match =
-          /^\/devsquad (approve-design|request-changes) ([A-Za-z0-9_-]{43}) ([A-Za-z0-9_-]{43})$/.exec(
-            e[12]!,
-          );
+
+      snapshot = p[5];
+      end = p[6];
+      streamBytes += Buffer.byteLength(JSON.stringify(p));
+      events += p[10].length;
+      if (streamBytes > 262144 || events > 128)
+        throw new GateFault("input-limit");
+      for (let i = 0; i < p[10].length; i++) {
+        const e = p[10][i]!;
         if (
-          match &&
-          isB32(match[2]) &&
-          isB32(match[3]) &&
-          e[12]!.length === (match[1] === "approve-design" ? 112 : 113)
-        ) {
-          if (match[2] !== G || match[3] !== D)
-            classification = "wrong-binding";
-          else {
-            action = match[1] as "approve-design" | "request-changes";
-            if (!c.authorizeHumanDecision)
-              throw new GateFault("decision-authorization-unresolved");
-            let a;
-            try {
-              a = await lifecycle.call("human", (signal) =>
-                c.authorizeHumanDecision!(
-                  structuredClone({
-                    envelope: q,
-                    publication: X,
-                    event: e,
-                    action: action!,
-                  }),
-                  signal,
-                ),
-              );
-            } catch (error) {
+          !eventValid(e, w[9], p[8] + i) ||
+          ids.has(e[2]) ||
+          (e[4] === "create" ? versions.has(e[5]) : versions.get(e[5]) !== e[7])
+        )
+          throw new GateFault("decision-prefix-incomplete");
+        ids.add(e[2]);
+        versions.set(e[5], e[6]);
+        let classification = "not-command";
+        let grant: DevSquadAdoDesignHumanWitness | null = null;
+        let action: "approve-design" | "request-changes" | null = null;
+        if (e[4] === "delete") classification = "deleted";
+        else if (
+          e[11] === "unrelated" ||
+          !equal(e[11], [c.scope, W, w[7], w[8], G, D, "answers"])
+        )
+          classification = "unrelated";
+        else {
+          const match =
+            /^\/devsquad (approve-design|request-changes) ([A-Za-z0-9_-]{43}) ([A-Za-z0-9_-]{43})$/.exec(
+              e[12]!,
+            );
+          if (
+            match &&
+            isB32(match[2]) &&
+            isB32(match[3]) &&
+            e[12]!.length === (match[1] === "approve-design" ? 112 : 113)
+          ) {
+            if (match[2] !== G || match[3] !== D)
+              classification = "wrong-binding";
+            else {
+              action = match[1] as "approve-design" | "request-changes";
+              if (!c.authorizeHumanDecision)
+                throw new GateFault("decision-authorization-unresolved");
+              let a;
+              try {
+                a = await lifecycle.call("human", (signal) =>
+                  c.authorizeHumanDecision!(
+                    structuredClone({
+                      envelope: q,
+                      publication: X,
+                      event: e,
+                      action: action!,
+                    }),
+                    signal,
+                  ),
+                );
+              } catch (error) {
+                if (
+                  error instanceof GateFault &&
+                  [
+                    "cancelled",
+                    "dependency-timeout",
+                    "dependency-limit",
+                  ].includes(error.reason)
+                )
+                  throw error;
+                throw new GateFault("decision-authorization-unresolved");
+              }
+              if (!a || a.kind !== "verified")
+                throw new GateFault("decision-authorization-unresolved");
+              try {
+                grant = copyTuple(
+                  a.witness,
+                  16384,
+                ) as DevSquadAdoDesignHumanWitness;
+              } catch {
+                throw new GateFault("decision-authorization-unresolved");
+              }
+              const expected = [
+                c.scope,
+                W,
+                G,
+                D,
+                T,
+                X,
+                w[9],
+                e[1],
+                e[2],
+                e[5],
+                e[6],
+                e[8],
+                e[9],
+                action,
+              ];
               if (
-                error instanceof GateFault &&
-                [
-                  "cancelled",
-                  "dependency-timeout",
-                  "dependency-limit",
-                ].includes(error.reason)
+                !Array.isArray(grant) ||
+                grant.length !== 20 ||
+                !equal(grant.slice(1, 15), expected) ||
+                ![grant[0], grant[16], grant[17], grant[18], grant[19]].every(
+                  identifier,
+                ) ||
+                !["granted", "denied"].includes(grant[15])
               )
-                throw error;
-              throw new GateFault("decision-authorization-unresolved");
+                throw new GateFault("decision-authorization-unresolved");
+              classification = grant[15] === "granted" ? "selected" : "denied";
             }
-            if (!a || a.kind !== "verified")
-              throw new GateFault("decision-authorization-unresolved");
-            try {
-              grant = copyTuple(
-                a.witness,
-                16384,
-              ) as DevSquadAdoDesignHumanWitness;
-            } catch {
-              throw new GateFault("decision-authorization-unresolved");
-            }
-            const expected = [
-              c.scope,
-              W,
-              G,
-              D,
-              T,
-              X,
-              w[9],
-              e[1],
-              e[2],
-              e[5],
-              e[6],
-              e[8],
-              e[9],
-              action,
-            ];
-            if (
-              !Array.isArray(grant) ||
-              grant.length !== 20 ||
-              !equal(grant.slice(1, 15), expected) ||
-              ![grant[0], grant[16], grant[17], grant[18], grant[19]].every(
-                identifier,
-              ) ||
-              !["granted", "denied"].includes(grant[15])
-            )
-              throw new GateFault("decision-authorization-unresolved");
-            classification = grant[15] === "granted" ? "selected" : "denied";
           }
         }
+        C = gateHash(["dg15.prefix-step.v1", C, e, classification, grant]);
+        if (classification === "selected") {
+          selected = { event: e, grant: grant!, action: action!, prefix: C };
+          break;
+        }
       }
-      C = gateHash(["dg15.prefix-step.v1", C, e, classification, grant]);
-      if (classification === "selected") {
-        selected = { event: e, grant: grant!, action: action!, prefix: C };
-        break;
-      }
+      if (selected) break;
+      if (p[11] === null) return { ...result, reason: "no-eligible-decision" };
+      cursor = p[11];
+      cursors.add(cursor);
+      nextOrdinal = p[9] + 1;
     }
     if (!selected) return { ...result, reason: "no-eligible-decision" };
     const E = gateHash([
