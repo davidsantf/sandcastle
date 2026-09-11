@@ -308,3 +308,16 @@ export function inspectDesignGateRecord(
     return null;
   }
 }
+
+// W059 / FR-003–004: inspect only provenance fields; never read watcher claim or cleanup.
+export function validGateProvenance(
+  value: unknown,
+  workItemId: string,
+): boolean {
+  if (value === undefined) return true;
+  if (!object(value) || value.workItemId !== workItemId) return false;
+  return value.kind === "discovery-admission"
+    ? value.acceptedInitializationRevision === 1
+    : (value.kind === undefined || value.kind === "comment-observation") &&
+        integer(value.sourceRevision);
+}

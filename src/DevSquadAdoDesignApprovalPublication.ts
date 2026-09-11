@@ -125,6 +125,7 @@ import type { DevSquadAdoDesignApprovalResult } from "./DevSquadAdoDesignApprova
 import type { CheckpointDevSquadAdoWorkflowInput } from "./DevSquadAdoWorkflowLedger.js";
 import {
   canonicalWorkItem,
+  validGateProvenance,
   inspectDesignGateRecord,
   isB32,
   unicode,
@@ -290,7 +291,8 @@ export async function startGatePublication(
   try {
     const W = canonicalWorkItem(request.workItemId);
     const G = request.occurrence;
-    if (W === null || !isB32(G)) throw new GateFault("invalid-input");
+    if (W === null || !isB32(G) || !validGateProvenance(request.provenance, W))
+      throw new GateFault("invalid-input");
     const scope = scopeCopy(request.scope);
     const material = materialCopy(request.design);
     const envelope = makeEnvelope(W, G, scope, material);

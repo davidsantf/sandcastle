@@ -8,6 +8,7 @@ import { startGatePublication } from "./DevSquadAdoDesignApprovalPublication.js"
 import { reduceGateHistory } from "./DevSquadAdoDesignApprovalHistory.js";
 import {
   canonicalWorkItem,
+  validGateProvenance,
   isB32,
   inspectDesignGateRecord,
 } from "./DevSquadAdoDesignApprovalValidation.js";
@@ -22,9 +23,23 @@ export interface DevSquadAdoDesignRecoveryRequest {
   readonly workItemId: DevSquadAdoWorkItemId;
   /** Host-selected canonical 32-byte occurrence identity. */
   readonly occurrence: string;
+  /** Optional minimized historical signal; never claim authority or a current revision. */
+  readonly provenance?: DevSquadAdoDesignProvenance;
   /** Live cooperative cancellation; never authority. */
   readonly signal?: AbortSignal;
 }
+/** Minimal structural projection accepts both existing watcher signal shapes without retaining them. */
+export type DevSquadAdoDesignProvenance =
+  | {
+      /** Existing supplied-mode signals may omit this discriminator. */ readonly kind?: "comment-observation";
+      /** Canonical notified item. */ readonly workItemId: string;
+      /** Historical observation revision, not current CAS. */ readonly sourceRevision: number;
+    }
+  | {
+      /** Claim-free first admission. */ readonly kind: "discovery-admission";
+      /** Canonical admitted item. */ readonly workItemId: string;
+      /** Original initialization revision only. */ readonly acceptedInitializationRevision: 1;
+    };
 /** Read-only host dependency boundary. */
 export interface DevSquadAdoDesignRecoveryDependencies {
   /** Monotonic deadline clock; defaults to performance.now. */
@@ -133,6 +148,7 @@ export async function recoverDevSquadAdoDesignApproval(
     const readRecord = ledger.readRecord;
     if (
       workItemId === null ||
+      !validGateProvenance(request.provenance, workItemId) ||
       !isB32(occurrence) ||
       typeof readRecord !== "function" ||
       (signal !== undefined &&

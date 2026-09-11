@@ -379,7 +379,7 @@ Every task inherits the saved spec and plan, including:
 
 ### W059: Compose both watcher signals without claim transfer
 
-- [ ] **W059** Implement provenance-only watcher intake composition in `src/DevSquadAdoDesignApproval.ts`, `src/DevSquadAdoDesignApprovalValidation.ts`, and `src/DevSquadAdoDesignApproval.authority.test.ts`.
+- [x] **W059** Implement provenance-only watcher intake composition in `src/DevSquadAdoDesignApproval.ts`, `src/DevSquadAdoDesignApprovalValidation.ts`, and `src/DevSquadAdoDesignApproval.authority.test.ts`.
   - Parent: US15-04.
   - Dependency: W058; uses W050 and W054 authority guards.
   - Estimate: M, 0.5 to 1 engineer-day. Risk: Medium.
@@ -907,3 +907,12 @@ All execution CLI calls explicitly select the authorized worktree. No LSP tools 
 - Complete change-request to separately authorized revised occurrence tracer passes with two publications and fresh human review. Old occurrence/grant and changed content/artifact cannot transfer verification. Original change request survives later reconciliation; uncertainty creates no new occurrence.
 - Scope: result verification discriminator, design conflict projection, attached tests/evidence. No approval-to-execution conversion or automatic occurrence policy.
 - Commit: feat(design-gate): isolate revised design reviews W058. Trailer: Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>.
+
+### W059 executed evidence
+
+- Baseline W058 0d71c60. FR-003–005/020–023, CC-10/13/16; watcher notification and capability separation.
+- RED: npm test -- DevSquadAdoDesignApproval.authority --reporter=dot exit 1: 2 behavioral failures / 7 passes. Foreign-item provenance was silently ignored before publication.
+- GREEN complete affected selector npm test -- DevSquadAdoDesignApproval DevSquadAdoWorkflowWatcher DevSquadAdoWorkflowLedger --reporter=dot exit 0: 910 passed / 2 existing platform skips, 30 files (178 feature + 732 predecessor passes). Typecheck exit 0; Prettier/diff pass.
+- Typed real watcher signal shapes compose through minimized structural provenance. Historical revisions/states need not match current CAS; claim/cleanup metadata is not read or retained. Both intake kinds with missing independent capability remain blocked. Stale fence, wrong token, inclusive expiry and zero claim-operation spies covered.
+- No watcher production/type contract changes or runtime graph import. No fabricated discovery comments, execution authority, development approval bypass or live adapter.
+- Commit: feat(design-gate): separate intake from authority W059. Trailer: Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>.
