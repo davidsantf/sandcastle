@@ -669,3 +669,12 @@ The earlier draft's full `npm test` / global `npm run format:check` commands are
 - **Supporting evidence:** `review-log.md` and `final-review-evidence.json` remain historical supplied-candidate evidence, not discovery review.
 - **Assumptions:** Host-normalized facts/resolved teams, stable bounded invocation scope, explicit item authorization/state, trusted ledger publication semantics, and settling ledger/delay dependencies. Admission can permanently lose intake; prefix rescans have no eventual tail-progress guarantee.
 - **Governance:** ADR-0025/0026 remain Proposed; #20 precedes #21. This closure authorizes only the local W045 commit. No new PR/remote/board action, push, publication, merge, ADR acceptance or slices 15–19; W046 and publication decisions remain parent-owned.
+
+### W046-001 Remediation Handoff — 2026-09-10, Turn 2
+
+- W046 remains **unchecked**, with historical independent FAIL preserved. W046-001 has an implementation correction awaiting independent re-review, not an independent closure.
+- Both admission paths now consume the captured validated intake phase/status arrays. Twenty public integrated regression cases cover ordinary controls, overridden/throwing caller methods and page/retry-time mutations across both dimensions, without changing initialization authority.
+- Execute-worker baseline: 74 admission tests passed. Public test-first RED: 16 failed / 78 passed with production unchanged. GREEN and fresh verify: 94 passed. Fresh scoped watcher/ledger: 696 passed / 2 platform skips; historical checkpoint-history selector: 19 passed / 244 exclusions. Typecheck and touched-source formatting/whitespace checks passed.
+- Fresh canonical build generated ESM and DTS successfully, then exited 1 at the known Windows postbuild rm failure. The separately executed Effect-free guard passed against the fresh declarations. Packaging and global-suite success are NOT certified; the execute worker's interrupted full-suite attempt and transient concurrent timeouts are disclosed in the review log.
+- Full provenance, commands, limitations and decision summary: review-log.md, section **W046-001 implementation remediation — 2026-09-10, turn 2**. The conductor handoff supplies the final commit HEAD/tree.
+- Scope remains local slice 14 only. No board/live/publication actions or slices 15–19; ADR-0025/0026 remain Proposed. Next: conductor-owned independent re-review, not W046 completion by the implementer.

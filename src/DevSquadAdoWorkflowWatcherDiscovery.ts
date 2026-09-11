@@ -127,7 +127,8 @@ export const runDevSquadAdoDiscoveryWatchPass = async (
       const signal = await runDiscoveryAdmission(
         state.admission,
         initialize,
-        options.intakeRules,
+        validated.intakePhases,
+        validated.intakeStatuses,
         options.signal,
       );
       if (signal) signals.push(signal);
@@ -169,7 +170,8 @@ export const runDevSquadAdoDiscoveryWatchPass = async (
       const signal = await runDiscoveryAdmission(
         state.admission,
         initialize,
-        options.intakeRules,
+        validated.intakePhases,
+        validated.intakeStatuses,
         options.signal,
       );
       if (signal) signals.push(signal);

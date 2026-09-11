@@ -7,7 +7,6 @@ import type {
   DevSquadAdoDiscoveryAdmissionSignal,
   DevSquadAdoDiscoveryAuthorization,
   DevSquadAdoDiscoveryMatchingEvidence,
-  DevSquadAdoWatchIntakeRules,
 } from "./DevSquadAdoWorkflowWatcher.js";
 import { deriveDiscoveryInitializationId } from "./DevSquadAdoWorkflowWatcherValidation.js";
 
@@ -63,7 +62,8 @@ export const createDiscoveryAdmission = (
 export const runDiscoveryAdmission = async (
   state: DiscoveryAdmissionState,
   initialize: DevSquadAdoWorkflowLedger["initializeRecord"],
-  rules: DevSquadAdoWatchIntakeRules,
+  intakePhases: readonly string[],
+  intakeStatuses: readonly string[],
   signal: AbortSignal | undefined,
 ): Promise<DevSquadAdoDiscoveryAdmissionSignal | null> => {
   if (!state.pending || state.request === null) return null;
@@ -115,9 +115,10 @@ export const runDiscoveryAdmission = async (
   state.pending = false;
   const accepted = result.value,
     replayed = accepted.replayed;
+  // W046-001 / FR-041/043/068: consume only independently validated snapshots.
   const matches =
-    rules.phases.includes(state.request.phase) &&
-    rules.statuses.includes(state.request.status);
+    intakePhases.includes(state.request.phase) &&
+    intakeStatuses.includes(state.request.status);
   state.outcome = {
     ...state.outcome,
     kind: replayed || !matches ? "no-change" : "acted",

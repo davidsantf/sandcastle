@@ -278,6 +278,178 @@ describe("authorized fresh-only admission [W041]", () => {
   );
 });
 
+// W046-001 / CC-031/037 / TEST-033/039: intake uses preflight snapshots,
+// not caller array methods or values changed by awaited page/ledger effects.
+describe.each(["phases", "statuses"] as const)(
+  "admission intake snapshot: %s [W046-001]",
+  (dimension) => {
+    const cases = [
+      "ordinary",
+      "overridden includes",
+      "throwing includes",
+      "page mutation",
+      "retained retry mutation",
+    ].flatMap((scenario) =>
+      [true, false].map((admit) => ({ scenario, admit })),
+    );
+    it.each(cases)(
+      "$scenario, preflight intake matches=$admit",
+      async ({ scenario, admit }) => {
+        const { input, effect, initializeRecord, ledger } = await fixture();
+        const intakeRules = { phases: ["ready"], statuses: ["open"] };
+        const matchingValue = intakeRules[dimension][0]!;
+        intakeRules[dimension][0] = admit ? matchingValue : "blocked";
+        const mutate = () => {
+          intakeRules[dimension][0] = admit ? "blocked" : matchingValue;
+        };
+        const callerIncludes = vi.fn(() => {
+          if (scenario === "throwing includes")
+            throw new Error("caller-includes-fault");
+          return !admit;
+        });
+        if (
+          scenario === "overridden includes" ||
+          scenario === "throwing includes"
+        )
+          Object.defineProperty(intakeRules[dimension], "includes", {
+            value: callerIncludes,
+          });
+
+        const retry = scenario === "retained retry mutation";
+        const requests: InitializeDevSquadAdoWorkflowRecordInput[] = [];
+        initializeRecord.mockImplementation(async (request) => {
+          requests.push(structuredClone(request));
+          if (retry && requests.length === 1) {
+            mutate();
+            return { ok: false, error: { kind: "contention", attempts: 1 } };
+          }
+          return ledger.initializeRecord(request);
+        });
+        const readRecord = vi.fn(ledger.readRecord);
+        const discoverWorkItemsPage = vi.fn(async (request) => {
+          if (scenario === "page mutation") mutate();
+          return input.seam.discoverWorkItemsPage(request);
+        });
+        const result = await runDevSquadAdoWorkflowWatchPass({
+          ...input,
+          intakeRules,
+          ledger: { ...input.ledger, readRecord },
+          seam: {
+            ...input.seam,
+            discoverWorkItemsPage,
+            observePullRequestActivity: effect,
+          },
+        });
+        expect(result.ok).toBe(true);
+        if (!result.ok)
+          throw new Error("expected structured discovery success");
+        expect(result.value).toMatchObject({
+          mode: "discovery",
+          polls: retry ? 2 : 1,
+          stopReason: "completed",
+          traversal: {
+            status: "complete",
+            reason: "terminal-page",
+            terminalPageSeen: true,
+          },
+        });
+        expect(result.value.counts).toEqual({
+          pageCalls: 1,
+          pagesValidated: 1,
+          discovered: 1,
+          evaluated: 1,
+          admitted: 1,
+          initializationReplayed: 0,
+          paused: 0,
+          processed: 1,
+          examined: 1,
+          eligible: 0,
+          acted: admit ? 1 : 0,
+          noChange: admit ? 0 : 1,
+          suppressed: 0,
+          skipped: 0,
+          failed: 0,
+          cleanupReleased: 0,
+          cleanupFailed: 0,
+          cleanupIndeterminate: 0,
+          cleanupNotRequired: 1,
+        });
+        const matching = {
+          policyVersion: "policy-v1",
+          decision: "matched",
+          predicates: [],
+        };
+        expect(result.value.outcomes).toEqual([
+          {
+            category: "admission",
+            workItemId: "999",
+            kind: admit ? "acted" : "no-change",
+            reason: admit
+              ? "admission-accepted"
+              : "admission-intake-rules-unmatched",
+            matching,
+            acceptance: {
+              kind: "fresh",
+              acceptedRevision: 1,
+              acceptedAt: "2026-09-10T00:00:00.000Z",
+            },
+            ledgerErrorKind: null,
+            cleanup: {
+              status: "not-required",
+              reason: "no-claim-acquired",
+              ledgerErrorKind: null,
+              acceptedRevision: null,
+            },
+          },
+        ]);
+        expect(result.value.signals).toEqual(
+          admit
+            ? [
+                {
+                  kind: "discovery-admission",
+                  workItemId: "999",
+                  acceptedInitializationRevision: 1,
+                  phase: "ready",
+                  status: "open",
+                  matching,
+                  authorization: "host-authorized",
+                },
+              ]
+            : [],
+        );
+        expect(discoverWorkItemsPage).toHaveBeenCalledTimes(1);
+        expect(readRecord).toHaveBeenCalledTimes(1);
+        expect(initializeRecord).toHaveBeenCalledTimes(retry ? 2 : 1);
+        expect(requests[0]).toEqual({
+          workItemId: "999",
+          operationId: expect.any(String),
+          phase: "ready",
+          status: "open",
+        });
+        if (retry) expect(requests[1]).toEqual(requests[0]);
+        expect(callerIncludes).not.toHaveBeenCalled();
+        // The shared spy covers both observations and acquire/renew/checkpoint/release.
+        expect(effect).not.toHaveBeenCalled();
+        expect(await ledger.readRecord(999)).toMatchObject({
+          ok: true,
+          value: {
+            revision: 1,
+            phase: "ready",
+            status: "open",
+            observations: { workItemCommentId: null, pullRequest: null },
+            pullRequest: { id: null, url: null },
+            agent: { current: null, history: [] },
+            session: { current: null, history: [] },
+            activeClaim: null,
+            fencingCounter: 0,
+            checkpoints: [],
+          },
+        });
+      },
+    );
+  },
+);
+
 const errors: unknown[] = [
   { kind: "repository-not-found" },
   { kind: "repository-not-directory" },

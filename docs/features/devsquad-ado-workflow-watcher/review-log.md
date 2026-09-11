@@ -897,3 +897,274 @@ The **original broader discovery/filtering requirement is deferred and not fully
 At-most-once signals can be lost and require host reconciliation. Cancellation is cooperative; nonsettling dependencies cannot be forcibly terminated and valid delay/settlement assumptions remain. One cleanup attempt does not guarantee release when state is unknown; inclusive lease expiry is the backstop.
 
 ADR-0025/0026 remain **Proposed**, pending authorized acceptance. W038 technical completion and implementation publication are not governance acceptance or merge readiness. **PR #20 must precede #21. Slice 15 remains blocked pending the creator's explicit decision; no slice-15 work or archival is authorized by this entry.**
+
+---
+
+## W046 independent full integration review — 2026-09-10, turn 1
+
+### Result and scope
+
+**Verdict: FAIL / FAILED. W046 remains open.** One deduplicated **Major integration blocker**, W046-001, was independently identified by the spec, ADR and code guardians and reproduced by the coordinating reviewer. No Critical finding was established. Three additional Major baseline/environment verification findings are retained below; they are not attributed to the integration delta and do not independently require watcher remediation. Historical Minor TB001 remains acknowledged, unchanged and nonblocking; it is not a new finding.
+
+This review covers the **entire PR21 integration-base delta**, including supplied-candidate implementation, recovery and W039–W045 discovery, not merely W042–W045 or the stale published head. Existing W038 PASS and earlier review sections remain historical supplied-candidate evidence, not discovery acceptance. No tasks, source, tests, specs, ADRs, package files, branches, PRs or board items were modified. The only persistent review edit is this append to `review-log.md`. A separate new evidence file was not created because this review's write surface is the append-only review log.
+
+| Provenance                        | Verified value                                                                                                                             |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Workspace                         | `C:\repos\copilot-worktrees\sandcastle\users-davidsant-bookish-doodle` only                                                                |
+| Branch                            | `users/davidsant/bookish-doodle`                                                                                                           |
+| Reviewed HEAD                     | `3c2254884b800a3401594067a13ddd578aedcf20`                                                                                                 |
+| Reviewed committed tree           | `d8d49275dfd6c873b07e3836710d162e60905d67`                                                                                                 |
+| Actual integration merge-base     | `9ff6e8e9f74792e131e927bd9bf41358e36cea95`                                                                                                 |
+| Base refs inspected               | `refs/heads/users/davidsant/ubiquitous-train` and `refs/remotes/origin/users/davidsant/ubiquitous-train`, both at that merge-base          |
+| Diff                              | `git diff 9ff6e8e9f74792e131e927bd9bf41358e36cea95 HEAD`: 32 files, 23,818 additions, no deletions                                         |
+| Initial/final pre-evidence status | Clean; HEAD/tree rechecked unchanged after workers and probes                                                                              |
+| Remote status                     | No fetch, live PR query or remote write. Published `aed6637` is inherited context, not reviewed code identity                              |
+| Existing log preserved            | First 128,823 bytes, 899 physical lines; SHA-256 `8211e975730800dbee1ae3845566b1b0a76f5f62d30b174e73225e620330d25d`                        |
+| Prior final technical baseline    | W038 reviewed uncommitted implementation later committed as `d5aecf0ba1e276642ddfc683fc756320598642f6`; original attribution remains above |
+
+The parent established provenance using `git status --short`, `git branch --show-current`, `git rev-parse HEAD 'HEAD^{tree}'`, `git for-each-ref`, `git merge-base`, and full base-to-HEAD name/stat/diff checks. An initial unquoted PowerShell tree expression was rejected by Git; the quoted command above corrected it and supplied the actual tree. Source reviewers had view-only tools and explicitly attributed commit identities to the parent; the test worker independently verified the same identities and full diff. No worker's static report is mislabeled as command execution.
+
+### Reference artifacts and checklist
+
+Read `CLAUDE.md`, feature `spec.md`, `plan.md`, `tasks.md`, and `docs/adr/0026-devsquad-ado-workflow-watcher.md`, with approved discovery requirements before retained supplied baseline. Read recovery context at `C:\Users\davidsant\.copilot\session-state\9273d263-84d5-453b-9dce-8ad5480316fd\files\agent-team-recovery.md`; its old workspace/task status was treated as historical, not permission to use another checkout. ADR guardian inspected ADR-0021/0022/0024/0025/0026, README, changesets and dependency boundary. Local tasks, not a board, supplied acceptance criteria.
+
+Checklist presented before validation: FR-001–069 including suffix requirements; CC-001–037; TEST-001–039; public compatibility; exact matching; original-request acknowledgement guards; retained checkpoint-history recovery; anchored reentry; bounded traversal; cancellation/counts/cleanup; SEC-A01–A07; fresh scoped verification and narrowly classified platform failures. Sub-agent execution was preapproved; no interactive confirmation was required.
+
+IDE `changes`, usages and problems/LSP tools were unavailable. Git diff and text navigation were used instead; no IDE diagnostic or exhaustive LSP-reference claim is made. No separate coding-guidelines artifact was supplied; project guidance was `CLAUDE.md` (`AGENTS.md` points to it). The test worker could not locate the requested test-discipline skill and disclosed that limitation. No harness learning was recorded, including in response to the code worker's learning prompt.
+
+### Complete changed-file inventory
+
+```text
+.changeset/devsquad-ado-workflow-watcher.md
+.changeset/watcher-contract-recovery.md
+README.md
+docs/adr/0026-devsquad-ado-workflow-watcher.md
+docs/features/devsquad-ado-workflow-watcher/final-review-evidence.json
+docs/features/devsquad-ado-workflow-watcher/plan.md
+docs/features/devsquad-ado-workflow-watcher/review-log.md
+docs/features/devsquad-ado-workflow-watcher/spec.md
+docs/features/devsquad-ado-workflow-watcher/tasks.md
+src/DevSquadAdoWorkflowWatcher.bounds.test.ts
+src/DevSquadAdoWorkflowWatcher.concurrency.test.ts
+src/DevSquadAdoWorkflowWatcher.dependencies.test.ts
+src/DevSquadAdoWorkflowWatcher.discovery.admission.test.ts
+src/DevSquadAdoWorkflowWatcher.discovery.bounds.test.ts
+src/DevSquadAdoWorkflowWatcher.discovery.lifecycle.test.ts
+src/DevSquadAdoWorkflowWatcher.discovery.matching.test.ts
+src/DevSquadAdoWorkflowWatcher.discovery.test.ts
+src/DevSquadAdoWorkflowWatcher.recovery.test.ts
+src/DevSquadAdoWorkflowWatcher.remediation.test.ts
+src/DevSquadAdoWorkflowWatcher.test.ts
+src/DevSquadAdoWorkflowWatcher.ts
+src/DevSquadAdoWorkflowWatcherAdmission.ts
+src/DevSquadAdoWorkflowWatcherDiscovery.ts
+src/DevSquadAdoWorkflowWatcherDiscoveryMatching.ts
+src/DevSquadAdoWorkflowWatcherDiscoveryTestSupport.ts
+src/DevSquadAdoWorkflowWatcherDiscoveryValidation.ts
+src/DevSquadAdoWorkflowWatcherLedger.ts
+src/DevSquadAdoWorkflowWatcherObservation.ts
+src/DevSquadAdoWorkflowWatcherPass.ts
+src/DevSquadAdoWorkflowWatcherTestSupport.ts
+src/DevSquadAdoWorkflowWatcherValidation.ts
+src/index.ts
+```
+
+Parent also executed `git diff --exit-code <base> HEAD -- 'src/DevSquadAdoWorkflowLedger*' package.json package-lock.json scripts tsup.config.ts vitest.config.ts`: exit 0, unchanged. The prior-review comparison against `d5aecf0` showed discovery additions and the shared-module edits; the old remediation test file was unchanged. No dismissed historical issue is re-raised solely because this review uses a fresh context.
+
+### Independent worker coverage
+
+All five guardians were invoked in parallel through `functions.task`. They returned final reports synchronously; no background agent IDs were supplied.
+
+| Guardian / invocation name                                | Coverage and result                                                                                                                 | Provenance/limits                                                                                                                                                                   |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `devsquad.review.spec` / `w046-spec`                      | All nine production modules, every watcher test family, both supports, public exports/docs, FR/CC mapping; **FAIL**, SC46-001 Major | Static review; targeted ranges for large tests/docs, not exhaustive line-by-line proof; no command tool                                                                             |
+| `devsquad.review.adr` / `w046-adr`                        | ADR boundaries, public contracts, README/changesets, dependency graph; W046-ADR-01 Major                                            | Static; independently found same intake snapshot defect; no Git/test execution                                                                                                      |
+| `devsquad.review.code` / `w046-code`                      | All nine production modules, exports/supports, selected tests and historical closure; Major intake snapshot defect                  | Static; code worker ended with a learning prompt, which was not actioned; no writes                                                                                                 |
+| `devsquad.review.security` / `w046-security`              | Detected auth, sensitive data, external input, persistence and integration triggers                                                 | Could not invoke specialist from its limited tool surface; correctly did not substitute a manual security verdict                                                                   |
+| `devsquad.review.tests` / `w046-tests`                    | Scoped tests, typecheck, formatting, declaration check, baseline-failure investigation                                              | Fresh commands below; scoped PASS, not global/build certification; three Major baseline findings and retained Minor TB001                                                           |
+| Required security specialist / `w046-security-specialist` | Parent invoked `security-review` directly to resolve guardian delegation gap                                                        | Returned exactly: “No security vulnerabilities found in the reviewed changes.” No detailed control matrix, scan transcript or specialist test count was returned; do not infer them |
+
+SC46-001, W046-ADR-01 and the code guardian's finding are one defect, deduplicated as **W046-001** with original **Major** severity retained. No guardian finding was downgraded. Test-worker baseline Majors retain their severity and are distinguished by provenance rather than relabeled as watcher regressions.
+
+### Major integration finding
+
+#### W046-001 — Admission bypasses captured intake sets and can reject after acknowledgement (Major; blocking)
+
+- **Expected:** FR-003 preflight validation; FR-041/043 exact phase/status membership; FR-068 matching intake rules for fresh admission; FR-001 / INV-016 structured operation results. The common validator projects independent intake arrays for use throughout the invocation.
+- **Found:** `src/DevSquadAdoWorkflowWatcherAdmission.ts:118–120` calls `.includes()` on caller-owned arrays. Both initial and retained retry call sites pass `options.intakeRules`: `src/DevSquadAdoWorkflowWatcherDiscovery.ts:127–132,169–174` (arguments at lines 130 and 172). The prepared options retain original arrays at `src/DevSquadAdoWorkflowWatcherValidation.ts:503–509`, despite validated copies being built at lines 163–194 and 458–463. The comment path uses captured `context.validated.intakePhases/intakeStatuses` at `src/DevSquadAdoWorkflowWatcherPass.ts:506–509` instead.
+- **Impact:** Array mutation during an awaited page/initialization callback changes the discovery decision after validation. A caller-defined `includes` changes exact-match semantics. A throwing method escapes after a valid initialization acknowledgement, losing the structured pass result and any accumulated outcome reporting. This does **not** bypass explicit item authorization for initialization or grant downstream execution authority; arbitrary adapters remain trusted in-process code.
+- **Reproduction:** Parent command `@' ... '@ | node --import tsx --input-type=module -` imported `runDevSquadAdoWorkflowWatchPass` and `DEFAULT_DEVSQUAD_ADO_DISCOVERY_LIMITS` from `./src/index.ts`, used a complete in-memory fake ledger with method-valid revision-one initialization acknowledgements and an authorized item 999 at `ready/open`, and performed six independent public-entry cases. No private guard was invoked and no probe/source file or real ledger was written.
+- **Correction direction:** At **both** admission call sites, consume independently validated phase/status arrays, not caller-owned rules/methods. Add public-pass regressions for original-array method overrides, mutation after preflight, retained retry mutation, and a throwing original method. Preserve matching/nonmatching controls and unchanged supplied behavior. Parent owns implementation and subsequent independent re-review.
+
+Fresh probe results (command exit 0 means the assertions confirmed these observations, **not** that product conformance passed):
+
+| Case                                                                                                   | Expected contract                            | Observed                                                                     |
+| ------------------------------------------------------------------------------------------------------ | -------------------------------------------- | ---------------------------------------------------------------------------- |
+| Ordinary `["blocked"]` / `["open"]`                                                                    | Initialize without intake                    | `initialized=1`, `admitted=1`, `acted=0`, `admission-intake-rules-unmatched` |
+| Ordinary `["ready"]` / `["open"]`                                                                      | Fresh admission intake                       | `initialized=1`, `admitted=1`, `acted=1`, `admission-accepted`               |
+| `Object.defineProperty(phases, "includes", { value: () => true })` on `["blocked"]`                    | Remain nonmatching                           | **`acted=1`, `admission-accepted`**                                          |
+| Page callback changes `phases[0]` from `blocked` to `ready`                                            | Use captured nonmatching set                 | **`acted=1`, `admission-accepted`**                                          |
+| First initialization returns valid contention and changes `phases[0]`; second returns fresh acceptance | Retained retry uses captured nonmatching set | **Two initialize calls, one read, `acted=1`**                                |
+| Original `includes` throws `Error("caller-includes-fault")`                                            | Original custom method must not execute      | **Pass rejects with that error after one accepted fake initialization**      |
+
+All six probes had `unexpected=0` for observation/acquire/renew/checkpoint/release calls. The fake ledger verifies acknowledgement consumption, not physical persistence; the durable consequences follow the production call order and fresh real-ledger tests separately. Test families already cover ordinary intake mismatch and authorization/request mutation, but did not catch this caller-owned rule-consumption boundary.
+
+### Spec and conformance checklist
+
+Static conformance below is supported by freshly executed existing suites where mapped; it is not proof of every input combination. Spec IDs are `FR`, not `RF`.
+
+| Requirement group                          | Assessment                                                  | Evidence                                                                                                                                                                              |
+| ------------------------------------------ | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| FR-001/003/041/043/068; INV-003/016        | **FAIL / qualified**                                        | W046-001. Validated admission authorization remains intact, but intake-rule consumption and structured completion are defective                                                       |
+| FR-002/004/008–011/020/061                 | Supported                                                   | `Watcher.ts:527–559`; `WatcherValidation.ts:197–461`; `WatcherDiscoveryValidation.ts:318–414`; `index.ts:265–350`; explicit mode and supplied-missing-record controls                 |
+| FR-012–019/021–024/064–066                 | Supported except admission rule exception                   | Matching implementation `WatcherDiscoveryMatching.ts:8–66`; bounded policy/facts `WatcherDiscoveryValidation.ts:195–260,446–612`; observation `WatcherObservation.ts:178–307,331–445` |
+| FR-025–039 including suffixes / FR-059–060 | Supported in inspected ledger and shared candidate paths    | `WatcherLedger.ts:411–679`; `WatcherPass.ts:215–301,565–724,834–935`; original-request history-before-refresh preserved                                                               |
+| FR-005–007/040/042/044–058/062–063/067/069 | Supported normal paths; W046-001 can escape result assembly | `WatcherAdmission.ts:21–60,68–112,121–146`; `WatcherDiscovery.ts:124–385`; `WatcherPass.ts:500–539,980–1170`                                                                          |
+
+In the following table, filenames abbreviate the prefix `src/DevSquadAdoWorkflowWatcher`: T=`.test.ts`, C=`.concurrency.test.ts`, B=`.bounds.test.ts`, R=`.recovery.test.ts`, M=`.remediation.test.ts`, Deps=`.dependencies.test.ts`, D=`.discovery.test.ts`, DA=`.discovery.admission.test.ts`, DM=`.discovery.matching.test.ts`, DB=`.discovery.bounds.test.ts`, DL=`.discovery.lifecycle.test.ts`. Mappings come from the spec guardian; all named suites were included in the fresh combined run.
+
+| CC      | Scenario / mapped test evidence                                                                                       | Status                                                                 |
+| ------- | --------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| 001–003 | Durable happy path T:422–532; repeat T:588–641; observation-only T:535–585 and Deps:211–300                           | Mapped/executed                                                        |
+| 004–006 | Overlap C:77–179; stale fence C:343–430; conflicts C:433–519                                                          | Mapped/executed                                                        |
+| 007–009 | Suppression T:643–688; unknown admitted phase T:690–721; supplied missing T:723–752 / DA:130–161                      | Mapped/executed                                                        |
+| 010–013 | Ordering T:944 and DB:475–558; budgets B:105–197; abort DL:439–510 and M matrix; timeout B:290 onward                 | Mapped/executed                                                        |
+| 014–017 | Renewal C:1135–1237; validation T:119–274 / M:2727 onward; seam T:276 / D:118–145; isolation R:59–121,170–248,493–530 | Mapped/executed                                                        |
+| 018–020 | Privacy T:1020–1092 / DL:1045 onward; PR completeness T:755–890 / M:1990–2020; offline Deps:211–300                   | Mapped/executed                                                        |
+| 021–024 | Reacquire C:985–1061; stale observation C:181–341; anchor R:251 / DL:226–247; typed faults M:1630–1788 / DA:281–479   | Mapped/executed                                                        |
+| 025–027 | Signal preflight M:2754–2801; windows M:1789–2020; retirement M:2025–2182 / D:174–263 / DL:927–1041                   | Mapped/executed                                                        |
+| 028–030 | Cleanup M:2522–2690 / DL:439–657; original-request history M:200–488 / DA:393–589; metadata M:2691 onward             | Mapped/executed                                                        |
+| 031     | Authorized no-comment admission DA:56–278                                                                             | Existing cases pass; **W046-001 uncovered gate regression**            |
+| 032–033 | Matching DM:18–212; pause/reentry/retention DL:97–305                                                                 | Mapped/executed                                                        |
+| 034–036 | Traversal/restart DB:475–661,773–842; page faults DB:727–771,845–1090; bytes/counts DB:24–410,1126 onward             | Mapped/executed                                                        |
+| 037     | Admission guards DA:607 onward, lifecycle/privacy DL:439 onward, D lifecycle                                          | Existing cases pass; **W046-001 structured-result escape not covered** |
+
+TEST-001–039 all have identifiable cases. Additional focused traceability: TEST-007 clock/lease assertions B:199–286; TEST-023 reopen R:534–615; TEST-025 public inference/examples D:450 onward. No whole CC is unmapped, but mapped tests did not imply exhaustive compliance: the independent probes found W046-001.
+
+### ADR, codebase and security obligations
+
+| Constraint                            | Evidence and outcome                                                                                                                                                                                                                |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ADR-0021/0022/0024 host boundaries    | Static PASS: no network client/query construction, external write or execution dispatch in inspected watcher graph; `WatcherDiscovery.ts:1–32,72–86`; `WatcherObservation.ts:316–395`; `WatcherPass.ts:497–538`; Deps:35–58,211–289 |
+| ADR-0025 storage contract             | Parent base comparison proves ledger sources/schema, scripts and dependency manifests unchanged; watcher calls typed ledger operations only                                                                                         |
+| ADR-0026 technical discovery contract | Supplied unions remain separate, never initialize; fresh-only typed admission and invocation-local traversal implemented. W046-001 prevents full technical conformance                                                              |
+| Naming/structure/error handling       | Nine plain async modules reuse shared guards and candidate processing; one concrete caller-owned-rule consumption inconsistency, no separate speculative smell list                                                                 |
+| Public docs/release                   | README:485–697 documents modes, matching, host auth, explicit loss, cancellation and incomplete traversal; minor watcher changeset plus retained historical patch are nonduplicate. Public examples and dependency guards executed  |
+| SEC-A01                               | Explicit canonical-item auth/exact state in `WatcherAdmission.ts:21–60` and `WatcherDiscovery.ts:161–176`; no item-authorization bypass established                                                                                 |
+| SEC-A02                               | Initializer guard `WatcherLedger.ts:444–477,633–679`; independent original submission, fresh/replay distinction. W046-001 is an intake gate/structured-result defect                                                                |
+| SEC-A03                               | Whole-page bounded projection `WatcherDiscoveryValidation.ts:446–612`; malformed last-entry and mutation/bounds tests executed                                                                                                      |
+| SEC-A04                               | Exact matching `WatcherDiscoveryMatching.ts:8–66`, retention `WatcherObservation.ts:184–209,350–445`; missing facts fail closed                                                                                                     |
+| SEC-A05                               | Minimized predicate evidence `WatcherDiscoveryMatching.ts:57–66`; privacy sentinels DL:1045 onward executed; no raw policy/facts/continuations required in outputs                                                                  |
+| SEC-A06                               | Stable invocation-local traversal `WatcherDiscovery.ts:83–94,186–334`; bounds/restart suites executed, no durable continuation/tail guarantee                                                                                       |
+| SEC-A07                               | Admission awaited guard `WatcherAdmission.ts:68–112`, page retirement and shared cleanup; lifecycle/history tests executed; W046-001 qualifies truthful structured completion after acknowledgement                                 |
+
+SEC rows combine non-security guardians' technical evidence and executed tests; they are **not represented as a detailed specialist report**. Security triggers were assessed and the required specialist returned no vulnerabilities. Its compact result contains no scan output, vulnerability count taxonomy or exhaustive threat-model proof. No network audit was run. The inherited 49 dependency audit notices remain unassessed. Trusted in-process dependencies are not sandboxed, at-most-once signal loss is an accepted product constraint, and neither is treated as a newly discovered vulnerability.
+
+### Fresh verification commands and exact results
+
+Executed by `w046-tests` at the reviewed HEAD; parent independently executed provenance/diff checks and six public probes. No result below is borrowed from W045 except where explicitly marked inherited.
+
+| Command                                                                                                                                                        | Result / scope                                                                                                                    |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| `npm test -- DevSquadAdoWorkflowWatcher DevSquadAdoWorkflowLedger`                                                                                             | Exit 0; **676 passed / 2 platform skips**, 16 files                                                                               |
+| `npm test -- DevSquadAdoWorkflowWatcher.discovery DevSquadAdoWorkflowWatcher.dependencies`                                                                     | Exit 0; **283 passed**, 6 files, no skips                                                                                         |
+| `npm test -- DevSquadAdoWorkflowWatcher.remediation -t "third independent history"`                                                                            | Exit 0; **19 passed / 244 selector exclusions**, one file                                                                         |
+| `npm run typecheck`                                                                                                                                            | Exit 0, `tsgo --noEmit`                                                                                                           |
+| `$files = @(git diff --name-only <base> HEAD -- src README.md); npx --no-install prettier --check @files`                                                      | Exit 0; 24 changed source/test/support/index/README paths                                                                         |
+| `npx --no-install prettier --ignore-path .gitignore --check .changeset/devsquad-ado-workflow-watcher.md .changeset/watcher-contract-recovery.md`               | Exit 0; both changesets                                                                                                           |
+| `git diff --check <base> HEAD`                                                                                                                                 | Exit 0, worker and parent                                                                                                         |
+| `node scripts/check-public-types-effect-free.mjs`                                                                                                              | Exit 0; fresh guard execution on **inherited W045-generated declarations**                                                        |
+| Diskless public API probes via `node --import tsx --input-type=module -`                                                                                       | Exit 0; six cases confirmed controls plus W046-001, not a product PASS                                                            |
+| `npm test -- AgentProvider.test -t sessionStorage`                                                                                                             | Exit 1; **4 passed / 5 failed / 207 selector exclusions**                                                                         |
+| `npm test -- CopyToWorktree.test -t "succeeds when first cp fails but fallback cp -R succeeds"`                                                                | Exit 1; **1 failed / 7 selector exclusions**                                                                                      |
+| `npm test -- createWorktree.test createSandbox.test -t "creates a worktree with 'branch' strategy\|creates a sandbox with branch and worktreePath properties"` | Exit 1; **2 failed / 79 selector exclusions**, two files; regex used ordinary `                                                   | `, escaped here for Markdown |
+| `npm test -- cli.test -t "^sandcastle CLI shows help with --help flag$"`                                                                                       | Exit 0; **1 passed / 24 selector exclusions**, uses inherited `dist/main.js`                                                      |
+| `npm run build`                                                                                                                                                | **Not run in W046**: review write restrictions prohibit cleaning/regenerating `dist`; no fresh W046 generation or packaging claim |
+
+Discovery breakdown observed in fresh selectors: public/examples **20**, matching **45**, admission **74**, bounds **81**, lifecycle **46** = **266**; dependency guardians **17**, combined **283**. These are overlapping selectors, not additive totals across all rows. Two platform skips are the Linux-only production ledger initialize/acquire/checkpoint/reopen/list/release test and non-Windows 1,000-record production listing test. Selector exclusions are not platform skips.
+
+### Major baseline/environment findings and interrupted-suite investigation
+
+These findings retain the test guardian's severity. They explain **eight specifically reproduced failures**, not every failure from W042's interrupted full-suite run. No checkout/branch switch or full-suite run at the merge-base occurred; baseline attribution is supported by identical source/test/dependency blobs and direct platform failure evidence.
+
+- **TB046-001 (Major; baseline/environment):** `npm test -- AgentProvider.test -t sessionStorage` reproduced five failures. Pi capture `session ... not found` at `src/SessionStore.ts:384` through `src/AgentProvider.ts:513` (test `src/AgentProvider.test.ts:2192`); path-separator mismatch at test line 2285; Codex missing session at `SessionStore.ts:271` through `AgentProvider.ts:466` (test line 2336); Claude subagent/partial-copy `ENOENT` at test lines 2461 and 2568. `AgentProvider.test.ts`, `AgentProvider.ts`, `SessionStore.ts`, `SandboxProvider.ts` have identical base/HEAD blobs. Unchanged enumeration uses POSIX `find ... -type f -name ...`; available executable is Windows `find.exe`; the path assertion also assumes `/` rather than `\`.
+- **TB046-002 (Major; environment):** Copy fallback test fails with `CopyToWorktreeError: Failed to copy file.txt to worktree: spawn cp ENOENT`, `src/CopyToWorktree.ts:49:21`. Source/test/error definitions are base-identical, and `git show` confirms the same `execFile("cp", ...)` fallback. No external `cp` executable is available.
+- **TB046-003 (Major; baseline test portability):** `src/createWorktree.test.ts:64` and `src/createSandbox.test.ts:265` expect substring `.sandcastle/worktrees`; actual Windows suffix is `\.sandcastle\worktrees\test-branch`. Both reached those assertions. Tests, implementations, `WorktreeManager.ts`, and local sandbox helper are base-identical.
+- **TB001 / worker alias TB046-004 (Minor; historical, nonblocking):** Direct internal guard/object-identity tests at `src/DevSquadAdoWorkflowWatcher.remediation.test.ts:953,1021,1288,2423` remain unchanged from the prior technical review. Preserved, not re-raised as a new defect or remediation demand.
+
+Current `dist/main.js` exists and the narrow help command passed. This removes that one current missing-artifact prerequisite; it does not establish that earlier CLI failures were fixed or that packaging is complete. Unidentified W042 session/sandbox/worktree/full-suite failures remain **unclassified**. No global PASS is claimed.
+
+### Build, governance and remaining limitations
+
+- W045's artifact records **fresh ESM/DTS generation** followed by canonical `npm run build` **exit 1** because external `rm` was unavailable; the chained copy/guard did not run in that command. W045 subsequently ran its standalone declaration guard successfully. This is **inherited generation/build-failure evidence**, not fresh W046 build output. The test worker and parent still found no external `rm`/`cp`. No packaging certification or tooling fix occurred.
+- Scoped tests are green but an independently reproduced functional blocker remains. Full repository tests, global formatting, dependency audit, production Windows ledger permissions and deployment are not certified.
+- ADR-0025 and ADR-0026 remain **Proposed**. Their status is neither a technical blocker nor accepted by this review. W038 remains historical technical PASS only. No governance, publication, merge-ready or later-slice approval follows from any static PASS row.
+- No PR review was posted: current published head is stale relative to reviewed local code, and the parent owns publication. No push, new PR, base change, amend, rebase, merge, board update or live ADO operation occurred. Preserve #20-before-#21 ordering; slices 15–19 remain outside this review.
+
+### W042–W046 requirement closure and handoff
+
+| Task | Independent disposition                                                                                                                                                                                                                              |
+| ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| W042 | **Supported within scoped review:** public lifecycle assertions and static trace confirm cursor 480 retained during exclusion, reentry from 480, explicit WI/PR retention loss, supplied empty-window compatibility and cursor-advancing suppression |
+| W043 | **Supported within scoped review:** 81 bounds tests plus shared suites cover retained scheduling, one page per poll, terminal versus budgets, duplicates/cycles/drift, inclusive bytes/counts and fresh reopen; no durable cursor/schema change      |
+| W044 | **Qualified / remediation required:** existing cancellation, retry, acknowledgement, privacy and count/cleanup assertions pass, but W046-001 can alter admission on retries or escape structured completion after acceptance                         |
+| W045 | **Public-contract scope supported:** exports/inference, executable README examples, changesets and dependency guardians pass. Fresh W046 build not run; inherited Windows postbuild failure remains, packaging not certified                         |
+| W046 | **FAIL; leave unchecked:** resolve W046-001, add regression coverage, independently re-review the resulting exact HEAD/tree and record closure through the parent                                                                                    |
+
+W039/W040 implementation is included in this full delta and statically supported; W041 admission has the W046-001 intake-rule defect. None of these assessments edits authoritative task checkboxes or reopens W001–W038.
+
+**Handoff envelope:** Destination is parent-owned `devsquad.implement` remediation, followed by a fresh independent review. Required fix ID **W046-001 (Major)**; primary location `src/DevSquadAdoWorkflowWatcherAdmission.ts:118–120`, both call sites `src/DevSquadAdoWorkflowWatcherDiscovery.ts:130,172`. Evidence is this appended W046 session and the six executed public-entry probes. Assumptions to preserve: host item authorization/exact state, at-most-once possibly lost admission delivery, unchanged supplied types and no initialization, original-submission checkpoint history validation, no durable traversal state, no live adapter. Baseline TB046-001–003 are verification limitations, not permission for unrelated source/tooling changes. No new product/scope/auth decision was made.
+
+**Decision rationale:** Independent workers converged on one concrete captured-input defect; public-API execution confirmed it on initial and retry paths. Existing test success therefore cannot close W046. Baseline failures were separated by exact unchanged-file evidence, while the unidentified remainder was left open. Historical evidence and severity were preserved. The parent must remediate and obtain independent re-review before recording W046 closure or publication.
+
+---
+
+## W046-001 implementation remediation — 2026-09-10, turn 2
+
+**Status: remediation implemented and scoped verification green; independent re-review REQUIRED. W046 remains unchecked.** This entry does not supersede the preceding independent FAIL or independently close its Major finding. No finalization/publication worker or acceptance review ran in this remediation turn; the conductor owns the next independent review.
+
+### Provenance and scope
+
+- Workspace: `C:\repos\copilot-worktrees\sandcastle\users-davidsant-bookish-doodle`; branch: `users/davidsant/bookish-doodle`.
+- Starting HEAD: `3c2254884b800a3401594067a13ddd578aedcf20`; starting committed tree: `d8d49275dfd6c873b07e3836710d162e60905d67`. The final commit HEAD/tree are returned in the conductor handoff, not guessed inside this pre-commit entry.
+- The only pre-existing dirty file was this review log. Its complete pre-remediation content was 157,902 bytes, SHA-256 `b08f9312c18c72660e60dd1d4fe2851988e80ab8832b3c6750a0f753c2d3fa21`. Historical findings and FAIL are retained; required Markdown formatting normalizes the independent append's tables/spacing without changing findings.
+- Read repository guidance and approved discovery spec/plan/tasks/ADR-0026. The validation worker classified the correction as Medium impact with no spec drift. Existing routine continuation approval covers it. Work-source detection confirmed local tasks only, no linked board item; #20/#21 are PR provenance, not board assignments.
+- Production changes are restricted to `DevSquadAdoWorkflowWatcherAdmission.ts` and `DevSquadAdoWorkflowWatcherDiscovery.ts`: admission accepts explicit validated phase/status snapshots, supplied from `validated.intakePhases` and `validated.intakeStatuses` at BOTH initial and retained-retry call sites.
+- Added 20 public `runDevSquadAdoWorkflowWatchPass` real-ledger integration cases to `DevSquadAdoWorkflowWatcher.discovery.admission.test.ts`: four ordinary controls and sixteen defect cases across phases/statuses, overridden/throwing original `includes`, page-time mutation and retained-initialization-retry mutation, with both incorrect enabling and suppression covered.
+- Tests assert structured completion, exact outcomes/signals/counts, fresh durable initialization, unchanged request across retries, no caller-method invocation, zero observation/acquire/renew/checkpoint/release effects and no fabricated cursors. Item-specific initialization authorization, original-request acknowledgement guards, fresh/replay gating, supplied behavior and storage are unchanged.
+- Traceability: FR-001/003/041–043/068; primary CC-031/TEST-033 and CC-037/TEST-039; retained authorization, counts and acknowledgement controls FR-006/044/046/059/067/069.
+
+### Executed RED/GREEN and verification evidence
+
+Evidence below was executed by the named implementation workers during this remediation turn and returned to the coordinator. It is not an independent acceptance verdict. Test/build commands ran in this workspace.
+
+| Worker / stage                     | Exact command                                                                                                                                                                        | Result                                                                                                                                                                                                              |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Execute / baseline                 | `npm test -- src/DevSquadAdoWorkflowWatcher.discovery.admission.test.ts`                                                                                                             | 74 passed; exit 0                                                                                                                                                                                                   |
+| Execute / RED                      | Same admission command, after tests but BEFORE production changes                                                                                                                    | 16 failed / 78 passed; exit 1. Four controls passed; twelve defect cases failed incorrect acted/noChange counts, four throwing-method cases rejected with caller-includes-fault at original Admission lines 119–120 |
+| Execute / RED source control       | `git --no-pager diff --exit-code -- src/DevSquadAdoWorkflowWatcherAdmission.ts src/DevSquadAdoWorkflowWatcherDiscovery.ts`                                                           | Exit 0; production unchanged for RED                                                                                                                                                                                |
+| Execute / GREEN                    | `npm test -- src/DevSquadAdoWorkflowWatcher.discovery.admission.test.ts`                                                                                                             | 94 passed; exit 0                                                                                                                                                                                                   |
+| Verify / fresh admission           | `npm test -- src/DevSquadAdoWorkflowWatcher.discovery.admission.test.ts`                                                                                                             | 94 passed; 0 failed/skipped; exit 0                                                                                                                                                                                 |
+| Verify / fresh watcher and ledger  | `npm test -- src/DevSquadAdoWorkflowWatcher src/DevSquadAdoWorkflowLedger`                                                                                                           | 696 passed / 2 platform skips; 16 files passed; exit 0                                                                                                                                                              |
+| Verify / fresh checkpoint history  | `npm test -- DevSquadAdoWorkflowWatcher.remediation -t "third independent history"`                                                                                                  | 19 passed; 244 selector exclusions, not broad-suite skips; exit 0                                                                                                                                                   |
+| Verify / fresh typecheck           | `npm run typecheck`                                                                                                                                                                  | Exit 0                                                                                                                                                                                                              |
+| Verify / fresh canonical build     | `npm run build`                                                                                                                                                                      | Fresh ESM success (7,946 ms), fresh DTS success (13,916 ms); canonical command exit 1 at known Windows postbuild: 'rm' is not recognized                                                                            |
+| Verify / guard after fresh ESM+DTS | `node scripts/check-public-types-effect-free.mjs`                                                                                                                                    | Exit 0; public declarations contain no Effect references                                                                                                                                                            |
+| Verify / touched source formatting | `npx --no-install prettier --check src/DevSquadAdoWorkflowWatcherDiscovery.ts src/DevSquadAdoWorkflowWatcherAdmission.ts src/DevSquadAdoWorkflowWatcher.discovery.admission.test.ts` | Exit 0                                                                                                                                                                                                              |
+| Verify / whitespace                | `git diff --check`                                                                                                                                                                   | Exit 0                                                                                                                                                                                                              |
+
+The two broad-suite skips are Linux production-platform operations and the supported-production-filesystem listing benchmark. No numerical coverage-percentage claim is made. Build emitted unused createRequire/Readable import warnings. **Packaging did not pass**: chained template copying/postbuild guard did not run after rm failed; the explicitly invoked guard ran separately against freshly generated declarations.
+
+The execute worker additionally reported a concurrent watcher/ledger attempt with 692 passed / 4 lifecycle timeouts / 2 skips while an unnecessary full `npm test` was running. Its isolated rerun passed 696 / 2 without source or timeout changes; the verify worker independently repeated that isolated success. The full-suite attempt was stopped incomplete after platform-dependent failures. It supplies no complete global count and is not a global baseline or certification. The known eight baseline storage/cp/Windows-path failures were not repaired. This deviation is retained rather than omitted.
+
+### Decisions, limitations and handoff
+
+| Decision                                                                     | Principle / alternative                                                                                                 | Basis and confidence                                                                       |
+| ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Reuse preflight snapshots throughout initial admission and retries           | Validate once, consume the validated snapshot; do not revalidate mutable caller rules or catch custom-method exceptions | Existing exact intake contract and reproduced RED failures; High; continuation preapproved |
+| Use public integrated real-ledger regression tests                           | Assert observable behavior and authority boundaries rather than internal array identity                                 | Independent W046-001 evidence and TEST-033/039; High; continuation preapproved             |
+| Preserve review FAIL and distinguish scoped checks from acceptance/packaging | Separate remediation evidence from independent approval                                                                 | W046 acceptance and known environment limitations; High; parent review pending             |
+
+IDE/LSP problems tools were unavailable; text navigation, typecheck and executable tests were used. No standalone lint script exists. No dependency installs, dependency changes, build-script fixes, duplicate changeset, spec/plan/ADR edits, harness learning, live tracker calls, board actions, remote operations, push, PR, merge, force, amend or rebase occurred. Existing W045 minor changeset covers this extension; public docs/API contract are unchanged. ADR-0025/0026 remain Proposed; #20 must precede #21; slices 15–19 remain unauthorized.
+
+**Handoff:** Commit this bounded remediation and preserved review evidence using the git-commit skill and required Copilot App trailer, return exact final HEAD/tree, and request conductor-owned fresh independent re-review. W046 must remain unchecked until that review has no unresolved blockers. No W046 PASS, governance acceptance, publication or merge-readiness claim follows from this entry.
