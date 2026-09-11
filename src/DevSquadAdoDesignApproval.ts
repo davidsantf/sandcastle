@@ -40,7 +40,8 @@ export interface DevSquadAdoDesignApprovalResult {
     | "verified"
     | "evidence-unavailable"
     | "publication-unverified"
-    | "mutation-unconfirmed";
+    | "mutation-unconfirmed"
+    | "decision-pending";
   /** Recovery does not infer an execution target. */
   readonly targetHandoff: "not-requested";
   /** Stable category, never dependency-controlled diagnostics. */
@@ -60,7 +61,11 @@ export interface DevSquadAdoDesignApprovalResult {
     | "design-mismatch"
     | "reservation-outcome-unknown"
     | "publication-outcome-unknown"
-    | "dependency-limit";
+    | "dependency-limit"
+    | "publication-mismatch"
+    | "publication-ambiguous"
+    | "no-eligible-decision"
+    | "decision-prefix-incomplete";
   /** Canonical requested binding, only after validation. */
   readonly binding: {
     readonly workItemId: string;
@@ -193,4 +198,12 @@ export async function startDevSquadAdoDesignApproval(
   dependencies: import("./DevSquadAdoDesignApprovalPublication.js").DevSquadAdoDesignStartDependencies,
 ): Promise<DevSquadAdoDesignApprovalResult> {
   return startGatePublication(request, dependencies);
+}
+
+/** Reconcile evidence for an existing reservation, with zero publisher invocations. */
+export async function reconcileDevSquadAdoDesignApproval(
+  request: import("./DevSquadAdoDesignApprovalPublication.js").DevSquadAdoDesignStartRequest,
+  dependencies: import("./DevSquadAdoDesignApprovalPublication.js").DevSquadAdoDesignStartDependencies,
+): Promise<DevSquadAdoDesignApprovalResult> {
+  return startGatePublication(request, dependencies, "reconcile");
 }

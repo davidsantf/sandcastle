@@ -71,6 +71,8 @@ export interface DevSquadAdoDesignMutationRequest {
 }
 /** Trusted offline adapters; no hidden retries or live clients are constructed. */
 export interface DevSquadAdoDesignStartDependencies {
+  /** Verify an original attempt without automatically publishing again. */
+  readonly verifyPublication?: DevSquadAdoDesignPublicationVerifier;
   /** Existing public read and checkpoint operations only. */
   readonly ledger: Pick<DevSquadAdoWorkflowLedger, "readRecord" | "checkpoint">;
   /** Host authorizes the exact stage and fresh state, independently of capability. */
@@ -264,6 +266,7 @@ const sameGrant = (
 export async function startGatePublication(
   request: DevSquadAdoDesignStartRequest,
   dependencies: DevSquadAdoDesignStartDependencies,
+  mode: "start" | "reconcile" = "start",
 ): Promise<DevSquadAdoDesignApprovalResult> {
   let result: DevSquadAdoDesignApprovalResult = {
     durableState: "unreadable",
@@ -303,6 +306,8 @@ export async function startGatePublication(
     const authorize = dependencies.authorizeMutation.bind(dependencies);
     const verify = dependencies.verifyDesign.bind(dependencies);
     const publish = dependencies.publishOnce.bind(dependencies);
+    const verifyPublication =
+      dependencies.verifyPublication?.bind(dependencies);
     const utcNow = dependencies.utcNow ?? Date.now;
     const lifecycle = new GateLifecycle(
       request.signal,
@@ -357,8 +362,19 @@ export async function startGatePublication(
       };
       if (gate.design !== envelope.design || gate.target !== envelope.target)
         return { ...result, reason: "design-mismatch" };
-      return result;
+      return confirmGatePublication(result, {
+        lifecycle,
+        envelope,
+        scope,
+        authority,
+        read,
+        checkpoint,
+        authorize,
+        verifyPublication,
+        utcNow,
+      });
     }
+    if (mode === "reconcile") return result;
     if (!authority) throw new GateFault("authority-required");
     const claim = record.activeClaim;
     const checkAuthority = () => {
@@ -461,10 +477,21 @@ export async function startGatePublication(
     };
     checkAuthority();
     // No ticket escapes. There is exactly one call site, reached only via this direct acknowledgement.
-    await lifecycle.call("publisher", (signal) =>
+    const hint = await lifecycle.call("publisher", (signal) =>
       publish(structuredClone(envelope), signal),
     );
-    return result;
+    return confirmGatePublication(result, {
+      lifecycle,
+      envelope,
+      scope,
+      authority,
+      read,
+      checkpoint,
+      authorize,
+      verifyPublication,
+      utcNow,
+      hint,
+    });
   } catch (error) {
     const reason = error instanceof GateFault ? error.reason : "invalid-input";
     return {
@@ -474,6 +501,259 @@ export async function startGatePublication(
         reason === "evidence-unavailable"
           ? "publication-outcome-unknown"
           : reason,
+    };
+  }
+}
+
+/** Immutable normalized publication evidence, independently verified by the host. */
+export type DevSquadAdoDesignPublicationWitness = readonly [
+  verifierId: string,
+  scope: DevSquadAdoDesignScope,
+  workItemId: string,
+  occurrence: string,
+  design: string,
+  target: string,
+  envelope: string,
+  proposalObjectId: string,
+  proposalVersionId: string,
+  streamId: string,
+  proposalEventId: string,
+  proposalOrdinal: number,
+  proposalEventVersionId: string,
+  immutableEvidenceId: string,
+];
+/** Independent publication verifier; a publisher echo or bare locator is insufficient. */
+export type DevSquadAdoDesignPublicationVerifier = (
+  request: {
+    readonly envelope: DevSquadAdoDesignEnvelope;
+    readonly scope: DevSquadAdoDesignScope;
+    readonly hint?: string;
+  },
+  signal: AbortSignal,
+) => Promise<
+  | {
+      readonly kind: "verified";
+      readonly witness: DevSquadAdoDesignPublicationWitness;
+    }
+  | { readonly kind: "mismatch" | "ambiguous" | "unavailable" }
+>;
+interface PublicationContinuation {
+  readonly lifecycle: GateLifecycle;
+  readonly envelope: DevSquadAdoDesignEnvelope;
+  readonly scope: DevSquadAdoDesignScope;
+  readonly authority: DevSquadAdoClaimAuthorityInput | null;
+  readonly read: DevSquadAdoWorkflowLedger["readRecord"];
+  readonly checkpoint: DevSquadAdoWorkflowLedger["checkpoint"];
+  readonly authorize: DevSquadAdoDesignStartDependencies["authorizeMutation"];
+  readonly verifyPublication: DevSquadAdoDesignPublicationVerifier | undefined;
+  readonly utcNow: () => number;
+  readonly hint?: unknown;
+}
+function publicationWitness(
+  value: unknown,
+  envelope: DevSquadAdoDesignEnvelope,
+  scope: DevSquadAdoDesignScope,
+): DevSquadAdoDesignPublicationWitness | null {
+  try {
+    if (!Array.isArray(value) || value.length !== 14) return null;
+    const copy: unknown[] = [];
+    for (let index = 0; index < 14; index++) {
+      const item = value[index];
+      if (index === 1) copy.push(scopeCopy(item));
+      else if (index === 11) {
+        if (!Number.isSafeInteger(item) || item <= 0) return null;
+        copy.push(item);
+      } else {
+        if (!identifier(item)) return null;
+        copy.push(item);
+      }
+    }
+    if (
+      JSON.stringify(copy[1]) !== JSON.stringify(scope) ||
+      copy[2] !== envelope.workItemId ||
+      copy[3] !== envelope.occurrence ||
+      copy[4] !== envelope.design ||
+      copy[5] !== envelope.target ||
+      copy[6] !== envelope.envelope ||
+      Buffer.byteLength(JSON.stringify(copy), "utf8") > 16384
+    )
+      return null;
+    return copy as unknown as DevSquadAdoDesignPublicationWitness;
+  } catch {
+    return null;
+  }
+}
+/** W051: receipt verification confirms the original attempt, never publication permission. */
+async function confirmGatePublication(
+  initial: DevSquadAdoDesignApprovalResult,
+  context: PublicationContinuation,
+): Promise<DevSquadAdoDesignApprovalResult> {
+  let result = initial;
+  const {
+    lifecycle,
+    envelope,
+    scope,
+    authority,
+    read,
+    checkpoint,
+    authorize,
+    verifyPublication,
+    utcNow,
+  } = context;
+  if (!verifyPublication) return result;
+  try {
+    const hint =
+      typeof context.hint === "string" &&
+      context.hint.length <= 1024 &&
+      unicode(context.hint) &&
+      Buffer.byteLength(context.hint, "utf8") <= 1024
+        ? context.hint
+        : undefined;
+    const proof = await lifecycle.call("publication", (signal) =>
+      verifyPublication(
+        structuredClone({
+          envelope,
+          scope,
+          ...(hint === undefined ? {} : { hint }),
+        }),
+        signal,
+      ),
+    );
+    if (!proof || proof.kind !== "verified")
+      return {
+        ...result,
+        reason:
+          proof?.kind === "ambiguous"
+            ? "publication-ambiguous"
+            : proof?.kind === "mismatch"
+              ? "publication-mismatch"
+              : "publication-evidence-unavailable",
+      };
+    const witness = publicationWitness(proof.witness, envelope, scope);
+    if (!witness) return { ...result, reason: "publication-mismatch" };
+    const W = envelope.workItemId;
+    const G = envelope.occurrence;
+    const D = envelope.design;
+    const X = gateHash([
+      "dg15.publication.v1",
+      W,
+      G,
+      D,
+      envelope.target,
+      envelope.envelope,
+      witness,
+    ]);
+    const response = await lifecycle.call("read", () => read(W));
+    if (!response || response.ok !== true)
+      throw new GateFault("evidence-unavailable");
+    const before = inspectDesignGateRecord(response.value, W);
+    if (!before) throw new GateFault("evidence-unavailable");
+    const history = reduceGateHistory(before, G);
+    if (
+      !history.ok ||
+      !history.gate ||
+      history.gate.design !== D ||
+      history.gate.target !== envelope.target
+    )
+      throw new GateFault("conflicting-gate-history");
+    result = { ...result, knownRevision: before.revision };
+    if (history.gate.publication) {
+      if (history.gate.publication !== X)
+        return { ...result, reason: "publication-mismatch" };
+      if (history.gate.action) return result;
+      return {
+        ...result,
+        durableState: "publication-confirmed",
+        verificationStatus: "decision-pending",
+        reason: "decision-prefix-incomplete",
+      };
+    }
+    if (!authority) throw new GateFault("authority-required");
+    const checkAuthority = () => {
+      lifecycle.check();
+      const now = utcNow();
+      const claim = before.activeClaim;
+      if (!Number.isFinite(now)) throw new GateFault("invalid-input");
+      if (
+        !claim ||
+        claim.ownerId !== authority.ownerId ||
+        claim.fencingValue !== authority.fencingValue
+      )
+        throw new GateFault("authority-rejected");
+      if (now >= Date.parse(claim.expiresAt))
+        throw new GateFault("authority-expired");
+      return now;
+    };
+    checkAuthority();
+    const event = ["p", G, D, X];
+    const mutation: DevSquadAdoDesignMutationRequest = {
+      workItemId: W,
+      event,
+      expected: {
+        revision: before.revision,
+        phase: before.phase,
+        status: before.status,
+      },
+      patch: { phase: before.phase, status: before.status },
+    };
+    const grant = await lifecycle.call("mutation", (signal) =>
+      authorize(structuredClone(mutation), signal),
+    );
+    if (
+      !grant ||
+      grant.kind !== "granted" ||
+      !sameGrant(grant.request, mutation)
+    )
+      throw new GateFault("host-authorization-unavailable");
+    checkAuthority();
+    const J = gateHash([
+      "dg15.submission.v1",
+      event,
+      W,
+      before.revision,
+      before.phase,
+      before.status,
+      before.phase,
+      before.status,
+      authority.ownerId,
+      authority.fencingValue,
+    ]);
+    const original: CheckpointDevSquadAdoWorkflowInput = {
+      workItemId: W,
+      operationId: `dg15.p.${G}.${D}.${X}.${J}`,
+      authority: { ...authority },
+      expected: { ...mutation.expected },
+      patch: { ...mutation.patch },
+    };
+    result = {
+      ...result,
+      verificationStatus: "mutation-unconfirmed",
+      reason: "publication-outcome-unknown",
+    };
+    const accepted = await lifecycle.call("checkpoint", () =>
+      checkpoint(structuredClone(original)),
+    );
+    const fresh = freshGateAcknowledgement(
+      accepted,
+      original,
+      before,
+      checkAuthority(),
+    );
+    if (!fresh) return result;
+    return {
+      ...result,
+      durableState: "publication-confirmed",
+      verificationStatus: "decision-pending",
+      reason: "decision-prefix-incomplete",
+      knownRevision: fresh.revision,
+    };
+  } catch (error) {
+    return {
+      ...result,
+      reason:
+        error instanceof GateFault
+          ? error.reason
+          : "publication-evidence-unavailable",
     };
   }
 }

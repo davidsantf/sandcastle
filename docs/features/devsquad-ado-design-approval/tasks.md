@@ -245,7 +245,7 @@ Every task inherits the saved spec and plan, including:
 
 ### W051: Confirm independently verified publication
 
-- [ ] **W051** Implement matching receipt confirmation and publication-only reconciliation in `src/DevSquadAdoDesignApprovalPublication.ts`, `src/DevSquadAdoDesignApproval.ts`, and `src/DevSquadAdoDesignApproval.receipt.test.ts`.
+- [x] **W051** Implement matching receipt confirmation and publication-only reconciliation in `src/DevSquadAdoDesignApprovalPublication.ts`, `src/DevSquadAdoDesignApproval.ts`, and `src/DevSquadAdoDesignApproval.receipt.test.ts`.
   - Parent: US15-01; supports US15-02.
   - Dependency: W050.
   - Estimate: M, 1 to 1.5 engineer-days. Risk: High.
@@ -828,3 +828,15 @@ All execution CLI calls explicitly select the authorized worktree. No LSP tools 
 - Changed-file Prettier check and git diff --check: exit 0. No manifest/lock changes, live transport, execution, claim lifecycle, cursor/reference patch or private receipt inspection.
 - Conformance: FR-001-008/011/020/023-026; CC-02/03/10/11/13; SEC-001/002/003/005/006. Complete slice validation remains W064 and independent review W065.
 - Commit subject: feat(design-gate): reserve one publication attempt W050. Exact trailer: Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>.
+
+### W051 executed evidence
+
+- W050 commit: a694b7e40b7a708b80ac1949f48e1c0783aea3dd, required Copilot App trailer present.
+- Added normalized independently verified publication witness, bounded untrusted locator hint, publication commitment, fresh public read/CAS/no-op confirmation checkpoint and reconcile entry with zero publication invocations. Wrong work-item/design/target/envelope/scope, missing immutable version, bare IDs, echo-only flags and ambiguous evidence block confirmation.
+- RED: npm test -- DevSquadAdoDesignApproval.receipt --reporter=dot, exit 1: 3 behavioral failures and 10 passes. Valid receipts did not advance start/reconcile and lost write-response recovery was unsupported.
+- Initial GREEN: npm test -- DevSquadAdoDesignApproval --reporter=dot, exit 0: 77 passed across 4 files; npm run typecheck exit 0.
+- Additional result-integrity RED before task completion: strengthened two existing receipt assertions to require decision-prefix-incomplete before any certified human prefix exists. Receipt selector exit 1: 2 assertion failures, 11 passes. Corrected the premature no-eligible-decision reason in one production edit; the feature makes no empty-prefix claim. Human-page processing remains W052/W053.
+- Final GREEN/regression: npm test -- DevSquadAdoDesignApproval DevSquadAdoWorkflowLedger --reporter=dot, exit 0: 9 files, 141 passed, 2 existing platform skips (143 total; 77 feature tests and 64 existing ledger passes). npm run typecheck exit 0; changed TypeScript Prettier write and git diff --check exit 0.
+- Real ledger test proves durable publication checkpoint can be recovered after its response throws, with no republish and no leaked dependency sentinel. No human resolution is enabled by this task.
+- FR-009/010/019/020/024-026; CC-04/05/14; INV-001/002/007; SC-003/004; SEC-001/002/003/006. Source graph remains offline. Global baseline and platform limitations remain unchanged.
+- Commit subject: feat(design-gate): reconcile verified publication W051. Exact trailer: Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>.
