@@ -159,6 +159,8 @@ export async function verifyGateTarget(
           : "target-proof-unavailable",
       );
     const receivedRemaining = lifecycle.check();
+    // W065 SKEP02 / FR-022 / SEC-007: pair receipt age with validation elapsed.
+    const receivedNow = utcNow();
     const p = {
       workItemId: response.workItemId,
       occurrence: response.occurrence,
@@ -184,16 +186,21 @@ export async function verifyGateTarget(
     const now = utcNow();
     const observed = Date.parse(p.observedAt);
     if (
+      !Number.isFinite(receivedNow) ||
       !Number.isFinite(now) ||
       !Number.isFinite(observed) ||
       new Date(observed).toISOString() !== p.observedAt ||
-      observed > now ||
+      observed > receivedNow ||
+      now < receivedNow ||
       now - observed > 5000
     )
       return blocked("target-proof-unavailable");
     // W061: no awaited or host-supplied code after this final retirement check.
     const remaining = lifecycle.check();
-    if (receivedRemaining - remaining + (now - observed) > 5000)
+    // UTC final age already includes validation. Independently charge monotonic
+    // elapsed to receipt age, not final age, so a stalled clock cannot hide staleness.
+    const elapsedAge = receivedNow - observed + receivedRemaining - remaining;
+    if (Math.max(now - observed, elapsedAge) > 5000)
       return blocked("target-proof-unavailable");
     return { ...result, targetHandoff: "verified-current" };
   } catch (error) {
