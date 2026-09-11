@@ -269,11 +269,22 @@ export const sameGrant = (
 ): boolean => {
   try {
     const v = value as DevSquadAdoDesignMutationRequest;
+    const event = v.event;
+    if (!Array.isArray(event) || event.length !== original.event.length)
+      return false;
+    // V-001 / FR-024 / CC-14: compare every immutable event field ourselves.
+    // Own data properties reject holes/accessors without invoking returned methods.
+    for (let index = 0; index < original.event.length; index++) {
+      const field = Object.getOwnPropertyDescriptor(event, index);
+      if (
+        !field ||
+        !("value" in field) ||
+        field.value !== original.event[index]
+      )
+        return false;
+    }
     return (
       v.workItemId === original.workItemId &&
-      Array.isArray(v.event) &&
-      v.event.length === original.event.length &&
-      v.event.every((entry, index) => entry === original.event[index]) &&
       v.expected.revision === original.expected.revision &&
       v.expected.phase === original.expected.phase &&
       v.expected.status === original.expected.status &&
