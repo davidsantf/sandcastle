@@ -1,3 +1,12 @@
+import {
+  inspectDevSquadAdoWatchMode,
+  prepareDevSquadAdoDiscovery,
+} from "./DevSquadAdoWorkflowWatcherDiscoveryValidation.js";
+import type {
+  DevSquadAdoDiscoveryValidationResult,
+  DevSquadAdoWorkflowWatchPassRequest,
+  RunDevSquadAdoDiscoveryWatchPassOptions,
+} from "./DevSquadAdoWorkflowWatcher.js";
 import { randomBytes } from "node:crypto";
 import {
   canonicalJson,
@@ -254,6 +263,7 @@ export const canonicalizeDevSquadAdoWatchCandidates = (
  */
 const validateOptions = (
   options: RunDevSquadAdoWorkflowWatchPassOptions,
+  allowEmptyCandidates = false,
 ): DevSquadAdoWatchValidationResult => {
   if (!isObject(options)) return invalid("options", "must be an object");
 
@@ -311,9 +321,14 @@ const validateOptions = (
   const ownerId = boundedText(options.ownerId, "ownerId", 256);
   if (!ownerId.ok) return ownerId;
 
-  const candidates = canonicalizeDevSquadAdoWatchCandidates(
-    options.candidates as readonly DevSquadAdoWorkItemId[],
-  );
+  const candidates =
+    allowEmptyCandidates &&
+    Array.isArray(options.candidates) &&
+    options.candidates.length === 0
+      ? { ok: true as const, value: [] as readonly string[] }
+      : canonicalizeDevSquadAdoWatchCandidates(
+          options.candidates as readonly DevSquadAdoWorkItemId[],
+        );
   if (!candidates.ok) return candidates;
 
   if (!isObject(options.intakeRules))
@@ -461,6 +476,7 @@ const validateOptions = (
 /** Snapshot only required configuration fields before validation and use. */
 export const prepareDevSquadAdoWorkflowWatchPassOptions = (
   input: RunDevSquadAdoWorkflowWatchPassOptions,
+  allowEmptyCandidates = false,
 ):
   | {
       readonly ok: true;
@@ -549,17 +565,36 @@ export const prepareDevSquadAdoWorkflowWatchPassOptions = (
       return invalid(error.field, error.message);
     throw error;
   }
-  const result = validateOptions(options);
+  const result = validateOptions(options, allowEmptyCandidates);
   return result.ok ? { ...result, options } : result;
 };
 
 /** Validate required configuration without invoking injected dependencies. */
-export const validateDevSquadAdoWorkflowWatchPassOptions = (
+export function validateDevSquadAdoWorkflowWatchPassOptions(
   options: RunDevSquadAdoWorkflowWatchPassOptions,
-): DevSquadAdoWatchValidationResult => {
-  const result = prepareDevSquadAdoWorkflowWatchPassOptions(options);
+): DevSquadAdoWatchValidationResult;
+export function validateDevSquadAdoWorkflowWatchPassOptions(
+  options: RunDevSquadAdoDiscoveryWatchPassOptions,
+): DevSquadAdoDiscoveryValidationResult;
+export function validateDevSquadAdoWorkflowWatchPassOptions(
+  options: DevSquadAdoWorkflowWatchPassRequest,
+): DevSquadAdoWatchValidationResult | DevSquadAdoDiscoveryValidationResult;
+export function validateDevSquadAdoWorkflowWatchPassOptions(
+  options: DevSquadAdoWorkflowWatchPassRequest,
+): DevSquadAdoWatchValidationResult | DevSquadAdoDiscoveryValidationResult {
+  const mode = inspectDevSquadAdoWatchMode(options);
+  if (!mode.ok) return mode;
+  if (mode.value === "discovery") {
+    const result = prepareDevSquadAdoDiscovery(
+      options as RunDevSquadAdoDiscoveryWatchPassOptions,
+    );
+    return result.ok ? { ok: true, value: result.value } : result;
+  }
+  const result = prepareDevSquadAdoWorkflowWatchPassOptions(
+    options as RunDevSquadAdoWorkflowWatchPassOptions,
+  );
   return result.ok ? { ok: true, value: result.value } : result;
-};
+}
 
 /**
  * Derive the ledger operation identifier for one watcher step.

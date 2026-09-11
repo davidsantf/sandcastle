@@ -4,13 +4,15 @@
 
 Proposed
 
+> **Approved discovery amendment (2026-09-10):** D1-B, D2/D2-A and D3-A are approved requirements for existing slice 14 / #21. This ADR now describes their target contract. The extension is unimplemented and not independently reviewed. The historical W038 technical PASS below covers only supplied-candidate behavior and checkpoint recovery; it is not discovery verification, ADR acceptance, merge readiness or permission to begin slice 15. ADR-0025 and its storage contract remain unchanged.
+
 Recovery contract amended through DevSquad on 2026-09-10 for #21. **W038 is completed TECHNICAL only:** final fresh independent `devsquad.review` turn 4 PASSED with no blockers (0 Critical, 0 Major, 1 nonblocking Minor TB001). W029-W037 are complete; all five guardians completed and the separate security specialist found no vulnerabilities. RC14-008 is independently closed and all earlier findings are closed/preserved in the feature review log. TB001's older-test internal guard/object-identity coupling is acknowledged, with no required fix. The first failed review (2 Critical, 3 Major, 2 documentation findings), second/third failures and superseded PASS verdicts remain historical evidence. Fresh review execution is distinct from inherited ESM/DTS build evidence and the unchanged Windows postbuild failure; there is no fresh packaging-success claim. Technical conformance does not grant governance acceptance or merge readiness. ADR-0025 and ADR-0026 remain Proposed pending an authorized owner's separate acceptance; ADR-0025 is unchanged and no board item is linked. Parent publication is separate, #20 must merge before #21, and slice 15 remains blocked until the creator's explicit decision.
 
 ## Priorities
 
 1. Preserve DevSquad ownership of lifecycle meaning, phase legality, scheduling, and external tracker authority.
-2. Deliver each externally observed event to DevSquad intake at most once, across restarts.
-3. Prevent concurrent or stale coordinators from acting on the same work item.
+2. Report comment activity and explicitly authorized first admission through distinct at-most-once intake signals, accepting possible loss after ambiguous acknowledgement or restart.
+3. Prevent duplicate ledger-mediated intake and unauthorized or stale mutation of existing records; ledger coordination grants no downstream execution exclusivity.
 4. Bound scheduling and retained observations, with honest cooperative cancellation and explicit dependency-liveness assumptions.
 5. Keep Sandcastle core offline, tracker-neutral, and free of transport or credential coupling.
 6. Keep every decision deterministic and reproducible from injected inputs alone.
@@ -31,7 +33,118 @@ Second, **idempotent replay across restarts requires operation identifiers to be
 
 Third, **watching is where "read-only" is easiest to lose**. A seam that can update a work item, post a comment, or complete a pull request would silently move tracker authority into Sandcastle.
 
-## Decision
+## Approved discovery decision
+
+The following amendment extends the supplied-candidate baseline without changing its behavior. Concrete TypeScript contracts, limits, result unions and task/test traceability are defined in the feature implementation plan.
+
+### Host boundary and modes
+
+One bounded, explicitly host-invoked operation supports supplied-candidate and discovery modes.
+
+Supplied mode observes only the supplied candidates. Missing records remain `skipped / record-not-found`; it never initializes and does not require discovery dependencies.
+
+Discovery uses a host-injected, read-only page seam with stable scope/partition identity, invocation-stability evidence, policy version and finite bounds. The host supplies normalized facts and resolved teams. The watcher evaluates matching itself.
+
+The host alone authorizes admission for each canonical item and supplies exact initial phase/status. Matching, external state, team membership and local claims are not admission or execution authority.
+
+Neither mode constructs live queries/clients, manages credentials, writes trackers, schedules agents, defines lifecycle semantics or dispatches intake.
+
+### Exact matching — D2
+
+The library implements the complete configured policy:
+
+- AND configured dimensions.
+- OR allowed-state and allowed-team set members.
+- Require all, any or none of configured tags, combining configured tag predicates with AND.
+- Require nonempty configured state/team/tag sets.
+- Compare normalized opaque values exactly and case-sensitively, without trimming, folding, inferred synonyms or substring matching.
+- Match area/iteration as exact segment paths or explicit segment-aware subtrees, including the root but excluding textual-prefix siblings.
+- Use host-resolved team membership, never `assignedTo` inference.
+- Treat omitted dimensions as unrestricted.
+- Distinguish known empty collections from missing required facts.
+- Reject unsupported operators before effects.
+
+Use bounded explicit filter discriminators and fixed-field projection. No precomputed eligibility boolean substitutes for implementation of these semantics.
+
+Validate required sensitive facts and evaluate matching before privacy projection and item effects. Malformed or oversized required fact/page structures invalidate the whole page. Valid missing facts pause only their candidate.
+
+Return only the exact public policy-version label and fixed predicate/reason categories. Never expose or persist raw policy operands, facts, tokens, capabilities, transport messages or guessable hashes of sensitive values.
+
+### Eligibility pause — D2-A
+
+Matching exclusion or missing required facts pauses observation: no comment/PR calls and no record/cursor mutation. Persist no pause marker.
+
+Reentry resumes from existing durable anchors, not a new baseline or inferred latest event. Discovery observation explicitly distinguishes retention loss from ordinary empty no-new-event windows. Known loss produces `observation-anchor-missing`, including otherwise empty responses; advance nothing and require deliberate host reconciliation.
+
+Supplied empty-window behavior remains unchanged.
+
+Matching pause is distinct from phase/status intake suppression. Otherwise eligible existing records still checkpoint new cursors when intake rules suppress delivery.
+
+### Authorized first admission — D1-B
+
+Discovery may call existing claim-free `initializeRecord` only after full-page validation, matching, a method-valid missing-record read, explicit authorization for the canonical item, exact initial state and a fresh cancellation gate.
+
+Submit only identity/idempotency fields and authorized phase/status. Seed no cursors, PR/execution references, histories or claims. No-comment items are admissible.
+
+Bind initialization identity to the original authorized submission. Preserve its exact request and identifier across retries; never mint another identifier to evade a conflict. Do not include continuation tokens, traversal identity or claim capabilities.
+
+Validate initialization with a dedicated method-specific guard against an independently retained request. Validate the complete public record, canonical identity, initialized discriminator, accepted revision one, timestamp, replay metadata and exact initial workflow state. A valid later record is not the original initialization snapshot and grants no acquisition authority.
+
+Existing ledger publication/receipt behavior supplies the race guarantee: only the publishing winner is fresh; matching requests replay; other initialization loses with already-exists; conflicting identity reuse is terminal.
+
+Return discovery-only intake only after validated **fresh** durable acceptance whose authorized initial phase/status satisfy intake rules. Replay, restart reads, existing records and ambiguous-acknowledgement reconciliation cannot reconstruct delivery.
+
+Initialization ends the item’s processing path for that invocation. Genuine comment observation is deferred to a later invocation without synthetic cursors or delivery checkpoints.
+
+Initialization cleanup is `not-required / no-claim-acquired`, even after uncertain acknowledgement. It proves absence of acquisition—not success or failure of initialization.
+
+Durable initialization without usable acknowledgement, or a crash before consumption, can permanently lose intake. This is intentional at-most-once reporting, not exactly-once execution or lossless delivery.
+
+### Signal and recovery separation
+
+Comment intake retains existing source revision, changed kinds, phase/status and token-free claim metadata. Its existing direct/replay/history checkpoint acknowledgement contract remains unchanged.
+
+Discovery-only intake has a distinct discriminator and carries canonical identity, accepted initialization revision, exact authorized initial state and minimized policy-versioned evidence. It carries no changed-comment kinds, source revision, checkpoint or claim metadata.
+
+At most one signal is returned per item per invocation across both types.
+
+Checkpoint-history recovery must continue using the same acknowledgement validator against the original submitted request, not refreshed retry preconditions. This permission must not be generalized to discovery initialization replay.
+
+`acted` counts either returned signal type. `suppressed` counts only acknowledged suppressed cursor advances. Pauses and initialization without intake are not cursor suppression. Final failures may overlap acknowledged actions; cleanup counts partition outcomes.
+
+### Fresh bounded traversal — D3-A
+
+Each invocation starts at the beginning of its stable host scope/partition. Continuations and request-correlation identities remain invocation-local.
+
+Add no durable page continuation, pause/admission marker, sidecar, outbox, schema field or cursor repurposing. Durable progress remains existing per-item initialization/receipts and comment checkpoints.
+
+Validate the whole page before item effects. Preserve host page traversal and canonical UTF-8 item order within each page. Do not claim global ordering independent of page partitions.
+
+Only explicit terminal evidence establishes the end of traversal. Empty continued pages consume budget and continue.
+
+Page budget `P` permits at most `P` initiated page calls, including empty and failed calls. Candidate retries never reset page/item budgets. Duplicate canonical items, repeated/malformed continuations, binding drift, overflow and invalid pages produce explicit incompletion while preserving earlier validated outcomes and accepted writes.
+
+Require inclusive positive safe-integer limits for page calls, total items at most 1,000, entries per page, filter/fact collections, values and aggregate policy/page bytes including required facts and continuation. Check collection lengths before copying/iteration and UTF-8 bytes incrementally before retention. Never truncate or deduplicate into success.
+
+Traversal completeness is separate from candidate success: a terminal traversal may contain failed/skipped dispositions. A processed prefix is not complete, and repeated prefix scans do not guarantee eventual tail progress.
+
+The implementation plan defines conservative page-per-poll composition and exact numeric ceilings. Hosts must select stable partitions and budgets that fit.
+
+### Cancellation, guards and security
+
+Fresh cancellation gates precede seam calls and non-cleanup mutations. Page calls use dedicated controller/timer lifecycles; retired results cannot trigger later effects.
+
+Await in-flight ledger operations, validate their acknowledgements, and preserve permitted accepted effects/signals after abort. Existing-record mutations retain validated claims, fencing, revision/state checks and exactly-once cleanup attempts. Initialization creates no cleanup authority.
+
+All ledger responses, including initialization, retain bounded method-specific success/error validation and original-request separation. Unknown/malformed variants and thrown/rejected dependencies become `ledger-fault`, not dependency-controlled error text.
+
+The architectural assessment is **APPROVED_WITH_CONTROLS**: bind authorization, validate immutable bounded pages and requests, implement exact matching/anchor behavior, minimize evidence, reject drift/overflow, and preserve cancellation/cleanup truth. These controls require implementation tests and independent review.
+
+Injected adapters remain trusted in-process dependencies, not sandboxed or cryptographically verified sources. Liveness remains conditional on settling ledger/delay dependencies; abort is not a hard runtime guarantee.
+
+## Retained supplied-candidate decision and shared invariants
+
+The following decision records the supplied-candidate contract. Its no-discovery/no-initialization boundary, two-method seam, comment signal shape and supplied completion rules remain applicable to supplied mode. The approved discovery decision above defines the explicit exceptions and additional contracts. Shared existing-record observation, operation identity, fencing, staleness, checkpoint recovery and cleanup protections remain mandatory in discovery.
 
 ### Responsibility boundary
 
@@ -205,9 +318,31 @@ Rejected. Determinism of decisions, ordering, reason codes, and seam call order 
 
 Rejected. It would strand records behind an unrelated future event and would make cursor state depend on lifecycle policy that Sandcastle does not own.
 
-### Watcher-initialized ledger records
+### Supplied-only prohibition versus explicitly authorized discovery admission
 
-Rejected. Initialization encodes lifecycle intent, which ADR-0024 assigns to DevSquad. A missing record is a stable skip.
+The initialization prohibition remains mandatory for supplied mode. Its former application to all watcher modes is superseded by approved D1-B.
+
+Keeping initialization entirely outside the watcher minimizes its API but cannot satisfy authorized no-comment discovery intake. Inferring admission or lifecycle state from matching reduces host input but transfers authority into Sandcastle and remains excluded. Explicit item-specific authorization preserves host ownership at the cost of request/acknowledgement validation and fresh-only reporting.
+
+### Replayable admission delivery, synthetic checkpoints or an outbox
+
+Excluded by D1-B/D3-A. Replay delivery can duplicate first admission; synthetic checkpoints fabricate observation progress; an outbox adds a new delivery/storage protocol. Fresh-only acceptance reuses existing ledger race guarantees but intentionally permits permanent signal loss.
+
+### Upstream-only filtering or inferred matching semantics
+
+Excluded by D2. Upstream eligibility alone does not implement the library’s policy contract. Implicit case folding, textual path prefixes and assignedTo-derived teams change membership meaning. Exact library matching is reproducible but requires bounded transient handling of sensitive facts before projection.
+
+### Observing excluded items or rebaselining on reentry
+
+Excluded by D2-A. Observing excluded items advances anchors through a pause; rebaselining can discard unseen activity. Preserved anchors avoid both but introduce retention dependence and explicit host reconciliation after anchor loss.
+
+### Durable continuation versus fresh bounded traversal
+
+Durable continuation adds persistence/lifecycle beyond the existing ledger contract and is excluded by D3-A. Fresh traversal avoids schema and sidecar changes at the cost of repeated reads and no tail-progress guarantee for oversized partitions. Incompletion remains explicit.
+
+### Global discovery sorting versus page-local canonical ordering
+
+Global sorting requires collecting the traversal before processing. Page-local canonical ordering preserves bounded processing and earlier accepted effects, but determinism is relative to identical page partitions.
 
 ## Consequences
 
@@ -221,6 +356,14 @@ Rejected. Initialization encodes lifecycle intent, which ADR-0024 assigns to Dev
 - Claims are short-lived, so a long host-side reaction to a signal runs without watcher-held exclusivity; the host must reacquire if it intends to mutate.
 - A candidate can end a pass having done nothing but acquire and release a claim (`stale-observation`) when another owner won the race; this consumes two revisions and is expected under contention.
 - The watcher adds a second injected ADO-facing seam shape; the two must be kept intentionally separate rather than merged later without a new decision.
+
+- Supplied-candidate behavior remains unchanged.
+- Discovery adds bounded policy, admission, stability and retention contracts without live tracker access or ADR-0025 storage changes.
+- Initialization is claim-free and has fresh-only, potentially lossy intake. Its cleanup reports absence of acquisition, not durability.
+- Matching facts remain transient; only minimized policy-versioned evidence leaves that boundary.
+- Paused records preserve anchors and fail closed on known retention loss.
+- Every discovery invocation rescans its bounded partition from the beginning; only explicit terminal traversal with item dispositions establishes completeness.
+- Historical W038 evidence remains scoped to the supplied-candidate baseline. Discovery requires new implementation and independent review evidence.
 
 ## References
 

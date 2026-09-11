@@ -4,6 +4,8 @@ import type {
   DevSquadAdoWorkflowLedger,
   DevSquadAdoWorkItemId,
 } from "./DevSquadAdoWorkflowLedger.js";
+import { runDevSquadAdoDiscoveryWatchPass } from "./DevSquadAdoWorkflowWatcherDiscovery.js";
+import { inspectDevSquadAdoWatchMode } from "./DevSquadAdoWorkflowWatcherDiscoveryValidation.js";
 import { runDevSquadAdoWorkflowWatchPassImplementation } from "./DevSquadAdoWorkflowWatcherPass.js";
 
 export {
@@ -179,6 +181,10 @@ export interface DevSquadAdoWatchBackoffConfig {
 
 /** Complete description of one bounded watch pass. */
 export interface RunDevSquadAdoWorkflowWatchPassOptions {
+  /** Optional explicit legacy arm; discovery configuration is forbidden. */
+  readonly mode?: "supplied";
+  /** Supplied mode never discovers or initializes records. */
+  readonly discovery?: never;
   /** Opened repository-local workflow ledger. */
   readonly ledger: DevSquadAdoWorkflowLedger;
   /** Injected read-oriented observation seam. */
@@ -517,7 +523,286 @@ export type DevSquadAdoWatcherOperationIdentity =
  * method that throws or rejects never escapes: it resolves as a typed,
  * redacted `failed` / `ledger-unavailable` candidate outcome.
  */
-export const runDevSquadAdoWorkflowWatchPass: (
+export function runDevSquadAdoWorkflowWatchPass(
   options: RunDevSquadAdoWorkflowWatchPassOptions,
-) => Promise<DevSquadAdoWatchPassOutcome> =
-  runDevSquadAdoWorkflowWatchPassImplementation;
+): Promise<DevSquadAdoWatchPassOutcome>;
+export function runDevSquadAdoWorkflowWatchPass(
+  options: RunDevSquadAdoDiscoveryWatchPassOptions,
+): Promise<DevSquadAdoDiscoveryPassOutcome>;
+export function runDevSquadAdoWorkflowWatchPass(
+  options: DevSquadAdoWorkflowWatchPassRequest,
+): Promise<DevSquadAdoWatchPassOutcome | DevSquadAdoDiscoveryPassOutcome>;
+export async function runDevSquadAdoWorkflowWatchPass(
+  options: DevSquadAdoWorkflowWatchPassRequest,
+): Promise<DevSquadAdoWatchPassOutcome | DevSquadAdoDiscoveryPassOutcome> {
+  const mode = inspectDevSquadAdoWatchMode(options);
+  if (!mode.ok) return mode;
+  return mode.value === "discovery"
+    ? runDevSquadAdoDiscoveryWatchPass(
+        options as RunDevSquadAdoDiscoveryWatchPassOptions,
+      )
+    : runDevSquadAdoWorkflowWatchPassImplementation(
+        options as RunDevSquadAdoWorkflowWatchPassOptions,
+      );
+}
+
+/** W039 / FR-061: supported bounded, exact host-normalized matching predicates. */
+export type DevSquadAdoDiscoveryFilter =
+  | {
+      readonly dimension: "state" | "team";
+      readonly operator: "one-of";
+      readonly values: readonly string[];
+    }
+  | {
+      readonly dimension: "tags";
+      readonly operator: "all" | "any" | "none";
+      readonly values: readonly string[];
+    }
+  | {
+      readonly dimension: "area" | "iteration";
+      readonly operator: "exact" | "subtree";
+      readonly segments: readonly string[];
+    };
+
+/** Host-versioned policy. Empty filters are unrestricted; at most seven slots. */
+export interface DevSquadAdoDiscoveryMatchingPolicy {
+  /** Nonsecret correlation label, at most 256 UTF-8 bytes. */
+  readonly version: string;
+  /** AND predicates; state/team members are OR sets. */
+  readonly filters: readonly DevSquadAdoDiscoveryFilter[];
+}
+
+/** Complete positive-safe-integer processing limits; all bounds are inclusive. */
+export interface DevSquadAdoDiscoveryLimits {
+  /** Initiated page calls: default 32, ceiling 1,000. */
+  readonly maxPageCalls: number;
+  /** Distinct discovered items: default/ceiling 1,000. */
+  readonly maxItems: number;
+  /** Entries in one page: default 128, ceiling 1,000. */
+  readonly maxEntriesPerPage: number;
+  /** Values per filter/fact collection: default 128, ceiling 1,024. */
+  readonly maxCollectionValues: number;
+  /** Path segments: default 32, ceiling 128. */
+  readonly maxPathSegments: number;
+  /** UTF-8 bytes per opaque value: default 1,024, ceiling 4,096. */
+  readonly maxOpaqueValueBytes: number;
+  /** UTF-8 continuation bytes: default 4,096, ceiling 16,384. */
+  readonly maxContinuationBytes: number;
+  /** Canonical recognized policy JSON bytes: default 65,536, ceiling 262,144. */
+  readonly maxPolicyBytes: number;
+  /** Canonical recognized page JSON bytes: default 1,048,576, ceiling 4,194,304. */
+  readonly maxPageBytes: number;
+  /** Canonical authorization array JSON bytes: default 262,144, ceiling 1,048,576. */
+  readonly maxAuthorizationBytes: number;
+}
+
+/** Approved processing defaults; callers must still supply a complete declaration. */
+export const DEFAULT_DEVSQUAD_ADO_DISCOVERY_LIMITS: DevSquadAdoDiscoveryLimits =
+  Object.freeze({
+    maxPageCalls: 32,
+    maxItems: 1000,
+    maxEntriesPerPage: 128,
+    maxCollectionValues: 128,
+    maxPathSegments: 32,
+    maxOpaqueValueBytes: 1024,
+    maxContinuationBytes: 4096,
+    maxPolicyBytes: 65536,
+    maxPageBytes: 1048576,
+    maxAuthorizationBytes: 262144,
+  });
+
+/** Explicit item-specific host authority; neither matching nor a claim supplies it. */
+export type DevSquadAdoDiscoveryAuthorization =
+  | {
+      readonly workItemId: DevSquadAdoWorkItemId;
+      readonly kind: "authorized";
+      readonly submissionId: string;
+      readonly initial: { readonly phase: string; readonly status: string };
+    }
+  | {
+      readonly workItemId: DevSquadAdoWorkItemId;
+      readonly kind: "unavailable";
+      readonly reason: "not-authorized" | "initial-state-missing";
+    };
+
+/** Invocation-stable host scope; the library cannot verify host honesty. */
+export interface DevSquadAdoWatchDiscoveryConfiguration {
+  /** Nonsecret correlation labels, each at most 256 UTF-8 bytes. */
+  readonly scope: {
+    readonly scopeId: string;
+    readonly partitionId: string;
+    readonly stabilityId: string;
+    readonly stableForInvocation: true;
+  };
+  /** Matching runs before projection and before item effects. */
+  readonly policy: DevSquadAdoDiscoveryMatchingPolicy;
+  /** Required complete processing bounds. */
+  readonly limits: DevSquadAdoDiscoveryLimits;
+  /** At most 1,000 canonical-unique declarations; omission is unauthorized. */
+  readonly authorizations?: readonly DevSquadAdoDiscoveryAuthorization[];
+}
+
+/** Correlation binding echoed exactly by every page. */
+export interface DevSquadAdoDiscoveryBinding {
+  readonly scopeId: string;
+  readonly partitionId: string;
+  readonly stabilityId: string;
+  readonly policyVersion: string;
+}
+
+/** Known empty collections differ from missing facts; values are compared verbatim. */
+export type DevSquadAdoDiscoveryFact<T> =
+  | { readonly kind: "known"; readonly value: T }
+  | { readonly kind: "missing" };
+
+/** Only configured fields are inspected; no assigned-to/team inference is performed. */
+export interface DevSquadAdoDiscoveryFacts {
+  readonly state?: DevSquadAdoDiscoveryFact<string>;
+  readonly teams?: DevSquadAdoDiscoveryFact<readonly string[]>;
+  readonly tags?: DevSquadAdoDiscoveryFact<readonly string[]>;
+  readonly area?: DevSquadAdoDiscoveryFact<readonly string[]>;
+  readonly iteration?: DevSquadAdoDiscoveryFact<readonly string[]>;
+}
+
+/** Private traversal correlation; continuation starts null on every invocation. */
+export interface DevSquadAdoDiscoveryPageRequest {
+  readonly binding: DevSquadAdoDiscoveryBinding;
+  readonly traversalId: string;
+  readonly pageOrdinal: number;
+  readonly continuation: string | null;
+  readonly signal: AbortSignal;
+}
+
+/** Whole-page atomic input; empty pages are not terminal without explicit evidence. */
+export interface DevSquadAdoDiscoveryPage {
+  readonly binding: DevSquadAdoDiscoveryBinding;
+  readonly traversalId: string;
+  readonly pageOrdinal: number;
+  readonly items: readonly {
+    readonly workItemId: DevSquadAdoWorkItemId;
+    readonly facts: DevSquadAdoDiscoveryFacts;
+  }[];
+  readonly next:
+    | { readonly kind: "terminal" }
+    | { readonly kind: "continue"; readonly continuation: string };
+}
+
+/** Discovery distinguishes known retention loss from an ordinary empty window. */
+export type DevSquadAdoDiscoveryWorkItemObservation =
+  | ({ readonly kind: "window" } & DevSquadAdoWatcherWorkItemObservation)
+  | { readonly kind: "anchor-missing" };
+
+/** Explicit PR retention-loss evidence; either kind's loss forbids checkpointing. */
+export type DevSquadAdoDiscoveryPullRequestObservation =
+  | ({ readonly kind: "window" } & DevSquadAdoWatcherPullRequestObservation)
+  | { readonly kind: "anchor-missing" };
+
+/** Read-only injected host seam; no query, live client or execution lifecycle. */
+export interface DevSquadAdoWatcherDiscoverySeam {
+  readonly discoverWorkItemsPage: (
+    input: DevSquadAdoDiscoveryPageRequest,
+  ) => Promise<DevSquadAdoDiscoveryPage>;
+  readonly observeWorkItemComments: (
+    input: DevSquadAdoWatcherWorkItemObservationInput,
+  ) => Promise<DevSquadAdoDiscoveryWorkItemObservation>;
+  readonly observePullRequestActivity?: (
+    input: DevSquadAdoWatcherPullRequestObservationInput,
+  ) => Promise<DevSquadAdoDiscoveryPullRequestObservation>;
+}
+
+/** Separate request arm, preserving every legacy supplied signal/result type. */
+export interface RunDevSquadAdoDiscoveryWatchPassOptions extends Omit<
+  RunDevSquadAdoWorkflowWatchPassOptions,
+  "mode" | "candidates" | "seam" | "discovery"
+> {
+  readonly mode: "discovery";
+  readonly candidates?: never;
+  readonly seam: DevSquadAdoWatcherDiscoverySeam;
+  readonly discovery: DevSquadAdoWatchDiscoveryConfiguration;
+}
+
+/** Explicit request union for callers selecting a mode at runtime. */
+export type DevSquadAdoWorkflowWatchPassRequest =
+  | RunDevSquadAdoWorkflowWatchPassOptions
+  | RunDevSquadAdoDiscoveryWatchPassOptions;
+
+/** Discovery-only preflight errors do not widen historical seam-name unions. */
+export type DevSquadAdoDiscoveryError =
+  | DevSquadAdoWatchError
+  | {
+      readonly kind: "seam-contract";
+      readonly method: "discoverWorkItemsPage";
+      readonly reason: "missing" | "not-a-function";
+    };
+
+/** Normalized discovery pass, without the supplied candidate field. */
+export interface DevSquadAdoDiscoveryValidatedPass extends Omit<
+  DevSquadAdoWatchValidatedPass,
+  "candidates"
+> {
+  readonly mode: "discovery";
+  readonly binding: DevSquadAdoDiscoveryBinding;
+  readonly discovery: DevSquadAdoWatchDiscoveryConfiguration;
+}
+
+/** Discovery validation result; no injected dependency is invoked. */
+export type DevSquadAdoDiscoveryValidationResult =
+  | { readonly ok: true; readonly value: DevSquadAdoDiscoveryValidatedPass }
+  | { readonly ok: false; readonly error: DevSquadAdoDiscoveryError };
+
+/** Honest traversal accounting, independent of candidate success. */
+export type DevSquadAdoDiscoveryTraversal =
+  | {
+      readonly status: "complete";
+      readonly reason: "terminal-page";
+      readonly terminalPageSeen: true;
+    }
+  | {
+      readonly status: "incomplete";
+      readonly terminalPageSeen: boolean;
+      readonly reason:
+        | "page-budget-exhausted"
+        | "item-budget-exhausted"
+        | "poll-budget-exhausted"
+        | "poll-start-budget-exhausted"
+        | "page-failed"
+        | "page-timeout"
+        | "invalid-page"
+        | "duplicate-item"
+        | "repeated-continuation"
+        | "unstable-scope"
+        | "cancelled";
+    };
+
+/** Discovery counts extend, rather than redefine, supplied observation accounting. */
+export interface DevSquadAdoDiscoveryPassCounts extends DevSquadAdoWatchPassCounts {
+  readonly pageCalls: number;
+  readonly pagesValidated: number;
+  readonly discovered: number;
+  readonly evaluated: number;
+  readonly admitted: number;
+  readonly paused: number;
+  readonly processed: number;
+  readonly initializationReplayed: number;
+}
+
+/** Discovery result for the traversal; item contracts are extended by their owning slices. */
+export interface DevSquadAdoDiscoveryPassResult extends Omit<
+  DevSquadAdoWatchPassResult,
+  "stopReason" | "counts"
+> {
+  readonly mode: "discovery";
+  readonly stopReason:
+    | "completed"
+    | "discovery-incomplete"
+    | "cancelled"
+    | "poll-budget-exhausted"
+    | "poll-start-budget-exhausted";
+  readonly counts: DevSquadAdoDiscoveryPassCounts;
+  readonly traversal: DevSquadAdoDiscoveryTraversal;
+}
+
+/** Separate discovery outcome envelope; never widens a supplied caller's signals. */
+export type DevSquadAdoDiscoveryPassOutcome =
+  | { readonly ok: true; readonly value: DevSquadAdoDiscoveryPassResult }
+  | { readonly ok: false; readonly error: DevSquadAdoDiscoveryError };

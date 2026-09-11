@@ -300,3 +300,29 @@ export type {
   DevSquadAdoWatcherWorkItemObservationInput,
   RunDevSquadAdoWorkflowWatchPassOptions,
 } from "./DevSquadAdoWorkflowWatcher.js";
+
+export { DEFAULT_DEVSQUAD_ADO_DISCOVERY_LIMITS } from "./DevSquadAdoWorkflowWatcher.js";
+export type {
+  DevSquadAdoDiscoveryFilter,
+  DevSquadAdoDiscoveryMatchingPolicy,
+  DevSquadAdoDiscoveryLimits,
+  DevSquadAdoDiscoveryAuthorization,
+  DevSquadAdoWatchDiscoveryConfiguration,
+  DevSquadAdoDiscoveryBinding,
+  DevSquadAdoDiscoveryFact,
+  DevSquadAdoDiscoveryFacts,
+  DevSquadAdoDiscoveryPageRequest,
+  DevSquadAdoDiscoveryPage,
+  DevSquadAdoDiscoveryWorkItemObservation,
+  DevSquadAdoDiscoveryPullRequestObservation,
+  DevSquadAdoWatcherDiscoverySeam,
+  RunDevSquadAdoDiscoveryWatchPassOptions,
+  DevSquadAdoWorkflowWatchPassRequest,
+  DevSquadAdoDiscoveryError,
+  DevSquadAdoDiscoveryValidatedPass,
+  DevSquadAdoDiscoveryValidationResult,
+  DevSquadAdoDiscoveryTraversal,
+  DevSquadAdoDiscoveryPassCounts,
+  DevSquadAdoDiscoveryPassResult,
+  DevSquadAdoDiscoveryPassOutcome,
+} from "./DevSquadAdoWorkflowWatcher.js";

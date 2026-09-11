@@ -4,16 +4,20 @@
 
 Decomposition of [spec.md](spec.md) and [plan.md](plan.md) under [ADR-0026](../../adr/0026-devsquad-ado-workflow-watcher.md), preserving ADR-0021, ADR-0022, ADR-0024, and ADR-0025.
 
-**Current status (2026-09-10): W038 COMPLETED TECHNICAL ONLY; final independent turn 4 PASSED, no blockers (0 Critical, 0 Major, 1 nonblocking Minor TB001). Implementation publication COMPLETE at `d5aecf0ba1e276642ddfc683fc756320598642f6`.** W029-W037 prerequisites are complete. All five guardians completed, and the separate security specialist found no vulnerabilities. RC14-008 is independently closed; all earlier findings are closed/preserved in the final closure matrix in `review-log.md`. TB001's older-test internal guard/object-identity coupling is acknowledged, not a required fix. Earlier failed/pending states and superseded PASS verdicts remain historical. See the [authoritative final publication/evidence correction](review-log.md#final-2026-09-10-publication-and-evidence-correction) and [seven original worker reports](final-review-evidence.json) for exact event IDs, role verdicts, limits and code identity. This documentation-only correction does not rerun independent review. Technical conformance does not grant governance acceptance or merge readiness: ADR-0025/0026 remain Proposed; #20 must merge before #21, and slice 15 remains blocked until the creator explicitly decides.
+**Historical supplied-candidate recovery status (2026-09-10): W038 COMPLETED TECHNICAL ONLY; final independent turn 4 PASSED, no blockers (0 Critical, 0 Major, 1 nonblocking Minor TB001). Implementation publication COMPLETE at `d5aecf0ba1e276642ddfc683fc756320598642f6`.** W029-W037 prerequisites are complete. All five guardians completed, and the separate security specialist found no vulnerabilities. RC14-008 is independently closed; all earlier findings are closed/preserved in the final closure matrix in `review-log.md`. TB001's older-test internal guard/object-identity coupling is acknowledged, not a required fix. Earlier failed/pending states and superseded PASS verdicts remain historical. See the [authoritative final publication/evidence correction](review-log.md#final-2026-09-10-publication-and-evidence-correction) and [seven original worker reports](final-review-evidence.json) for exact event IDs, role verdicts, limits and code identity. This documentation-only correction does not rerun independent review. Technical conformance does not grant governance acceptance or merge readiness: ADR-0025/0026 remain Proposed; #20 must merge before #21, and slice 15 remains blocked until the creator explicitly decides.
 
-Local and published [PR #21](https://github.com/davidsantf/sandcastle/pull/21) implementation head are `d5aecf0`, normally fast-forwarded from `fb6a238`, without merge. Review ran on the uncommitted implementation over `fb6a238`, later committed as `d5aecf0`; no original pre-commit cryptographic snapshot is claimed. This documentation follow-up preserves its `src` tree `f8cc4221f4c2ebd787ad9740acc6bfb1bbd6bf06` and unchanged source/configuration/scripts comparison. Parent will record the resulting documentation-only commit SHA in the PR/handoff, not republish a pending implementation.
+At the historical recovery publication checkpoint, local and published [PR #21](https://github.com/davidsantf/sandcastle/pull/21) implementation head are `d5aecf0`, normally fast-forwarded from `fb6a238`, without merge. Review ran on the uncommitted implementation over `fb6a238`, later committed as `d5aecf0`; no original pre-commit cryptographic snapshot is claimed. This documentation follow-up preserves its `src` tree `f8cc4221f4c2ebd787ad9740acc6bfb1bbd6bf06` and unchanged source/configuration/scripts comparison. Parent will record the resulting documentation-only commit SHA in the PR/handoff, not republish a pending implementation.
+
+**Current discovery extension status (2026-09-10): APPROVED PLAN; W039–W046 PENDING.** D1-B, D2/D2-A and D3-A extend existing slice 14 / #21. The authoritative implementation target is the plan's **Approved discovery extension**, aligned with amended Proposed ADR-0026. W001–W038 remain completed historical supplied-candidate work; their technical PASS does not establish discovery conformance. The discovery extension is unimplemented and not independently reviewed.
+
+This decomposition was prepared against worktree HEAD `aed6637`, preserving the intentional uncommitted amendments to `spec.md`, `plan.md`, and `docs/adr/0026-devsquad-ado-workflow-watcher.md`. Implementation remains within existing PR #21, head `users/davidsant/symmetrical-train`, based on PR #20 `users/davidsant/ubiquitous-train`. The designated execution worktree is `C:\repos\copilot-worktrees\sandcastle\users-davidsant-expert-garbanzo`; do not switch to the main checkout. No new board items, PRs, publication, or slice 15 work is authorized by this task draft.
 
 ## Scope and Conventions
 
-- **Deferred original capability, not full delivery.** The broader original discovery/filtering requirement is deferred: this API consumes host-supplied candidates and exact host-owned phase/status rules. It does not discover or filter tracker candidates or orchestrate lifecycle; no factory, live client or outbox is supplied.
-- **Ordering is the plan's vertical sequence.** Phases 2–9 map one-to-one onto the plan's eight implementation slices. Do not reorder; each phase depends on the durable behavior of the previous one.
+- **Historical baseline versus approved extension.** W001–W038 describe supplied-candidate observation and checkpoint recovery. Their no-discovery/no-initialization statements remain applicable to supplied mode and historical scope. W039–W046 implement approved host-injected discovery, complete filtering, authorized first-seen initialization, and anchored pause/reentry. Neither mode owns lifecycle orchestration, live clients, or an outbox.
+- **Ordering is the plan's vertical sequence.** Preserve the historical phase ordering. For the extension, execute W039 → W040 → W041 → W042 → W043 → W044 → W045 → W046. Each task depends on its predecessor's accepted increment; no extension task is marked `[P]`.
 - **Tests travel with implementation.** Every implementation/remediation task is TDD RED→GREEN; W029 is approved artifact execution and W038 is the final independent verification gate, not substitutes for behavioral tests.
-- **Tracer bullet.** W008 (Phase 5) is the first end-to-end vertical: one candidate travels read → observe → claim → checkpoint → intake signal → release. Phases 2–4 exist only because that vertical cannot compile or assert without contracts, identity derivation, and observation projection.
+- **Tracer bullet.** W008 (Phase 5) is the first end-to-end vertical: one candidate travels read → observe → claim → checkpoint → intake signal → release. Phases 2–4 exist only because that vertical cannot compile or assert without contracts, identity derivation, and observation projection. For the approved discovery extension, W039 is the first end-to-end tracer bullet: public request → preflight → injected empty terminal page → validated complete result, including cancellation/timeout lifecycle.
 - **`[P]`** marks tasks that may run in parallel with their siblings inside the same phase.
 - **Board scope.** This is a local stacked roadmap slice. No GitHub or Azure DevOps work items are created for these tasks.
 - **Missing ADRs.** None. Every decision listed in the spec's "Technical Decisions Identified" table is resolved by ADR-0026 (seam shape, operation-identifier derivation, backoff/budget/cancellation contract, intake delivery model, lease defaults) or is explicitly owned outside Sandcastle (phase legality, ADR-0024; persistence protocol, ADR-0025).
@@ -397,3 +401,243 @@ Execute in order. No production or test edits are part of W029. DevSquad retains
 | DOC14-001 final cancellation priority pseudocode  | W037                         | FR-051/053                | RC14-004 preserved tests     |
 | Reason union and public contract                  | W037                         | FR-008/060                | TEST-025                     |
 | Verified closure / historical correction          | W038                         | All recovery requirements | CC-001–030; TEST-001–032     |
+
+---
+
+## Approved Discovery Extension — Pending Implementation
+
+The approved plan's discovery extension and amended Proposed ADR-0026 govern this section. Historical supplied-candidate algorithms remain authoritative for shared observation, fencing, checkpoint acknowledgement/recovery and cleanup.
+
+### Parent Scenarios, Complexity and Dependency Order
+
+These are local task-to-scenario links, not new stories or board items. Scenario numbers refer to `spec.md`.
+
+| Task | Primary parent scenario                            | Supporting coverage                                                 | Complexity / risk | Depends on                                   |
+| ---- | -------------------------------------------------- | ------------------------------------------------------------------- | ----------------- | -------------------------------------------- |
+| W039 | Scenario 9 — bounded discovery                     | Supplied compatibility; Scenario 5 cancellation                     | M / Medium        | Historical W038; approved plan/ADR alignment |
+| W040 | Scenario 8 — eligibility exit/reentry              | Complete matching; Scenarios 1, 3, 4 and 6 existing-record controls | L / High          | W039                                         |
+| W041 | Scenario 7 — authorized discovery without comments | Durable fresh-only admission and races                              | L / High          | W040                                         |
+| W042 | Scenario 8 — eligibility exit/reentry              | Scenario 6 suppression contrast                                     | M / High          | W041                                         |
+| W043 | Scenario 9 — bounded discovery and restart         | Stable traversal, retained state and resource limits                | L / High          | W042                                         |
+| W044 | Scenario 9 — restart and retained outcomes         | Scenarios 5, 7 and 8; both intake types                             | L / High          | W043                                         |
+| W045 | Scenario 9 — host integration contract             | Public documentation for Scenarios 7–9 and supplied compatibility   | M / Medium        | W044                                         |
+| W046 | Scenario 9 — independent conformance gate          | Independent verification of Scenarios 1–9                           | L / High          | W045                                         |
+
+Complexity reflects bounded public-contract and adversarial-case matrices, not a time guarantee. W040, W041, W043 and W044 each own one executable behavioral increment; their acceptance is not deferred to W046. W046 is an independent review gate, not a substitute for implementation tests.
+
+**Exact execution order:** W039 → W040 → W041 → W042 → W043 → W044 → W045 → W046.
+
+### Extension Acceptance Rules
+
+Every extension task inherits the global acceptance constraints and the following:
+
+- Use the plan's named module boundaries where needed; do not restructure unrelated code.
+- Begin with failing public-behavior or public-type assertions for the task's acceptance, implement the behavior, and finish with a green focused suite and typecheck. Extend the existing injected harness within the task that needs it; create no separate test-harness or tail-test task.
+- Reuse isolated real-ledger fixtures for durability, reopen and publication races. Use recording injected fakes for malformed dependencies, scheduling and cancellation. Keep all tests offline and without wall-clock waits.
+- Preserve the 401-pass historical watcher/ledger baseline, two existing Windows skips, focused 19 history regressions, and original-submission contradiction coverage. These are inherited evidence, not fresh discovery results.
+- Assert observable behavior through the public pass/validation surface. Do not extend TB001's private-guard/object-identity coupling.
+- Supplied callers retain their existing overload, exported interfaces and runtime result shapes. A structurally valid supplied ledger fake implementing the five existing methods must not need `initializeRecord`.
+- Discovery initialization uses only existing `initializeRecord`. No ledger schema/storage/capacity changes, receipt eviction, sidecar, outbox, durable page continuation, pause marker or cursor repurposing.
+- Matching is not admission authorization. Admission is not execution authorization. Exact phase/status values and lifecycle meaning remain host-owned.
+- Whole-page validation and required-fact matching precede item effects. Required raw facts and policy operands are transient; public evidence is allowlisted.
+- Existing-record processing reuses the guarded claimed/fenced checkpoint step, including original-request history acknowledgement validation and exactly-once cleanup attempts.
+- Initialization intake is fresh-only and potentially lossy. Do not generalize comment-history recovery into admission replay delivery.
+- Apply SEC-A01–SEC-A07 in the task introducing each affected surface, not as deferred hardening.
+- Do not mark the extension complete until W046 independently verifies it. Neither implementation nor technical review accepts ADR-0025/0026 or grants merge readiness.
+- If implementation exposes a genuinely unspecified conformance decision, stop that dependent increment and return through `devsquad.refine`; do not invent a contract.
+
+## Phase 13: Discovery Mode and Empty Terminal Tracer Bullet
+
+- [x] **W039** Implement compatible discovery contracts, preflight and an empty terminal pass in `src/DevSquadAdoWorkflowWatcher.ts`, `src/DevSquadAdoWorkflowWatcherValidation.ts`, `src/DevSquadAdoWorkflowWatcherDiscoveryValidation.ts`, `src/DevSquadAdoWorkflowWatcherDiscovery.ts`, `src/DevSquadAdoWorkflowWatcherObservation.ts`, and `src/index.ts`
+  - **Parent:** Scenario 9. **Dependency:** completed historical W038 and approved discovery plan/ADR alignment. **Complexity/risk:** M / Medium.
+  - Capture the supplied baseline before implementation using the commands below. Record actual results separately from inherited evidence; do not rewrite historical totals as fresh results.
+  - Retain the legacy supplied overload; add discovery-specific and request-union overloads for both public run and validation operations. Keep existing supplied result/intake/validated-pass types unchanged; discovery uses separate discriminated contracts and a `mode: "discovery"` result.
+  - Add JSDoc and root exports for contracts introduced here. Keep the public surface Effect-free and orchestration plain `async`/`Promise`.
+  - Validate exactly one request arm: omitted or `"supplied"` mode forbids discovery configuration; `"discovery"` requires its seam/configuration and forbids candidates. Reject unknown/mixed modes and malformed required dependencies before clock, delay, seam or ledger invocation.
+  - Capture `initializeRecord` only for discovery. Prepare an owned immutable configuration snapshot, including binding, bounded filter configuration, limits and authorization declarations. Reject duplicate canonical authorization IDs, malformed authorized state, unsupported/duplicate predicate slots and invalid limits before effects.
+  - Use every default, ceiling, fixed identifier bound and canonical recognized-field byte-accounting rule from the approved plan. Include authorization limits; do not silently truncate, deduplicate or encode an oversized full projection.
+  - Wire the empty-terminal vertical: first request has a private traversal ID, ordinal `1`, null continuation and fixed binding; a valid terminal empty page yields zero candidates/signals and complete traversal.
+  - Introduce the page call's dedicated child controller/timer lifecycle using existing observation lifecycle protections. Timeout, failure and cancellation yield honest incomplete results; retire listeners/timers and quarantine late settlement.
+  - **RED→GREEN acceptance:** In `src/DevSquadAdoWorkflowWatcher.discovery.test.ts` and `src/DevSquadAdoWorkflowWatcher.discovery.bounds.test.ts`, prove supplied compile/runtime compatibility, supplied fake without initializer, zero-effect invalid inputs, valid zero-item discovery, exact/over-limit preflight boundaries, first-request identity, empty terminal completion, pre-abort, page timeout and late rejection cleanup. Confirm no ledger method or comment/PR observation is called for the empty pass.
+  - **Traceability:** FR-001–004, FR-006, FR-008–013, FR-051–053, FR-061–064, FR-069; CC-015/016/025/027/034–037; TEST-001/002/025/027/032/036/038/039; SEC-A03/05/06/07.
+  - **Verify:** watcher selector, `npm run typecheck`; retain combined watcher/ledger and focused history baseline evidence.
+
+  - **Execution evidence (2026-09-10, W039 only):** Fresh pre-edit baseline: combined watcher/ledger **401 passed, 2 Windows skips**; `npm run typecheck` passed. Initial discovery RED: **20 failed / 13 passed** across 33 tests; failures demonstrated the absent discovery run/validation contracts and defaults, not missing packages. Public type RED showed the three missing discovery exports and absent supplied-mode overload. One legacy fixture was corrected before recording the definitive RED because supplied mode intentionally rejects an empty candidate list.
+  - **GREEN:** **47 new discovery tests passed** (15 invocation/lifecycle, 32 configuration/bounds); complete watcher selector **384 passed**; combined watcher/ledger **448 passed, 2 Windows skips**; focused `third independent history` selector **19 passed / 244 unselected**. Typecheck passed. Fresh `npx tsup` generated ESM/DTS, followed by a passing Effect-free declaration guard. This is declaration-generation evidence, **not** Windows postbuild/packaging certification.
+  - **Implementation boundary:** Empty-page discovery, separate public overloads/defaults/configuration validation, immutable host snapshots, bounded recognized-JSON accounting and shared child/timer retirement are implemented. The runtime dependency graph allowlist adds the two new modules; historical exact unions remain unchanged. W040 owns nonempty page/fact matching and existing-record forwarding; W041�W045 remain pending. W046 remains parent-owned independent review. No ledger schema/storage, live adapter, lifecycle or publication changes.
+  - **Recovery evidence:** Two correction cycles, each using a source-only stash save-point before localization: (1) missed shared empty-candidate validation branch and TypeScript union/loop inference; (2) expected dependency graph/JSDoc checks and overloaded test listener typing. Both corrected; no stash remains. Learning-capture confirmation is pending before worker handoff. Approved spec/plan/ADR edits are included unchanged in this task's commit; this completion does not accept the full discovery extension.
+
+## Phase 14: Complete Matching and Existing-Record Forwarding
+
+- [ ] **W040** Implement whole-page matching and guarded existing-record discovery in `src/DevSquadAdoWorkflowWatcherDiscoveryValidation.ts`, `src/DevSquadAdoWorkflowWatcherDiscoveryMatching.ts`, `src/DevSquadAdoWorkflowWatcherDiscovery.ts`, and `src/DevSquadAdoWorkflowWatcherPass.ts`
+  - **Parent:** Scenario 8; supports Scenarios 1, 3, 4 and 6. **Dependency:** W039. **Complexity/risk:** L / High.
+  - Validate the complete page and all required fact structures before any item effect. A malformed final entry invalidates otherwise valid earlier entries. Enforce page identity/binding, canonical item uniqueness, count and byte limits.
+  - Read fixed recognized fields only, using bounded indexed traversal. Validate lengths before traversal and detect changing/sparse collections; ignore custom iterators and unrelated properties. Do not read getters for unconfigured fact dimensions.
+  - Implement all seven predicate slots: state/team `one-of`; tags `all`, `any`, `none`; area/iteration `exact` or segment-aware `subtree`. AND configured predicates, OR members of allowed state/team sets. Reject empty/duplicate configured sets and unsupported operators.
+  - Compare host-normalized values exactly, including case, whitespace and Unicode distinctions. Do not infer teams from `assignedTo`, normalize matching strings, split path separators or trust an upstream `eligible` flag.
+  - Cover root paths, exact segment counts, subtree root inclusion and textual-prefix sibling exclusion. Known empty collections remain valid facts; required missing facts pause only their candidate.
+  - Produce only policy version and fixed predicate outcomes, in the plan's defined order. Missing facts take `matching-facts-missing`; otherwise exclusion takes `matching-paused`. Return no operands, raw facts, authorization IDs, hashes or continuation.
+  - Excluded/fact-incomplete candidates perform zero ledger reads, observations or mutations and have no-claim cleanup. Matching occurs before authorization use.
+  - Process matched existing records through the existing per-candidate step, preserving optional PR behavior, claim conflicts, staleness checks, fencing, original-submission history validation, suppression and cleanup. Do not fork a weaker discovery checkpoint implementation.
+  - Keep supplied missing-record behavior unchanged. Establish stable unauthorized/unavailable-state discovery dispositions without initializing; W041 completes the explicitly authorized missing-record path.
+  - **RED→GREEN acceptance:** In `src/DevSquadAdoWorkflowWatcher.discovery.matching.test.ts` and `src/DevSquadAdoWorkflowWatcher.discovery.test.ts`, cover every predicate and combination, empty-versus-missing facts, unrestricted policy, throwing unused getters, exact/+1 bounds and malformed final-entry atomicity. Public-pass assertions prove zero paused-item effects, redacted evidence, canonical page-local order, existing-record checkpoint/intake, foreign-claim skip, stale observation rejection and phase/status suppression with cursor advancement.
+  - **Traceability:** FR-005–007, FR-012–024, FR-025–036a, FR-040–045, FR-054–060, FR-063–066, FR-069; CC-001/003–010/018/022/024/026/029/030/032/033/036/037; TEST-034/038/039 plus inherited checkpoint/claim suites; SEC-A03/04/05.
+  - **Verify:** watcher selector, focused discovery matching selector, `npm run typecheck`, existing dependency tests.
+
+## Phase 15: Authorized No-Comment Admission
+
+- [ ] **W041** Implement fresh-only authorized initialization in `src/DevSquadAdoWorkflowWatcherAdmission.ts`, `src/DevSquadAdoWorkflowWatcherLedger.ts`, `src/DevSquadAdoWorkflowWatcherValidation.ts`, and `src/DevSquadAdoWorkflowWatcherDiscovery.ts`
+  - **Parent:** Scenario 7. **Dependency:** W040. **Complexity/risk:** L / High.
+  - Initialize only after whole-page matching, a method-valid `record-not-found`, exact canonical-item authorization with initial phase/status, and a fresh cancellation gate.
+  - Submit only `{ workItemId, operationId, phase, status }`; leave cursors, PR/execution references, histories and claims absent. Missing authorization or explicit unavailable state performs zero initialization.
+  - Derive initialization-specific `dsw2` identity from the approved canonical `{ step: "initialize", workItemId, submissionId, phase, status }` input. Preserve it across retries and pass IDs; exclude traversal/page/continuation/claim identities. Keep existing checkpoint and claim-lifecycle identity bytes unchanged.
+  - Keep original submission, validation snapshot, adapter request copy and response projection separate. Reject relevant adapter request mutation. Use a dedicated initialization guard rather than weakening common checkpoint/claim/release acknowledgement rules.
+  - Validate every known error variant and the complete bounded latest public record. Unknown/malformed variants, throws and rejections become only `ledger-fault`.
+  - Require canonical item identity, initialized discriminator, accepted revision `1`, canonical acceptance time, boolean replay metadata and creation-time consistency. At latest revision one, require exact initial state and pristine null references/cursors, empty histories, no claim and fencing zero.
+  - Permit a valid later latest record for fresh or replayed acknowledgement. Validate original state through the first retained checkpoint's `previous` state, or current state when no checkpoint exists, and validate the retained chain. Never confuse latest revision/state with original acceptance.
+  - Bind against the retained request and existing trusted ledger semantics; do not fabricate an echoed operation ID, receipt digest or cryptographic proof.
+  - Fresh valid acceptance increments admission accounting and returns exactly one `discovery-admission` signal only if intake rules match. Rules-unmatched fresh acceptance is not cursor suppression. Replay reports original acceptance without signal; already-exists infers no acceptance for this request; conflict is terminal without replacement identity.
+  - Retain original requests for bounded contention/storage-indeterminate retry. A malformed acknowledgement suppresses unacknowledged effects even if storage committed. Once initialization processing starts, never switch that item to comment observation during the invocation.
+  - Every initialization-only outcome has `not-required / no-claim-acquired` cleanup with null category/revision, including uncertainty.
+  - **RED→GREEN acceptance:** In `src/DevSquadAdoWorkflowWatcher.discovery.admission.test.ts`, use item `999` with no comments to cover authorized/unauthorized/state-unavailable paths; fresh/rules-unmatched/replay/already-exists/conflict outcomes; same/different submission publication races; unchanged operation identity across pass IDs; every guard success/error variant; request mutation; valid later records and contradictory acknowledgements. Assert zero observation/acquire/checkpoint/renew/release calls, pristine initialization, separately typed signals and at most one admission signal across overlapping passes.
+  - **Traceability:** FR-020/022/025, FR-036–039, FR-040–046, FR-051/052, FR-054–060, FR-067–069; CC-009/024/029/031/037; TEST-015/033/039; SC-011; SEC-A01/02/05/07.
+  - **Verify:** admission selector, combined watcher/ledger selector, focused history selector, `npm run typecheck`.
+
+## Phase 16: Explicit Retention Loss and Anchored Reentry
+
+- [ ] **W042** Implement discovery observation retention evidence in `src/DevSquadAdoWorkflowWatcher.ts`, `src/DevSquadAdoWorkflowWatcherObservation.ts`, `src/DevSquadAdoWorkflowWatcherPass.ts`, and `src/index.ts`
+  - **Parent:** Scenario 8; supports Scenario 6. **Dependency:** W041. **Complexity/risk:** M / High.
+  - Wire discovery-specific work-item and PR observation unions: bounded `window` or explicit `anchor-missing`. Retain existing durable `since` inputs and shared window validation.
+  - Explicit retention loss with a supplied anchor yields `observation-anchor-missing`, including otherwise empty responses. Loss without a supplied anchor is invalid. Ordinary empty discovery windows mean known no-new-events; supplied empty behavior remains unchanged.
+  - Loss in either observation kind prevents checkpointing the other kind. Preserve existing nonempty missing-anchor, duplicate-window, incomplete-PR and opaque-ID rules.
+  - Reentry uses the persisted cursor without a pause marker, synthetic baseline, automatic reset or inferred latest event. Matching pause remains distinct from intake-rule suppression.
+  - **RED→GREEN acceptance:** In `src/DevSquadAdoWorkflowWatcher.discovery.lifecycle.test.ts`, seed cursor `480`, exclude the item while `481` arrives, and assert unchanged revision/cursors and zero observation/mutation calls. Reenter and verify `since = 480`, durable advance to `481` and one comment signal. Cover explicit empty loss, nonempty absent anchor, PR loss blocking a valid WI advance, invalid loss without anchor, supplied empty-window control, optional PR method behavior, and suppression advancing cursors without intake.
+  - **Traceability:** FR-014/015, FR-032–036a, FR-042, FR-051–053, FR-060, FR-066/069; CC-007/019/023/026/033/037; TEST-035/039; SC-012; SEC-A04/07.
+  - **Verify:** lifecycle selector, watcher selector, `npm run typecheck`.
+
+## Phase 17: Bounded Multi-Page Traversal
+
+- [ ] **W043** Implement invocation-local pagination and retained candidate scheduling in `src/DevSquadAdoWorkflowWatcherDiscovery.ts` and `src/DevSquadAdoWorkflowWatcherDiscoveryValidation.ts`
+  - **Parent:** Scenario 9. **Dependency:** W042. **Complexity/risk:** L / High.
+  - Keep one traversal across polls. Process prior pending candidates in stable first-discovery order, then initiate at most one new page per poll when scheduling permits. Process accepted page candidates sequentially in canonical UTF-8 order; never process a candidate twice in a poll.
+  - Preserve the existing start-clock reading, one clock reading per poll, deterministic backoff and elapsed poll-start semantics. Candidate retries do not reset invocation counters.
+  - Bind every request/page to the captured scope, partition, stability ID and policy version, plus traversal ID and page ordinal. Forward opaque continuation verbatim; compare only for repetition.
+  - Count `pageCalls` immediately before actual invocation, including empty, failed and timed-out calls. Empty continued pages continue; only explicit terminal evidence ends enumeration. No hidden page retry loop.
+  - Reject the whole current page for remaining-item overflow, within/across-page canonical duplicates, repeated continuation, malformed page/request identity or binding drift. Preserve earlier accepted outcomes and writes.
+  - Bound retained candidate/continuation sets. At exactly the item limit, allow only further empty pages to establish terminal evidence; an additional item is overflow. A terminal final permitted page can complete, but a continued final call is incomplete.
+  - Complete only with terminal evidence and finalized accepted-item dispositions, without unfinished retry work. After terminal evidence, ordinary no-new-event states finalize after their observation attempt; genuine pending mutation/recovery work may need more polls.
+  - Every new invocation starts at ordinal `1` with null continuation. Persist no traversal metadata and promise no eventual tail progress for repeated bounded prefix rescans.
+  - **RED→GREEN acceptance:** In `src/DevSquadAdoWorkflowWatcher.discovery.bounds.test.ts`, cover items `137`/`138` across pages, empty continued pages, page budget two, final-call terminal versus continuation, failed/timeout call counting, no early completion, one page per poll, retained retry order, exact item limit and 1,001 overflow, duplicate canonical IDs, continuation cycles, scope/policy/request drift and earlier intake preservation. Parameterize every plan numeric ceiling and exact/+1 boundary, including multibyte/escaped byte accounting, changing arrays and malformed last entries. Reopen a real ledger and prove a fresh traversal start without duplicate acknowledged comment intake or persisted page tokens.
+  - **Traceability:** FR-006/007/012/014/017/018, FR-047–053, FR-057, FR-061–064/069; CC-010/011/027/034–037; TEST-036–039; SC-013/014; SEC-A03/05/06/07.
+  - **Verify:** discovery bounds selector, combined watcher/ledger selector, `npm run typecheck`.
+
+## Phase 18: Integrated Retry, Cancellation and Truthful Accounting
+
+- [ ] **W044** Implement cross-mode discovery finalization and acknowledgement-preserving cancellation in `src/DevSquadAdoWorkflowWatcherDiscovery.ts`, `src/DevSquadAdoWorkflowWatcherAdmission.ts`, `src/DevSquadAdoWorkflowWatcherPass.ts`, and `src/DevSquadAdoWorkflowWatcherObservation.ts`
+  - **Parent:** Scenario 9; supports Scenarios 5, 7 and 8. **Dependency:** W043. **Complexity/risk:** L / High.
+  - Complete the result assembler for observation, admission, matching and unprocessed outcomes, preserving first-discovery/page-local outcome order and acknowledgement-order signals.
+  - Implement every approved traversal reason and stop-reason distinction. Expose terminal evidence separately: terminal page seen does not erase unfinished retries, budget exhaustion or cancellation.
+  - Keep counts independent: page calls, pages validated, discovered, evaluated, admitted, paused, processed and initialization replayed; `acted` counts both signal types, `eligible` retains existing observation meaning, and `suppressed` counts only acknowledged suppressed cursor advances. Final failures may overlap acknowledged actions.
+  - Give validated but unscheduled candidates explicit unprocessed dispositions; exclude rejected-page identities from accepted discovery/outcome counts. Cleanup counts partition all returned candidates.
+  - Apply fresh abort gates before pages, candidate effects, each WI/PR observation and non-cleanup mutation; recheck after page settlement, awaited ledger operations, between candidates and before completion/budget exits.
+  - Await in-flight initialization/checkpoint operations and validate acknowledgements. Preserve permitted fresh admission/comment signals when abort occurs during the write. Retire page/observation lifecycles and consume late rejections without late effects.
+  - Preserve exactly one cleanup attempt for validated existing-record authority, including after abort. Never release for initialization-only or fabricate acknowledgement after uncertainty.
+  - Complete retained-request retry and restart composition: stable initialization identity across pass IDs; no discovery delivery reconstruction after lost acknowledgement/reopen; no same-invocation comment fallback after replay/already-exists; genuine comments remain observable later.
+  - Preserve the separate checkpoint direct/replay/history validator against original submitted metadata, including history-before-retry-refresh, renewal and later-record consistency. Do not apply fresh-only admission rules to comment recovery.
+  - **RED→GREEN acceptance:** In `src/DevSquadAdoWorkflowWatcher.discovery.lifecycle.test.ts` and `src/DevSquadAdoWorkflowWatcher.discovery.admission.test.ts`, exercise mixed admission/observation/paused/failed/unprocessed pages, terminal pages with retries, later-page failure, exact accounting partitions and at most one signal per item. Cover every abort boundary, durable initialization followed by lost/malformed acknowledgement and reopen, abort during accepted initialization/checkpoint, cleanup failures retaining signals, noncooperating late seam settlement and no fabricated release. Scan results, errors, diagnostics, submitted ledger fields and durable artifacts for forbidden fact/policy/authorization/continuation/capability sentinels, allowing only expressly authorized initial workflow values and public identifiers.
+  - **Traceability:** FR-005–007, FR-029, FR-036–039, FR-044–060, FR-062/063/067–069; CC-012/024/027–031/034/035/037; TEST-026/029–031/033/036/037/039; SC-004–011/013/014; SEC-A01–SEC-A07.
+  - **Verify:** combined watcher/ledger selector, focused history selector, `npm run typecheck`; no inherited regression loss.
+
+## Phase 19: Public Documentation and Release Alignment
+
+- [ ] **W045** Align public exports and host documentation in `src/DevSquadAdoWorkflowWatcher.ts`, `src/index.ts`, `README.md`, and `.changeset/devsquad-ado-workflow-watcher.md`
+  - **Parent:** Scenario 9; supports Scenarios 7 and 8. **Dependency:** W044. **Complexity/risk:** M / Medium.
+  - Audit and complete JSDoc/root exports for all new discovery contracts, defaults and overloads. Preserve legacy supplied inference and runtime shapes; consumers of supplied signals must not narrow a new admission union.
+  - Document both modes, complete matching semantics, normalized facts/resolved teams, explicit item authorization/state, policy-version evidence, page/poll/byte bounds, anchored reentry, terminal/incomplete results and all host responsibilities.
+  - Provide typed offline examples for empty discovery, authorized no-comment admission and existing-record reentry. Explain distinct discovery/comment intake, replay reconciliation without redelivery, no-claim cleanup, possible permanent signal loss, fresh-start prefix rescans and cooperative dependency limits.
+  - Check all existing changesets before editing. Extend the existing minor watcher feature changeset for approved new behavior; preserve the separate historical patch recovery entry without duplicating a feature release.
+  - Extend `src/DevSquadAdoWorkflowWatcher.dependencies.test.ts` to cover every new production module and forbidden dependency boundary. Keep unrelated ADO/execution modules, ledger schema/storage and tooling unchanged.
+  - **Acceptance:** Public compile assertions and example fixtures under `src/DevSquadAdoWorkflowWatcher.discovery.test.ts` pass; documentation matches observed discriminators/limits; dependency tests pass; generated public declarations are Effect-free. Record build generation and postbuild/package outcomes separately. Update task evidence in this file without altering historical W038 evidence or marking ADRs Accepted.
+  - **Traceability:** FR-008–011/040/044/045/058/061–069; CC-003/018/020/031–037; TEST-024/025/033–039; SC-007/009/010/014.
+  - **Verify:** full watcher/ledger selector, typecheck, canonical build, public declaration check against freshly generated declarations, formatting and diff checks.
+
+## Phase 20: Independent Extension Verification
+
+- [ ] **W046** Independently verify discovery conformance against `docs/features/devsquad-ado-workflow-watcher/spec.md`, `plan.md`, `tasks.md`, and `docs/adr/0026-devsquad-ado-workflow-watcher.md`; record task status/evidence in `docs/features/devsquad-ado-workflow-watcher/tasks.md`
+  - **Parent:** Scenario 9; verifies Scenarios 1–9. **Dependency:** W045. **Complexity/risk:** L / High; requires independent human/reviewer judgment.
+  - Invoke fresh independent `devsquad.review` through the conductor's established review workflow. Review spec/ADR consistency, production code, tests, dependency boundaries and security controls; do not treat implementer self-checks or W038 as extension approval.
+  - Verify CC-031–037 and TEST-033–039 end to end while retaining CC-001–030, TEST-001–032 and the focused historical checkpoint-history probes. Independently probe original-request initialization binding, fresh/replay/later-record acknowledgement distinctions, whole-page atomicity, exact matching, anchored retention loss, scheduling bounds, cancellation and count/cleanup truth.
+  - Confirm no live clients/queries, external writes, execution/lifecycle authority, ledger schema/storage changes, durable continuation, outbox, fabricated cursors/claims or replay admission delivery.
+  - Record exact reviewed code identity, commands, results, skips, findings and evidence provenance. Distinguish newly executed evidence from inherited reports and declaration/build artifacts.
+  - **Acceptance:** Independent review has no unresolved blocking findings; all guardians/security obligations are accounted for; new conformance is supported by executed assertions. A failed review leaves W046 unchecked until remediation and independent re-review. Do not reopen completed W001–W038 or erase their historical evidence.
+  - A technical PASS does not accept Proposed ADR-0025/0026, grant publication/merge authority, create board work or authorize slice 15. Preserve #20-before-#21 ordering and leave publication to the parent.
+  - **Traceability:** FR-001–069 including FR-035a/035b/036a/037a; CC-001–037; TEST-001–039; SC-001–014; SEC-A01–SEC-A07.
+  - **Verify:** all commands below, with exact scope/results and the known packaging limitation reported honestly.
+
+### Discovery Traceability
+
+| Approved obligation                                             | Owning tasks                | Requirements                                   | Conformance / tests                                               | Scenario / success criteria         |
+| --------------------------------------------------------------- | --------------------------- | ---------------------------------------------- | ----------------------------------------------------------------- | ----------------------------------- |
+| Compatible explicit discovery mode and zero-effect preflight    | W039, W045                  | FR-001–004/008/061/064                         | CC-015/016/025/036/037; TEST-001/002/025/027/032/038/039          | Scenario 9; SC-010/014              |
+| D2 complete exact matching and minimized evidence               | W040                        | FR-064–066/069                                 | CC-032/036/037; TEST-034/038/039                                  | Scenario 8; SC-012/014              |
+| Existing-record forwarding without weaker checkpoint safeguards | W040, W042, W044            | FR-014–019/021/025–036a/040–046/059/060        | CC-001–008/019/021–030/033/037; inherited tests plus TEST-035/039 | Scenarios 1–6 and 8; SC-001–010/012 |
+| D1-B explicit no-comment authorization and fresh-only admission | W041, W044                  | FR-020/022/025/037–039/044–046/059/060/067–069 | CC-009/024/029/031/037; TEST-015/033/039                          | Scenario 7; SC-004/006/011/014      |
+| D2-A pause, preserved anchors and explicit retention loss       | W040, W042                  | FR-035a/042/066                                | CC-023/032/033; TEST-034/035                                      | Scenarios 6 and 8; SC-012           |
+| D3-A fresh-start multi-page traversal and bounded state         | W039, W043, W044            | FR-018/047–050/057/061–064                     | CC-034–036; TEST-036–038                                          | Scenario 9; SC-005/008/013/014      |
+| Whole-page atomicity and inclusive collection/UTF-8 limits      | W039, W040, W043            | FR-003/004/035b/063/064                        | CC-026/035/036; TEST-028/038                                      | Scenario 9; SC-014                  |
+| Cancellation, acknowledgement preservation and truthful counts  | W039–W044                   | FR-005–007/029/051–053/059/060/069             | CC-012/024/025/027–029/037; TEST-027/029/030/033/039              | Scenarios 5, 7–9; SC-005–009/014    |
+| Public compatibility, privacy and host documentation            | W045; controls in W039–W044 | FR-008–011/040/044/045/058/061–069             | CC-003/018/020/031–037; TEST-024/025/033–039                      | Scenarios 7–9; SC-007/009/010/014   |
+| Independent extension gate, preserving historical evidence      | W046                        | All approved requirements                      | CC-001–037; TEST-001–039                                          | Scenarios 1–9; SC-001–014           |
+
+All new requirements FR-061–069 and conformance criteria CC-031–037 have implementation owners. Each new task has a parent scenario and explicit prerequisite. No separate behavioral test task or missing-ADR task is introduced.
+
+### Validation Commands and Evidence Rules
+
+Run later implementation validation only from the designated worktree:
+
+```powershell
+Set-Location "C:\repos\copilot-worktrees\sandcastle\users-davidsant-expert-garbanzo"
+
+npm test -- DevSquadAdoWorkflowWatcher
+npm test -- DevSquadAdoWorkflowWatcher DevSquadAdoWorkflowLedger
+npm test -- DevSquadAdoWorkflowWatcher.remediation -t "third independent history"
+npm run typecheck
+```
+
+Focused extension selectors, once their suites exist:
+
+```powershell
+npm test -- DevSquadAdoWorkflowWatcher.discovery
+npm test -- DevSquadAdoWorkflowWatcher.discovery.matching
+npm test -- DevSquadAdoWorkflowWatcher.discovery.admission
+npm test -- DevSquadAdoWorkflowWatcher.discovery.bounds
+npm test -- DevSquadAdoWorkflowWatcher.discovery.lifecycle
+```
+
+Final verification:
+
+```powershell
+npm test
+npm run build
+node scripts/check-public-types-effect-free.mjs
+npm run format:check
+git diff --check
+```
+
+- Historical implementation baseline `d5aecf0`: combined watcher/ledger selector **401 passed, two existing Windows skips**; focused third-history selector **19 passed**. These totals are inherited, not newly executed by decomposition.
+- Record actual new counts, skip reasons and command exit codes. Full-project failures, if any, require attributable evidence rather than silently redefining success.
+- The canonical build has a preexisting Windows postbuild `rm` failure after ESM/DTS generation passes. Preserve and report that limitation; do not fix unrelated tooling or claim packaging success. Record whether fresh ESM and DTS generation actually completed.
+- The declaration guard consumes generated `dist` output. A standalone successful guard against stale declarations is not fresh public-surface evidence.
+- Formatting failures from untouched files must be reported separately from touched-file verification; do not reformat the repository as collateral work.
+- No validation commands were executed during this decomposition. The draft creates acceptance obligations, not passing evidence.
+
+### Decomposition Handoff
+
+- **Scope:** Existing slice 14 / PR #21 only; local tasks, no board items or delegation assignments.
+- **Task state:** W001–W038 preserved completed; W039–W046 pending.
+- **Start:** W039, then the exact dependency chain above.
+- **Authoritative inputs:** `spec.md`; the plan's **Approved discovery extension**; Proposed `docs/adr/0026-devsquad-ado-workflow-watcher.md`.
+- **Preserved boundaries:** Proposed ADR-0025; ADR-0021, ADR-0022 and ADR-0024; existing ledger canonicalization/storage and supplied checkpoint recovery.
+- **Supporting evidence:** `review-log.md` and `final-review-evidence.json` remain historical supplied-candidate evidence, not discovery review.
+- **Assumptions:** Host-normalized facts/resolved teams, stable bounded invocation scope, explicit item authorization/state, trusted ledger publication semantics, and settling ledger/delay dependencies. Admission can permanently lose intake; prefix rescans have no eventual tail-progress guarantee.
+- **Governance:** ADR acceptance is separate; #20 precedes #21. No new PR, commit/push, publication, merge or slice 15 action is part of this decomposition.

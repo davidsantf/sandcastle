@@ -70,9 +70,13 @@ type RaceOutcome<T> =
   | { readonly kind: "rejected" }
   | { readonly kind: "timeout" };
 
-const raceObservation = async <T>(
+/** W039: shared isolated child/timer lifecycle for observation and discovery calls. */
+export const raceDevSquadAdoWatcherSeamCall = async <T>(
   invoke: (signal: AbortSignal) => Promise<T>,
-  request: DevSquadAdoWatcherObservationRequest,
+  request: Pick<
+    DevSquadAdoWatcherObservationRequest,
+    "signal" | "delay" | "observationTimeoutMs"
+  >,
 ): Promise<RaceOutcome<T>> => {
   const child = new AbortController();
   const timer = new AbortController();
@@ -290,7 +294,7 @@ export const observeDevSquadAdoWatchCandidate = async (
   // transport problem that never happened.
   const aborted = (): boolean => request.signal?.aborted === true;
 
-  const workItemOutcome = await raceObservation(
+  const workItemOutcome = await raceDevSquadAdoWatcherSeamCall(
     (signal) =>
       request.seam.observeWorkItemComments({
         workItemId: record.workItemId,
@@ -327,7 +331,7 @@ export const observeDevSquadAdoWatchCandidate = async (
     }
     if (typeof observePullRequestActivity !== "function")
       return { ok: false, reason: "pull-request-observation-unavailable" };
-    const pullRequestOutcome = await raceObservation(
+    const pullRequestOutcome = await raceDevSquadAdoWatcherSeamCall(
       (signal) =>
         observePullRequestActivity.call(request.seam, {
           workItemId: record.workItemId,
