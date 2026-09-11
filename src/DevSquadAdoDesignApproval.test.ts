@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { recoverDevSquadAdoDesignApproval as recover } from "./DevSquadAdoDesignApproval.js";
-import { makeDesignGateFixture } from "./DevSquadAdoDesignApprovalTestSupport.js";
+import {
+  recoverDevSquadAdoDesignApproval as recover,
+  startDevSquadAdoDesignApproval as start,
+  type DevSquadAdoDesignRecoveryDependencies,
+} from "./DevSquadAdoDesignApproval.js";
+import {
+  makeDesignGateFixture,
+  makeDecisionFixture,
+} from "./DevSquadAdoDesignApprovalTestSupport.js";
 const disposals: Array<() => Promise<void>> = [];
 afterEach(async () => {
   await Promise.all(disposals.splice(0).map((dispose) => dispose()));
@@ -12,7 +19,7 @@ async function fixture() {
 }
 
 describe("W048 read-only design recovery, CC-14", () => {
-  it("recovers an unreserved seeded public ledger with zero writes or other effects", async () => {
+  it("recovers an unreserved seeded public ledger without ledger mutations", async () => {
     const f = await fixture();
     const spies = [
       "checkpoint",
@@ -20,10 +27,11 @@ describe("W048 read-only design recovery, CC-14", () => {
       "renewClaim",
       "releaseClaim",
     ].map((method) => vi.spyOn(f.ledger, method as "checkpoint"));
-    const publisher = vi.fn();
-    const execute = vi.fn();
-    const tracker = vi.fn();
-    const dependencies = { ledger: f.ledger, publisher, execute, tracker };
+    // W065-03 / FR-023/026: spy on supported real ledger methods, not invented effects.
+    const readRecord = vi.spyOn(f.ledger, "readRecord");
+    const dependencies = {
+      ledger: f.ledger,
+    } satisfies DevSquadAdoDesignRecoveryDependencies;
     expect(await recover(f.request, dependencies)).toEqual({
       durableState: "unreserved",
       verificationStatus: "verified",
@@ -32,12 +40,46 @@ describe("W048 read-only design recovery, CC-14", () => {
       binding: { workItemId: "137", occurrence: f.request.occurrence },
       knownRevision: 1,
     });
-    for (const spy of [...spies, publisher, execute, tracker])
-      expect(spy).not.toHaveBeenCalled();
+    expect(readRecord).toHaveBeenCalledTimes(1);
+    for (const spy of spies) expect(spy).not.toHaveBeenCalled();
     expect(await f.ledger.readRecord(137)).toEqual({
       ok: true,
       value: f.record,
     });
+  });
+  // W065-03 / INV-005, SC-006: publishOnce is wired only through supported start deps.
+  // Absent execution/live capabilities are covered by the W062 import/API guardian.
+  it("recovery preserves a consumed real publication attempt without further effects", async () => {
+    const f = await makeDecisionFixture();
+    disposals.push(f.dispose);
+    expect((await start(f.request, f.dependencies)).durableState).toBe(
+      "attempt-consumed",
+    );
+    expect(f.publishOnce).toHaveBeenCalledTimes(1);
+    const before = await f.ledger.readRecord(137);
+    const spies = [
+      "checkpoint",
+      "acquireClaim",
+      "renewClaim",
+      "releaseClaim",
+    ].map((method) => vi.spyOn(f.ledger, method as "checkpoint"));
+    const readRecord = vi.spyOn(f.ledger, "readRecord");
+    const dependencies = {
+      ledger: f.ledger,
+    } satisfies DevSquadAdoDesignRecoveryDependencies;
+    expect(await recover(f.request, dependencies)).toMatchObject({
+      durableState: "attempt-consumed",
+      knownRevision: 3,
+      checkpointRevisions: {
+        reservation: 3,
+        publication: null,
+        resolution: null,
+      },
+    });
+    expect(readRecord).toHaveBeenCalledTimes(1);
+    for (const spy of spies) expect(spy).not.toHaveBeenCalled();
+    expect(f.publishOnce).toHaveBeenCalledTimes(1);
+    expect(await f.ledger.readRecord(137)).toEqual(before);
   });
   it.each([
     "wrong-work-item",
