@@ -1,3 +1,4 @@
+import { gateRevisions } from "./DevSquadAdoDesignApprovalHistory.js";
 import { startGatePublication } from "./DevSquadAdoDesignApprovalPublication.js";
 import { reduceGateHistory } from "./DevSquadAdoDesignApprovalHistory.js";
 import {
@@ -85,6 +86,15 @@ export interface DevSquadAdoDesignApprovalResult {
     /** Explicit target commitment, independent of current ledger fields. */
     readonly target?: string;
   } | null;
+  /** Known accepted stage revisions; absent when no gate history is established. */
+  readonly checkpointRevisions?: {
+    /** Sole attempt reservation. */
+    readonly reservation: number;
+    /** Matching publication confirmation, or null. */
+    readonly publication: number | null;
+    /** Combined human resolution slot, or null. */
+    readonly resolution: number | null;
+  };
   /** Latest validated record revision, otherwise null. */
   readonly knownRevision: number | null;
 }
@@ -184,6 +194,7 @@ export async function recoverDevSquadAdoDesignApproval(
           target: gate.target,
         },
         knownRevision: record.revision,
+        checkpointRevisions: gateRevisions(gate),
       };
     return {
       durableState: "unreserved",

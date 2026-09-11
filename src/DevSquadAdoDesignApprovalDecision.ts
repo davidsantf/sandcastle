@@ -1,3 +1,4 @@
+import { gateRevisions } from "./DevSquadAdoDesignApprovalHistory.js";
 import type { DevSquadAdoDesignApprovalResult } from "./DevSquadAdoDesignApproval.js";
 import type {
   DevSquadAdoDesignScope,
@@ -437,7 +438,11 @@ export async function resolveGateDecision(
     const history = reduceGateHistory(before, G);
     if (!history.ok || !history.gate || history.gate.publication !== X)
       throw new GateFault("conflicting-gate-history");
-    result = { ...result, knownRevision: before.revision };
+    result = {
+      ...result,
+      knownRevision: before.revision,
+      checkpointRevisions: gateRevisions(history.gate),
+    };
     if (history.gate.action)
       return {
         ...result,
@@ -531,6 +536,11 @@ export async function resolveGateDecision(
       verificationStatus: "verified",
       reason: "human-decision-confirmed",
       knownRevision: fresh.revision,
+      checkpointRevisions: {
+        reservation: history.gate.reservationRevision,
+        publication: history.gate.publicationRevision,
+        resolution: fresh.revision,
+      },
     };
   } catch (error) {
     return {

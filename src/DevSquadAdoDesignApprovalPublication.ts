@@ -1,3 +1,4 @@
+import { gateRevisions } from "./DevSquadAdoDesignApprovalHistory.js";
 import { resolveGateDecision } from "./DevSquadAdoDesignApprovalDecision.js";
 import type {
   DevSquadAdoClaimAuthorityInput,
@@ -352,6 +353,7 @@ export async function startGatePublication(
     };
     if (history.gate) {
       const gate = history.gate;
+      result = { ...result, checkpointRevisions: gateRevisions(gate) };
       result = {
         ...result,
         durableState:
@@ -491,6 +493,11 @@ export async function startGatePublication(
       verificationStatus: "publication-unverified",
       reason: "publication-evidence-unavailable",
       knownRevision: fresh.revision,
+      checkpointRevisions: {
+        reservation: fresh.revision,
+        publication: null,
+        resolution: null,
+      },
     };
     checkAuthority();
     // No ticket escapes. There is exactly one call site, reached only via this direct acknowledgement.
@@ -677,11 +684,23 @@ async function confirmGatePublication(
       history.gate.target !== envelope.target
     )
       throw new GateFault("conflicting-gate-history");
-    result = { ...result, knownRevision: before.revision };
+    result = {
+      ...result,
+      knownRevision: before.revision,
+      checkpointRevisions: gateRevisions(history.gate),
+    };
     if (history.gate.publication) {
       if (history.gate.publication !== X)
         return { ...result, reason: "publication-mismatch" };
-      if (history.gate.action) return result;
+      if (history.gate.action)
+        return {
+          ...result,
+          durableState:
+            history.gate.action === "approve-design"
+              ? "approved"
+              : "changes-requested",
+          verificationStatus: "evidence-unavailable",
+        };
       return resolveGateDecision(
         {
           ...result,

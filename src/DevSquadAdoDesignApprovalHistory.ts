@@ -87,3 +87,10 @@ export function reduceGateHistory(
   }
   return { ok: true, gate: gates.get(occurrence) ?? null };
 }
+
+/** W055: retained stage revisions are distinct from the latest read revision. */
+export const gateRevisions = (gate: GateHistory) => ({
+  reservation: gate.reservationRevision,
+  publication: gate.publicationRevision,
+  resolution: gate.resolutionRevision,
+});

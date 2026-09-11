@@ -312,7 +312,7 @@ Every task inherits the saved spec and plan, including:
 
 ### W055: Recover uncertainty without replay permission
 
-- [ ] **W055** Complete interrupted-stage recovery and result classification in `src/DevSquadAdoDesignApproval.ts`, `src/DevSquadAdoDesignApprovalHistory.ts`, and `src/DevSquadAdoDesignApproval.recovery.test.ts`.
+- [x] **W055** Complete interrupted-stage recovery and result classification in `src/DevSquadAdoDesignApproval.ts`, `src/DevSquadAdoDesignApprovalHistory.ts`, and `src/DevSquadAdoDesignApproval.recovery.test.ts`.
   - Parent: US15-02.
   - Dependency: W054; builds on W049 through W051.
   - Estimate: M, 1 to 1.5 engineer-days. Risk: High.
@@ -868,3 +868,12 @@ All execution CLI calls explicitly select the authorized worktree. No LSP tools 
 - Real identical/different reservation races, opposing resolution CAS, nine acknowledgement mutation families, and same-J/changed-token private ledger digest rejection covered. No retries, rebase, new IDs, or permission from history. Stable exact CAS failure categories retained without exposing errors.
 - Scope: original-submission ledger guard, API reason types, publication/decision call sites, concurrency tests, evidence. No ledger schema/storage changes. Portable tests do not certify production Windows durability.
 - Commit: fix(design-gate): preserve original submission guards W054. Trailer: Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>.
+
+### W055 executed evidence
+
+- Baseline W054 45a7097. FR-006–010/018–022, CC-02–05/09/14 and mapped recovery invariants.
+- RED: npm test -- DevSquadAdoDesignApproval.recovery --reporter=dot exit 1, 5 behavioral failures: missing known accepted checkpoint revision evidence.
+- GREEN affected selector npm test -- DevSquadAdoDesignApproval DevSquadAdoWorkflowLedger --reporter=dot exit 0: 191 passed / 2 existing platform skips, 13 files. New recovery file 5 tests. Typecheck first caught one untyped test callback; explicit public input annotation corrected it; final exit 0.
+- Public crash/reopen schedules cover durable reservation/publication/resolution with lost acknowledgements, missing original capability/witnesses, and original receipt reconciliation after publisher response loss. Recover reports retained stage revisions separately from latest record revision and never creates permission. Start/reconcile preserve observed historical resolution under intervening reads.
+- Prettier and diff checks pass. Scope: API, history projection, stage result composition, attached tests, evidence. No global, packaging or production platform claim.
+- Commit: feat(design-gate): recover consumed attempt outcomes W055. Trailer: Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>.
