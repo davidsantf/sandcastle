@@ -962,3 +962,11 @@ All execution CLI calls explicitly select the authorized worktree. No LSP tools 
 - README/example Prettier check passes. Changeset is ignored by CLI formatting; explicit Prettier API check initially false, formatted once and rechecked true. git diff --check passes.
 - Original spec/plan/ADR remain untracked and byte-preserved: normal precommit formatting would rewrite them if staged, so this worker intentionally does not include them in a formatting-hook commit. Parent retains these authoritative local inputs.
 - Commit: docs(design-gate): explain host review and loss limits W063. Trailer: Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>.
+
+### W064-discovered W049/W056 validation follow-up
+
+- Baseline W063 479daa9. Traceability inspection found three bounded-validation defects: tuple/scope traversal used adapter-provided array methods; public chronology did not compare checkpoint timestamps with record bounds; combined selection package could exceed 16 KiB despite individually bounded fields. This is implementation correction within FR-021/024 and SEC-001/006, not spec drift.
+- RED npm test -- DevSquadAdoDesignApproval.bounds -t follow-up --reporter=dot: exit 1, five behavioral failures / 28 selector exclusions. Additional RED -t "combined minimized": exit 1, one behavioral failure / 33 exclusions; oversized canonical selection package incorrectly approved.
+- Replaced custom array-method traversal with bounded indexed copies, enforced coherent public checkpoint chronology, and checked combined minimized event/grant/prefix bytes before resolution. Added six implementation-attached regressions, not a separate conformance project.
+- Typecheck caught one cast-precedence error; one localized correction, final exit 0. GREEN npm test -- DevSquadAdoDesignApproval DevSquadAdoWorkflowLedger --reporter=dot exit 0: 282 passed / 2 existing skips in 21 files (218 feature + 64 ledger). Formatting/diff pass.
+- Scoped follow-up commit: fix(design-gate): close bounded validation gaps W056. Trailer: Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>. W064 final integrated validation remains pending below.

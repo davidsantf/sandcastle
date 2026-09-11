@@ -165,7 +165,11 @@ export const identifier = (v: unknown): v is string =>
 export const scopeCopy = (
   value: DevSquadAdoDesignScope,
 ): DevSquadAdoDesignScope => {
-  if (!Array.isArray(value) || value.length !== 3 || !value.every(identifier))
+  if (
+    !Array.isArray(value) ||
+    value.length !== 3 ||
+    ![value[0], value[1], value[2]].every(identifier)
+  )
     throw new GateFault("invalid-input");
   return [value[0], value[1], value[2]];
 };

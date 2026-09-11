@@ -110,6 +110,7 @@ const record = (v: unknown, id: string): v is ObjectValue => {
     !integer(v.revision) ||
     !timestamp(v.createdAt) ||
     !timestamp(v.updatedAt) ||
+    v.createdAt > v.updatedAt ||
     !state(v) ||
     !nullable(v.branch, text) ||
     !nullable(
@@ -152,11 +153,14 @@ const record = (v: unknown, id: string): v is ObjectValue => {
     return false;
   let previous = 0;
   let previousState: unknown;
+  let previousTime = v.createdAt as string;
   const operations = new Set<string>();
   for (const entry of v.checkpoints) {
     if (
       !checkpoint(entry) ||
       !integer(entry.revision) ||
+      (entry.acceptedAt as string) < previousTime ||
+      (entry.acceptedAt as string) > (v.updatedAt as string) ||
       entry.revision <= previous ||
       entry.revision > v.revision ||
       operations.has(entry.operationId as string) ||
@@ -166,6 +170,7 @@ const record = (v: unknown, id: string): v is ObjectValue => {
     previous = entry.revision;
     operations.add(entry.operationId as string);
     previousState = entry.resulting;
+    previousTime = entry.acceptedAt as string;
   }
   return (
     previousState === undefined ||

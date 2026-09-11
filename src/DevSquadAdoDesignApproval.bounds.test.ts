@@ -297,3 +297,87 @@ it.each([1024, 1025])(
     expect(d.readDecisionPage).toHaveBeenCalledTimes(count === 1024 ? 2 : 1);
   },
 );
+it("W056 follow-up never invokes adapter-supplied array methods during prefix copying", async () => {
+  const f = await fixture();
+  const d = decisionAdapters(f);
+  const base = d.readDecisionPage.getMockImplementation()!;
+  const custom = vi.fn(() => {
+    throw Error("UNBOUNDED-SECRET");
+  });
+  d.readDecisionPage.mockImplementation(async (q) => {
+    const r = await base(q);
+    r.page.map = custom;
+    return r;
+  });
+  const r = await start(f.request, d as any);
+  expect(r.durableState).toBe("approved");
+  expect(custom).not.toHaveBeenCalled();
+});
+it.each([
+  "updated-before-created",
+  "checkpoint-after-updated",
+  "checkpoint-before-created",
+])("W049 follow-up rejects %s public record chronology", async (mode) => {
+  const f = await fixture();
+  await start(f.request, f.dependencies);
+  const read = await f.ledger.readRecord(137);
+  if (!read.ok) throw Error("read");
+  const raw: any = structuredClone(read.value);
+  if (mode === "updated-before-created")
+    raw.createdAt = "2026-09-12T12:00:00.000Z";
+  else
+    raw.checkpoints[0].acceptedAt =
+      mode === "checkpoint-after-updated"
+        ? "2026-09-12T12:00:00.000Z"
+        : "2026-09-10T12:00:00.000Z";
+  expect(
+    (
+      await recover(f.request, {
+        ledger: { readRecord: async () => ({ ok: true, value: raw }) },
+      })
+    ).durableState,
+  ).toBe("unreadable");
+});
+it("W056 follow-up ignores injected scope array methods before retaining material", async () => {
+  const f = await fixture();
+  const scope: any = [...f.request.scope];
+  const custom = vi.fn(() => {
+    throw Error("CUSTOM-SCOPE");
+  });
+  scope.every = custom;
+  const r = await start({ ...f.request, scope }, f.dependencies);
+  expect(r.durableState).toBe("attempt-consumed");
+  expect(custom).not.toHaveBeenCalled();
+});
+it("W056 follow-up bounds the combined minimized selection witness package", async () => {
+  const f = await fixture();
+  const long = '"'.repeat(256);
+  (f.request as any).scope = [long, long, long];
+  const d = decisionAdapters(f);
+  d.verifyPublication = async () => {
+    const w: any = structuredClone(f.receipt());
+    for (const i of [0, 7, 8, 9, 10, 12, 13]) w[i] = long;
+    return { kind: "verified", witness: w };
+  };
+  const page = d.readDecisionPage.getMockImplementation()!;
+  d.readDecisionPage.mockImplementation(async (q) => {
+    const p = await page(q);
+    p.page[3] = long;
+    const e = p.page[10][0];
+    for (const i of [0, 2, 3, 5, 6, 9, 13]) e[i] = long;
+    e[11][2] = long;
+    e[11][3] = long;
+    return p;
+  });
+  const auth = d.authorizeHumanDecision.getMockImplementation()!;
+  d.authorizeHumanDecision.mockImplementation(async (q) => {
+    const a = await auth(q);
+    for (const i of [0, 7, 16, 17, 18, 19]) a.witness[i] = long;
+    return a;
+  });
+  const r = await start(f.request, d as any);
+  expect(r).toMatchObject({
+    durableState: "publication-confirmed",
+    reason: "input-limit",
+  });
+});

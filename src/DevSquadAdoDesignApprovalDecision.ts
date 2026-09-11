@@ -148,7 +148,16 @@ function copyTuple(value: unknown, maximum: number): unknown {
     if (Array.isArray(v)) {
       if (v.length > 20) throw new GateFault("input-limit");
       bytes += 2 + Math.max(0, v.length - 1);
-      return v.map((x) => copy(x, depth + 1));
+      const length = v.length;
+      const result: unknown[] = [];
+      for (let i = 0; i < length; i++) {
+        if (v.length !== length)
+          throw new GateFault("decision-prefix-incomplete");
+        result.push(copy(v[i], depth + 1));
+        if (v.length !== length)
+          throw new GateFault("decision-prefix-incomplete");
+      }
+      return result;
     }
     if (
       v !== null &&
@@ -420,6 +429,13 @@ export async function resolveGateDecision(
       nextOrdinal = p[9] + 1;
     }
     if (!selected) return { ...result, reason: "no-eligible-decision" };
+    // W056 follow-up: selected event + grant is one bounded minimized package.
+    if (
+      Buffer.byteLength(
+        JSON.stringify([selected.event, selected.grant, selected.prefix]),
+      ) > 16384
+    )
+      throw new GateFault("input-limit");
     const E = gateHash([
       "dg15.decision.v1",
       W,
