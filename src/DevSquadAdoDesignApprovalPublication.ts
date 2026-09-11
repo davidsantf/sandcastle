@@ -330,7 +330,9 @@ export async function startGatePublication(
     if (typeof utcNow !== "function") throw new GateFault("invalid-input");
     const response = await lifecycle.call("read", () => read(W));
     if (!response || response.ok !== true)
-      throw new GateFault("evidence-unavailable");
+      throw new GateFault(
+        gateLedgerRejection(response) ?? "evidence-unavailable",
+      );
     const record = inspectDesignGateRecord(response.value, W, lifecycle);
     if (!record) throw new GateFault("evidence-unavailable");
     const history = reduceGateHistory(record, G, lifecycle);
@@ -674,7 +676,9 @@ async function confirmGatePublication(
     ]);
     const response = await lifecycle.call("read", () => read(W));
     if (!response || response.ok !== true)
-      throw new GateFault("evidence-unavailable");
+      throw new GateFault(
+        gateLedgerRejection(response) ?? "evidence-unavailable",
+      );
     const before = inspectDesignGateRecord(response.value, W, lifecycle);
     if (!before) throw new GateFault("evidence-unavailable");
     const history = reduceGateHistory(before, G, lifecycle);

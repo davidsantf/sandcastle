@@ -1,3 +1,4 @@
+import { gateLedgerRejection } from "./DevSquadAdoDesignApprovalLedger.js";
 import {
   GateFault,
   GateLifecycle,
@@ -78,7 +79,11 @@ export interface DevSquadAdoDesignApprovalResult {
     | "human-decision-confirmed"
     | "revision-conflict"
     | "state-conflict"
-    | "idempotency-conflict";
+    | "idempotency-conflict"
+    | "capacity-exceeded"
+    | "corrupt-ledger"
+    | "unsupported-schema"
+    | "unsupported-platform";
   /** Canonical requested binding, only after validation. */
   readonly binding: {
     readonly workItemId: string;
@@ -153,7 +158,7 @@ export async function recoverDevSquadAdoDesignApproval(
       response.ok !== true ||
       !("value" in response)
     )
-      return failed("evidence-unavailable");
+      return failed(gateLedgerRejection(response) ?? "evidence-unavailable");
     const record = inspectDesignGateRecord(
       response.value,
       workItemId,

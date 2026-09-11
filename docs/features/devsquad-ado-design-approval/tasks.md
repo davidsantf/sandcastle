@@ -344,7 +344,7 @@ Every task inherits the saved spec and plan, including:
 
 ### W057: Fail closed on storage and evidence exhaustion
 
-- [ ] **W057** Integrate capacity, corruption, and privacy failure handling in `src/DevSquadAdoDesignApprovalHistory.ts`, `src/DevSquadAdoDesignApprovalLedger.ts`, and `src/DevSquadAdoDesignApproval.failure.test.ts`.
+- [x] **W057** Integrate capacity, corruption, and privacy failure handling in `src/DevSquadAdoDesignApprovalHistory.ts`, `src/DevSquadAdoDesignApprovalLedger.ts`, and `src/DevSquadAdoDesignApproval.failure.test.ts`.
   - Parent: US15-02; supports every scenario.
   - Dependency: W056.
   - Estimate: M, 1 to 1.5 engineer-days. Risk: High.
@@ -888,3 +888,13 @@ All execution CLI calls explicitly select the authorized worktree. No LSP tools 
 - Boundary coverage includes reviewed multibyte bytes (prior tests), body 4096/4097, artifacts 64/65, identifier 256/257, cursor 1024/1025, events 16/17, checkpoints 10000/10001, oversized agent/session histories. Fixed schema/resource ceilings that cannot be reached by a supported entry path remain defensive limits, not claims of heap isolation.
 - Prettier/diff checks pass. No hard termination of noncooperating adapters, cancellation of unsettled ledger writes, global suite, or production platform success claimed.
 - Commit: feat(design-gate): enforce bounded dependency lifecycles W056. Trailer: Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>.
+
+### W057 executed evidence
+
+- Baseline W056 85779d0. FR-019–026, CC-14, privacy/storage fail-closed controls.
+- Initial test run exposed fixture assumption: ordinary ledger cleanup retained only highest generation. This was not corruption RED. The test now explicitly restores its saved older valid fixture generation before corrupting highest.
+- Genuine RED: npm test -- DevSquadAdoDesignApproval.failure --reporter=dot exit 1: 8 behavioral failures / 1 pass, all stable category mismatches with no setup error.
+- GREEN affected selector npm test -- DevSquadAdoDesignApproval DevSquadAdoWorkflowLedger --reporter=dot exit 0: 228 passed / 2 existing platform skips, 15 files. Failure file adds 9 tests. Typecheck exit 0, formatting/diff pass.
+- Injected public capacity failures at each stage preserve durable history and invocation limits; actual portable highest-generation corruption refuses older fallback. Unsupported schema/platform and secret-bearing adapter errors become fixed categories. Successful durable artifacts and results scanned for proposal, command, human witness and raw capability sentinels: none retained.
+- No sidecars, cursor/reference patches, claim lifecycle, private receipt inspection, eviction, repair, migration or capacity change in production feature. Existing ledger recovery/capacity tests included in affected regression.
+- Commit: fix(design-gate): fail closed on exhausted evidence W057. Trailer: Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>.

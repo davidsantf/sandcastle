@@ -137,8 +137,17 @@ export function gateLedgerRejection(
         return "authority-expired";
       case "stale-fencing":
       case "claim-not-held":
-      case "claim-token-mismatch":
+      case "claim-authorization":
         return "authority-rejected";
+      case "capacity-exceeded":
+        return "capacity-exceeded";
+      case "corrupt-artifact":
+        return "corrupt-ledger";
+      case "unsupported-schema-version":
+        return "unsupported-schema";
+      case "unsupported-filesystem":
+      case "unsupported-permissions":
+        return "unsupported-platform";
       default:
         return null;
     }

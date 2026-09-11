@@ -436,7 +436,8 @@ export async function resolveGateDecision(
     const before = read?.ok
       ? inspectDesignGateRecord(read.value, W, lifecycle)
       : null;
-    if (!before) throw new GateFault("evidence-unavailable");
+    if (!before)
+      throw new GateFault(gateLedgerRejection(read) ?? "evidence-unavailable");
     const history = reduceGateHistory(before, G, lifecycle);
     if (!history.ok || !history.gate || history.gate.publication !== X)
       throw new GateFault("conflicting-gate-history");
