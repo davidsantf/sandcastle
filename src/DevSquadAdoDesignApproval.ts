@@ -76,7 +76,7 @@ export interface DevSquadAdoDesignApprovalResult {
     | "mutation-unconfirmed"
     | "decision-pending"
     | "conflicting-evidence";
-  /** Recovery does not infer an execution target. */
+  /** Independent descriptive target status; never executable authority. */
   readonly targetHandoff:
     | "not-requested"
     | "not-bound"
@@ -118,7 +118,9 @@ export interface DevSquadAdoDesignApprovalResult {
     | "target-mismatch";
   /** Canonical requested binding, only after validation. */
   readonly binding: {
+    /** Canonical ledger identity. */
     readonly workItemId: string;
+    /** Explicit host-selected occurrence. */
     readonly occurrence: string;
     /** Recovered immutable design commitment; not reconstructed content. */
     readonly design?: string;
@@ -258,7 +260,7 @@ export async function startDevSquadAdoDesignApproval(
 /** Reconcile evidence for an existing reservation, with zero publisher invocations. */
 export async function reconcileDevSquadAdoDesignApproval(
   request: import("./DevSquadAdoDesignApprovalPublication.js").DevSquadAdoDesignStartRequest,
-  dependencies: import("./DevSquadAdoDesignApprovalPublication.js").DevSquadAdoDesignStartDependencies,
+  dependencies: import("./DevSquadAdoDesignApprovalPublication.js").DevSquadAdoDesignReconcileDependencies,
 ): Promise<DevSquadAdoDesignApprovalResult> {
   return startGatePublication(request, dependencies, "reconcile");
 }

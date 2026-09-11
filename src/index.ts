@@ -340,3 +340,40 @@ export type {
   DevSquadAdoDiscoveryAdmissionAcceptance,
   DevSquadAdoDiscoveryAdmissionOutcome,
 } from "./DevSquadAdoWorkflowWatcher.js";
+
+// W062 / FR-026: host-composed offline gate; no internal permission/runtime exports.
+export {
+  startDevSquadAdoDesignApproval,
+  reconcileDevSquadAdoDesignApproval,
+  recoverDevSquadAdoDesignApproval,
+} from "./DevSquadAdoDesignApproval.js";
+export type {
+  DevSquadAdoDesignRecoveryRequest,
+  DevSquadAdoDesignRecoveryDependencies,
+  DevSquadAdoDesignApprovalResult,
+  DevSquadAdoDesignProvenance,
+} from "./DevSquadAdoDesignApproval.js";
+export type {
+  DevSquadAdoDesignScope,
+  DevSquadAdoDesignArtifact,
+  DevSquadAdoDesignInput,
+  DevSquadAdoDesignStartRequest,
+  DevSquadAdoDesignEnvelope,
+  DevSquadAdoDesignMutationRequest,
+  DevSquadAdoDesignStartDependencies,
+  DevSquadAdoDesignReconcileDependencies,
+  DevSquadAdoDesignPublicationWitness,
+  DevSquadAdoDesignPublicationVerifier,
+} from "./DevSquadAdoDesignApprovalPublication.js";
+export type {
+  DevSquadAdoDesignProposalAnchor,
+  DevSquadAdoDesignDecisionEvent,
+  DevSquadAdoDesignDecisionPage,
+  DevSquadAdoDesignHumanWitness,
+  DevSquadAdoDesignDecisionDependencies,
+} from "./DevSquadAdoDesignApprovalDecision.js";
+export type {
+  DevSquadAdoDesignTarget,
+  DevSquadAdoDesignTargetRequest,
+  DevSquadAdoDesignTargetVerifier,
+} from "./DevSquadAdoDesignApprovalTarget.js";

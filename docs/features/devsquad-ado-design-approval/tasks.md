@@ -429,7 +429,7 @@ Every task inherits the saved spec and plan, including:
 
 ### W062: Complete the public offline API boundary
 
-- [ ] **W062** Align public exports and dependency boundaries in `src/DevSquadAdoDesignApproval.ts`, `src/index.ts`, and `src/DevSquadAdoDesignApproval.dependencies.test.ts`.
+- [x] **W062** Align public exports and dependency boundaries in `src/DevSquadAdoDesignApproval.ts`, `src/index.ts`, and `src/DevSquadAdoDesignApproval.dependencies.test.ts`.
   - Parent: US15-01; supports every scenario.
   - Dependency: W061.
   - Estimate: M, 0.5 to 1 engineer-day. Risk: Medium.
@@ -942,3 +942,12 @@ All execution CLI calls explicitly select the authorized worktree. No LSP tools 
 - Corrected exact-boundary fixture to use both deterministic UTC and monotonic clocks, consistent with the task's explicit schedule. Real elapsed validation time is still charged by production; the final cancellation/retirement guards are unchanged. One correction attempt, no learning file under the standing N disposition.
 - Actual GREEN rerun: npm test -- DevSquadAdoDesignApproval DevSquadAdoWorkflowLedger --reporter=dot exit 0, 263 passed / 2 existing skips across 19 files. npm run typecheck exit 0. Prettier/diff pass. W061 checkbox now reflects this verified completion.
 - Corrective commit scope: target-race fixture and truthful task evidence only. Subject test(design-gate): fix deterministic freshness boundary W061. Trailer: Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>.
+
+### W062 executed evidence
+
+- Baseline W061 corrected completion ae929bd (da23426 failure record explicitly corrected above). FR-003/021/023–026, offline/public boundary controls.
+- RED: npm test -- DevSquadAdoDesignApproval.dependencies --reporter=dot exit 1: 2 behavioral failures / 6 passes. Root operations absent; reconcile incorrectly required unused publication/design-verifier dependencies.
+- GREEN npm test -- DevSquadAdoDesignApproval DevSquadAdoWorkflowWatcher.dependencies DevSquadAdoWorkflowLedger --reporter=dot exit 0: 290 passed / 2 existing skips, 21 files. Guardian expanded to 10 tests including forbidden-import controls and typed public consumer. Typecheck exit 0; Prettier/diff pass.
+- Root exports only intended operations/contracts. Reconcile dependency subset requires no publisher or initial design verifier. Runtime/type guardian covers every feature production module, imports/reexports/side-effects/dynamic/CommonJS forms, forbidden nonliteral calls, and fixture/execution/transport/Effect dependencies. Existing watcher public guardian still passes.
+- Fresh npx --no-install tsup exit 0: ESM success 8663ms, DTS success 14689ms. node scripts/check-public-types-effect-free.mjs exit 0 against those freshly generated declarations. Existing unused createRequire/Readable bundle warnings retained. This direct compilation does not run canonical postbuild or establish packaging success; W064 will run canonical npm build.
+- Commit: feat(design-gate): expose the offline gate API W062. Trailer: Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>.

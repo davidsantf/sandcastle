@@ -11,6 +11,12 @@ import type {
 } from "./DevSquadAdoWorkflowLedger.js";
 import type { DevSquadAdoDesignRecoveryRequest } from "./DevSquadAdoDesignApproval.js";
 
+/** Reconciliation cannot invoke publication or require an initial-design verification seam. */
+export type DevSquadAdoDesignReconcileDependencies = Omit<
+  DevSquadAdoDesignStartDependencies,
+  "publishOnce" | "verifyDesign"
+>;
+
 /** Nonsecret host tracker or repository namespace. */
 export type DevSquadAdoDesignScope = readonly [
   trackerKind: string,
@@ -30,7 +36,7 @@ export interface DevSquadAdoDesignInput {
   readonly content: string;
   /** Immutable version witnesses, sorted canonically by the gate. */
   readonly artifacts: readonly DevSquadAdoDesignArtifact[];
-  /** Explicit absence of execution-target binding. */
+  /** Explicit no-target or independently verified immutable target descriptor. */
   readonly target: import("./DevSquadAdoDesignApprovalTarget.js").DevSquadAdoDesignTarget;
 }
 /** Host-authorized request to consume one publication attempt. */
@@ -278,7 +284,9 @@ export const sameGrant = (
 /** W050: invocation-local fresh reservation permission is consumed before publishOnce. */
 export async function startGatePublication(
   request: DevSquadAdoDesignStartRequest,
-  dependencies: DevSquadAdoDesignStartDependencies,
+  dependencies:
+    | DevSquadAdoDesignStartDependencies
+    | DevSquadAdoDesignReconcileDependencies,
   mode: "start" | "reconcile" = "start",
 ): Promise<DevSquadAdoDesignApprovalResult> {
   let result: DevSquadAdoDesignApprovalResult = {
@@ -321,8 +329,18 @@ export async function startGatePublication(
     const read = ledger.readRecord.bind(ledger);
     const checkpoint = ledger.checkpoint.bind(ledger);
     const authorize = dependencies.authorizeMutation.bind(dependencies);
-    const verify = dependencies.verifyDesign.bind(dependencies);
-    const publish = dependencies.publishOnce.bind(dependencies);
+    const startDependencies =
+      dependencies as Partial<DevSquadAdoDesignStartDependencies>;
+    const verify =
+      mode === "start"
+        ? startDependencies.verifyDesign?.bind(dependencies)
+        : undefined;
+    const publish =
+      mode === "start"
+        ? startDependencies.publishOnce?.bind(dependencies)
+        : undefined;
+    if (mode === "start" && (!verify || !publish))
+      throw new GateFault("invalid-input");
     const verifyPublication =
       dependencies.verifyPublication?.bind(dependencies);
     const readDecisionPage = dependencies.readDecisionPage?.bind(dependencies);
@@ -432,7 +450,7 @@ export async function startGatePublication(
     };
     checkAuthority();
     const proof = await lifecycle.call("design", (signal) =>
-      verify(structuredClone({ envelope, material }), signal),
+      verify!(structuredClone({ envelope, material }), signal),
     );
     if (
       !proof ||
@@ -525,7 +543,7 @@ export async function startGatePublication(
     checkAuthority();
     // No ticket escapes. There is exactly one call site, reached only via this direct acknowledgement.
     const hint = await lifecycle.call("publisher", (signal) =>
-      publish(structuredClone(envelope), signal),
+      publish!(structuredClone(envelope), signal),
     );
     return finish(
       await confirmGatePublication(result, {
