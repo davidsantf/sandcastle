@@ -11,3 +11,5 @@ Fix discovery admission routing to require initial validated missing-read eviden
 Contain executable signal-listener failures in both modes without losing earlier acknowledgements or bypassing retained claim finalization.
 
 Snapshot supplied-mode clock timestamps so mutable caller Dates cannot bypass elapsed poll-start limits or rewrite pass metadata.
+
+Restore the approved minimized discovery validation summary by keeping prepared policy and authorization context private, without changing supplied validation types or adding preflight effects. These are bugfixes within the unreleased discovery feature; its existing minor release entry is retained.

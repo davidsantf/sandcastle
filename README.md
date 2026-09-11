@@ -543,6 +543,13 @@ anchor also fail. Loss in either WI or PR blocks checkpointing **both** kinds;
 the host must deliberately reconcile retention loss. Intake-rule suppression is
 different: matched existing records still advance cursors without returning intake.
 
+`validateDevSquadAdoWorkflowWatchPassOptions` returns a minimized discovery
+summary: normalized common pass settings, `mode` and the public `binding`
+(scope/partition/stability/policy version). It invokes no injected dependency and
+does not return the prepared discovery configuration, policy operands or
+authorization submission IDs. The running pass retains that context privately
+for matching and admission. Supplied validation types and result shapes are unchanged.
+
 Public matching evidence contains only the exact `policyVersion`, decision
 `matched | excluded | facts-missing`, and fixed predicate/outcome categories in
 state/team/tags-all/tags-any/tags-none/area/iteration order. Raw policy operands,

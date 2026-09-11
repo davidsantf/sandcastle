@@ -588,6 +588,7 @@ export function validateDevSquadAdoWorkflowWatchPassOptions(
     const result = prepareDevSquadAdoDiscovery(
       options as RunDevSquadAdoDiscoveryWatchPassOptions,
     );
+    // W046 ARC14-001: expose only the summary, not private prepared context.
     return result.ok ? { ok: true, value: result.value } : result;
   }
   const result = prepareDevSquadAdoWorkflowWatchPassOptions(

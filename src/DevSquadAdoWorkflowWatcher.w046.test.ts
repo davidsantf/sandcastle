@@ -3,6 +3,7 @@ import {
   runDevSquadAdoWorkflowWatchPass,
   validateDevSquadAdoWorkflowWatchPassOptions,
   type DevSquadAdoWorkflowLedger,
+  type DevSquadAdoDiscoveryValidatedPass,
   type DevSquadAdoWorkflowRecord,
   type RunDevSquadAdoWorkflowWatchPassOptions,
   type RunDevSquadAdoDiscoveryWatchPassOptions,
@@ -475,4 +476,141 @@ describe("W046 SKEP3 mutable supplied clock", () => {
     });
     expect(clock).toHaveBeenCalledTimes(2);
   });
+});
+
+// ARC14-001 / FR-003/008/064/069 / CC-032/036-037 / SEC-A05.
+describe("W046 ARC14-001 minimized public validation", () => {
+  const privateInput = () => {
+    const f = discoveryFixture();
+    const input: RunDevSquadAdoDiscoveryWatchPassOptions = {
+      ...f.input,
+      discovery: {
+        ...f.input.discovery,
+        policy: {
+          version: "public-policy-version",
+          filters: [
+            {
+              dimension: "state",
+              operator: "one-of",
+              values: ["private-policy-operand"],
+            },
+          ],
+        },
+      },
+    };
+    return { ...f, input };
+  };
+  it("returns only the public discovery summary with zero dependency effects", () => {
+    const f = privateInput();
+    const delay = vi.fn(f.input.delay);
+    const result = validateDevSquadAdoWorkflowWatchPassOptions({
+      ...f.input,
+      delay,
+    });
+    const summaryHasNoConfiguration: "discovery" extends keyof DevSquadAdoDiscoveryValidatedPass
+      ? false
+      : true = true;
+    expect(summaryHasNoConfiguration).toBe(true);
+    expect(delay).not.toHaveBeenCalled();
+    expect(result.ok).toBe(true);
+    expect(f.input.clock).not.toHaveBeenCalled();
+    expect(f.input.seam.discoverWorkItemsPage).not.toHaveBeenCalled();
+    expect(f.input.seam.observeWorkItemComments).not.toHaveBeenCalled();
+    for (const method of Object.values(f.ledger))
+      expect(method).not.toHaveBeenCalled();
+    if (!result.ok) throw new Error("unexpected validation failure");
+    expect(JSON.stringify(result)).not.toMatch(
+      /private-policy-operand|private-submission/,
+    );
+    expect(Object.keys(result)).toEqual(["ok", "value"]);
+    expect(Object.keys(result.value).sort()).toEqual(
+      [
+        "mode",
+        "binding",
+        "passId",
+        "ownerId",
+        "intakePhases",
+        "intakeStatuses",
+        "maxPolls",
+        "maxPollStartElapsedMs",
+        "observationTimeoutMs",
+        "leaseDurationMs",
+        "renewalThresholdMs",
+        "baseIntervalMs",
+        "multiplier",
+        "maxIntervalMs",
+      ].sort(),
+    );
+    expect(result.value.binding).toEqual({
+      scopeId: "scope",
+      partitionId: "partition",
+      stabilityId: "stable",
+      policyVersion: "public-policy-version",
+    });
+  });
+  it.each([true, false])(
+    "keeps policy and authorization private but usable by a pass (matched=%s)",
+    async (matched) => {
+      const f = privateInput();
+      const initializeRecord = vi.fn<
+        DevSquadAdoWorkflowLedger["initializeRecord"]
+      >(async (input) => ({
+        ok: true,
+        value: {
+          acceptedRevision: 1,
+          acceptedAt: NOW,
+          replayed: false,
+          outcome: { kind: "initialized" },
+          record: {
+            ...baseRecord(),
+            revision: 1,
+            fencingCounter: 0,
+            phase: input.phase,
+            status: input.status,
+            observations: { workItemCommentId: null, pullRequest: null },
+          },
+        },
+      }));
+      const readRecord = vi.fn<DevSquadAdoWorkflowLedger["readRecord"]>(
+        async () => ({ ok: false, error: { kind: "record-not-found" } }),
+      );
+      const result = await runDevSquadAdoWorkflowWatchPass({
+        ...f.input,
+        ledger: { ...f.ledger, readRecord, initializeRecord },
+        seam: {
+          ...f.input.seam,
+          discoverWorkItemsPage: async (request) => ({
+            ...request,
+            items: [
+              {
+                workItemId: 137,
+                facts: {
+                  state: {
+                    kind: "known",
+                    value: matched
+                      ? "private-policy-operand"
+                      : "private-excluded-fact",
+                  },
+                },
+              },
+            ],
+            next: { kind: "terminal" },
+          }),
+        },
+      });
+      expect(result).toMatchObject({
+        ok: true,
+        value: {
+          counts: { admitted: matched ? 1 : 0, paused: matched ? 0 : 1 },
+          outcomes: [{ category: matched ? "admission" : "matching" }],
+        },
+      });
+      expect(readRecord).toHaveBeenCalledTimes(matched ? 1 : 0);
+      expect(initializeRecord).toHaveBeenCalledTimes(matched ? 1 : 0);
+      expect(f.input.seam.observeWorkItemComments).not.toHaveBeenCalled();
+      expect(JSON.stringify(result)).not.toMatch(
+        /private-policy-operand|private-submission|private-excluded-fact/,
+      );
+    },
+  );
 });

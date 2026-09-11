@@ -311,6 +311,8 @@ const projectConfiguration = (
 export interface PreparedDiscovery {
   readonly ok: true;
   readonly value: DevSquadAdoDiscoveryValidatedPass;
+  /** W046 ARC14-001 / SEC-A05: never part of the public validation summary. */
+  readonly configuration: DevSquadAdoWatchDiscoveryConfiguration;
   readonly options: RunDevSquadAdoWorkflowWatchPassOptions;
   readonly seam: DevSquadAdoWatcherDiscoverySeam;
 }
@@ -408,8 +410,8 @@ export const prepareDevSquadAdoDiscovery = (
         ...validated,
         mode: "discovery",
         binding,
-        discovery: configuration,
       }),
+      configuration,
       options: prepared.options,
       seam,
     };

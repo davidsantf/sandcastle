@@ -846,7 +846,7 @@ export type DevSquadAdoDiscoveryError =
       readonly reason: "missing" | "not-a-function";
     };
 
-/** Normalized discovery pass, without the supplied candidate field. */
+/** Minimized discovery validation summary; prepared policy/authorization stay private. */
 export interface DevSquadAdoDiscoveryValidatedPass extends Omit<
   DevSquadAdoWatchValidatedPass,
   "candidates"
@@ -855,8 +855,6 @@ export interface DevSquadAdoDiscoveryValidatedPass extends Omit<
   readonly mode: "discovery";
   /** Captured scope/partition/stability/policy-version binding, echoed exactly. */
   readonly binding: DevSquadAdoDiscoveryBinding;
-  /** Complete immutable-at-preflight discovery configuration. */
-  readonly discovery: DevSquadAdoWatchDiscoveryConfiguration;
 }
 
 /** Discovery validation result; no injected dependency is invoked. */

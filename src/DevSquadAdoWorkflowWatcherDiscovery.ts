@@ -57,7 +57,7 @@ export const runDevSquadAdoDiscoveryWatchPass = async (
 ): Promise<DevSquadAdoDiscoveryPassOutcome> => {
   const prepared = prepareDevSquadAdoDiscovery(input);
   if (!prepared.ok) return prepared;
-  const { options, value: validated, seam } = prepared;
+  const { options, value: validated, seam, configuration } = prepared;
   const startedAt = readClock(options.clock);
   if (!startedAt)
     return {
@@ -68,7 +68,7 @@ export const runDevSquadAdoDiscoveryWatchPass = async (
         reason: "must return a valid Date",
       },
     };
-  const limits = validated.discovery.limits;
+  const limits = configuration.limits;
   const context: PassContext = {
     ledger: guardDevSquadAdoWatcherLedger(options.ledger),
     // W042: retain the captured discovery union, not the supplied-mode view.
@@ -164,7 +164,7 @@ export const runDevSquadAdoDiscoveryWatchPass = async (
       state.admission = createDiscoveryAdmission(
         item.workItemId,
         item.matching,
-        validated.discovery.authorizations?.find(
+        configuration.authorizations?.find(
           (a) => a.workItemId === item.workItemId,
         ),
       );
@@ -243,7 +243,7 @@ export const runDevSquadAdoDiscoveryWatchPass = async (
       const page = prepareDiscoveryPage(
         response.value,
         identity,
-        validated.discovery,
+        configuration,
         seen,
         continuations,
       );
