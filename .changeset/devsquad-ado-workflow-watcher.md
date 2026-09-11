@@ -9,3 +9,5 @@ Add explicit host-injected discovery while preserving supplied-mode inference an
 Fix discovery admission routing to require initial validated missing-read evidence, preserving existing-record checkpoint failures and failed or indeterminate claim cleanup.
 
 Contain executable signal-listener failures in both modes without losing earlier acknowledgements or bypassing retained claim finalization.
+
+Snapshot supplied-mode clock timestamps so mutable caller Dates cannot bypass elapsed poll-start limits or rewrite pass metadata.

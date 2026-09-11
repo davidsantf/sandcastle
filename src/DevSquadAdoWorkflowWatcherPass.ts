@@ -170,15 +170,13 @@ const callLedger = async <T>(
  * reading it cannot make and releases every claim it still holds.
  */
 const readClock = (clock: () => Date): Date | null => {
-  let reading: Date;
   try {
-    reading = clock();
+    // W046 SKEP3 / FR-016/047: snapshot the native timestamp, not caller identity.
+    const stamp = Date.prototype.getTime.call(clock());
+    return Number.isFinite(stamp) ? new Date(stamp) : null;
   } catch {
     return null;
   }
-  return reading instanceof Date && Number.isFinite(reading.getTime())
-    ? reading
-    : null;
 };
 
 const claimMetadata = (claim: HeldClaim): DevSquadAdoWatchClaimMetadata => ({

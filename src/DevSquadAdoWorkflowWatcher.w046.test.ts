@@ -416,3 +416,63 @@ describe("W046 SKEP2 executable signal listener failures", () => {
     },
   );
 });
+
+// SKEP3 / FR-016-017/047-048 / CC-011/030: caller-owned Dates cannot move baselines.
+describe("W046 SKEP3 mutable supplied clock", () => {
+  it("blocks poll two at 6000ms with a 5000ms budget and preserves the initial timestamp", async () => {
+    const f = fixture();
+    const shared = new Date(NOW);
+    let reads = 0;
+    const clock = vi.fn(() => {
+      shared.setTime(Date.parse(NOW) + (++reads >= 3 ? 6000 : 0));
+      return shared;
+    });
+    const observeWorkItemComments = vi.fn(async () => ({
+      commentIds: ["480"],
+    }));
+    const result = await runDevSquadAdoWorkflowWatchPass({
+      ...f.options,
+      clock,
+      budgets: {
+        ...f.options.budgets,
+        maxPolls: 3,
+        maxPollStartElapsedMs: 5000,
+      },
+      delay: (ms, signal) =>
+        signal === undefined ? Promise.resolve() : f.options.delay(ms, signal),
+      seam: { observeWorkItemComments },
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      value: {
+        polls: 1,
+        stopReason: "poll-start-budget-exhausted",
+        startedAt: NOW,
+        completedAt: "2026-01-01T00:00:06.000Z",
+      },
+    });
+    expect(observeWorkItemComments).toHaveBeenCalledTimes(1);
+    expect(clock).toHaveBeenCalledTimes(3);
+    expect(f.ledger.acquireClaim).not.toHaveBeenCalled();
+  });
+  it("retains start and final poll metadata if the seam mutates the returned Date", async () => {
+    const f = fixture();
+    const shared = new Date(NOW);
+    const clock = vi.fn(() => shared);
+    const result = await runDevSquadAdoWorkflowWatchPass({
+      ...f.options,
+      clock,
+      seam: {
+        observeWorkItemComments: async () => {
+          shared.setTime(Date.parse(NOW) + 6000);
+          return { commentIds: ["480"] };
+        },
+      },
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      value: { polls: 1, startedAt: NOW, completedAt: NOW },
+    });
+    expect(clock).toHaveBeenCalledTimes(2);
+  });
+});

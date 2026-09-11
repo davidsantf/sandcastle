@@ -694,6 +694,8 @@ late effects. Validated existing-record authority still gets exactly one cleanup
 attempt. Ledger/delay dependencies must settle; page/observation timeouts use the
 injected delay and are not a hard runtime guarantee. Poll-start elapsed limits
 bound scheduling, not duration; the clock is read at pass start and once per poll.
+Both modes snapshot each native Date timestamp; later caller mutation of a shared
+Date cannot move the start baseline, poll decision or reported timestamps.
 
 ### Typed offline discovery examples
 
