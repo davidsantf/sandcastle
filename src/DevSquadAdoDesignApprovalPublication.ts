@@ -853,6 +853,12 @@ async function confirmGatePublication(
         verificationStatus: "decision-pending",
         reason: "decision-prefix-incomplete",
         knownRevision: fresh.revision,
+        // W065-01 / FR-004, FR-019: project only the validated fresh acknowledgement.
+        checkpointRevisions: {
+          reservation: history.gate.reservationRevision,
+          publication: fresh.revision,
+          resolution: history.gate.resolutionRevision,
+        },
       },
       context,
       witness,

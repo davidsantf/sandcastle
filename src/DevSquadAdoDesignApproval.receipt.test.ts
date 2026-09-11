@@ -80,44 +80,100 @@ async function fixture() {
   };
   return { ...f, request, dependencies, publishOnce, receipt };
 }
-it("W051 verifies and durably confirms publication in start", async () => {
-  const f = await fixture();
-  const verifyPublication = vi.fn<
-    NonNullable<DevSquadAdoDesignStartDependencies["verifyPublication"]>
-  >(async () => ({ kind: "verified", witness: f.receipt() }));
-  const result = await start(f.request, {
-    ...f.dependencies,
-    verifyPublication,
-  });
-  expect(result).toMatchObject({
-    durableState: "publication-confirmed",
-    verificationStatus: "decision-pending",
-    reason: "decision-prefix-incomplete",
-  });
-  expect(f.publishOnce).toHaveBeenCalledTimes(1);
-  expect(verifyPublication).toHaveBeenCalledTimes(1);
-  expect(await f.ledger.readRecord(137)).toMatchObject({
-    ok: true,
-    value: { revision: 4, checkpoints: [{ revision: 3 }, { revision: 4 }] },
-  });
-});
-it("W051 reconciles a late matching original receipt without republishing", async () => {
-  const f = await fixture();
-  await start(f.request, f.dependencies);
-  const result = await reconcile(f.request, {
-    ...f.dependencies,
-    verifyPublication: async () => ({ kind: "verified", witness: f.receipt() }),
-  });
-  expect(result).toMatchObject({
-    durableState: "publication-confirmed",
-    verificationStatus: "decision-pending",
-    reason: "decision-prefix-incomplete",
-  });
-  expect(f.publishOnce).toHaveBeenCalledTimes(1);
-  expect((await recover(f.request, f.dependencies)).durableState).toBe(
-    "publication-confirmed",
-  );
-});
+function emptyDecisionPage(f: Awaited<ReturnType<typeof fixture>>) {
+  return vi.fn<
+    NonNullable<DevSquadAdoDesignStartDependencies["readDecisionPage"]>
+  >(async (q) => ({
+    kind: "verified",
+    page: [
+      "page-verifier",
+      f.request.scope,
+      "137",
+      "stream",
+      q.anchor,
+      "empty-snapshot",
+      5,
+      q.cursor,
+      6,
+      5,
+      [],
+      null,
+      true,
+      "page-proof",
+    ],
+  }));
+}
+// W065-01 / FR-004, FR-019, CC-04: accepted stage revisions must agree with recovery.
+it.each([false, true])(
+  "W065-01 start projects publication revision (certified empty page=%s)",
+  async (emptyPage) => {
+    const f = await fixture();
+    const verifyPublication = vi.fn<
+      NonNullable<DevSquadAdoDesignStartDependencies["verifyPublication"]>
+    >(async () => ({ kind: "verified", witness: f.receipt() }));
+    const readDecisionPage = emptyDecisionPage(f);
+    const result = await start(f.request, {
+      ...f.dependencies,
+      verifyPublication,
+      ...(emptyPage ? { readDecisionPage } : {}),
+    });
+    expect(result).toMatchObject({
+      durableState: "publication-confirmed",
+      verificationStatus: "decision-pending",
+      reason: emptyPage ? "no-eligible-decision" : "decision-prefix-incomplete",
+      knownRevision: 4,
+      checkpointRevisions: { reservation: 3, publication: 4, resolution: null },
+    });
+    const recovered = await recover(f.request, f.dependencies);
+    expect(recovered).toMatchObject({
+      durableState: result.durableState,
+      knownRevision: result.knownRevision,
+      checkpointRevisions: result.checkpointRevisions,
+    });
+    expect(f.publishOnce).toHaveBeenCalledTimes(1);
+    expect(verifyPublication).toHaveBeenCalledTimes(1);
+    expect(readDecisionPage).toHaveBeenCalledTimes(emptyPage ? 1 : 0);
+    expect(await f.ledger.readRecord(137)).toMatchObject({
+      ok: true,
+      value: { revision: 4, checkpoints: [{ revision: 3 }, { revision: 4 }] },
+    });
+  },
+);
+it.each([false, true])(
+  "W065-01 late receipt reconcile projects publication revision (certified empty page=%s)",
+  async (emptyPage) => {
+    const f = await fixture();
+    await start(f.request, f.dependencies);
+    const readDecisionPage = emptyDecisionPage(f);
+    const result = await reconcile(f.request, {
+      ...f.dependencies,
+      verifyPublication: async () => ({
+        kind: "verified",
+        witness: f.receipt(),
+      }),
+      ...(emptyPage ? { readDecisionPage } : {}),
+    });
+    expect(result).toMatchObject({
+      durableState: "publication-confirmed",
+      verificationStatus: "decision-pending",
+      reason: emptyPage ? "no-eligible-decision" : "decision-prefix-incomplete",
+      knownRevision: 4,
+      checkpointRevisions: { reservation: 3, publication: 4, resolution: null },
+    });
+    const recovered = await recover(f.request, f.dependencies);
+    expect(recovered).toMatchObject({
+      durableState: result.durableState,
+      knownRevision: result.knownRevision,
+      checkpointRevisions: result.checkpointRevisions,
+    });
+    expect(f.publishOnce).toHaveBeenCalledTimes(1);
+    expect(readDecisionPage).toHaveBeenCalledTimes(emptyPage ? 1 : 0);
+    expect(await f.ledger.readRecord(137)).toMatchObject({
+      ok: true,
+      value: { revision: 4, checkpoints: [{ revision: 3 }, { revision: 4 }] },
+    });
+  },
+);
 it.each([
   "wrong-work-item",
   "wrong-design",
