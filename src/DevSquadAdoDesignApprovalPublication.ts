@@ -419,21 +419,20 @@ export async function startGatePublication(
           verificationStatus: "conflicting-evidence",
           reason: "design-mismatch",
         };
-      return finish(
-        await confirmGatePublication(result, {
-          lifecycle,
-          envelope,
-          scope,
-          authority,
-          read,
-          checkpoint,
-          authorize,
-          verifyPublication,
-          readDecisionPage,
-          authorizeHumanDecision,
-          utcNow,
-        }),
-      );
+      // W056: retire this stage frame before awaiting later stages/target proof.
+      return confirmGatePublication(result, {
+        lifecycle,
+        envelope,
+        scope,
+        authority,
+        read,
+        checkpoint,
+        authorize,
+        verifyPublication,
+        readDecisionPage,
+        authorizeHumanDecision,
+        utcNow,
+      }).then(finish);
     }
     if (mode === "reconcile") return result;
     if (!authority) throw new GateFault("authority-required");
@@ -549,22 +548,21 @@ export async function startGatePublication(
     const hint = await lifecycle.call("publisher", (signal) =>
       publish!(structuredClone(envelope), signal),
     );
-    return finish(
-      await confirmGatePublication(result, {
-        lifecycle,
-        envelope,
-        scope,
-        authority,
-        read,
-        checkpoint,
-        authorize,
-        verifyPublication,
-        readDecisionPage,
-        authorizeHumanDecision,
-        utcNow,
-        hint,
-      }),
-    );
+    // W056: retire this stage frame before awaiting later stages/target proof.
+    return confirmGatePublication(result, {
+      lifecycle,
+      envelope,
+      scope,
+      authority,
+      read,
+      checkpoint,
+      authorize,
+      verifyPublication,
+      readDecisionPage,
+      authorizeHumanDecision,
+      utcNow,
+      hint,
+    }).then(finish);
   } catch (error) {
     const reason = error instanceof GateFault ? error.reason : "invalid-input";
     return {

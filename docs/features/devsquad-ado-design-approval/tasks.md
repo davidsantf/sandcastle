@@ -970,3 +970,9 @@ All execution CLI calls explicitly select the authorized worktree. No LSP tools 
 - Replaced custom array-method traversal with bounded indexed copies, enforced coherent public checkpoint chronology, and checked combined minimized event/grant/prefix bytes before resolution. Added six implementation-attached regressions, not a separate conformance project.
 - Typecheck caught one cast-precedence error; one localized correction, final exit 0. GREEN npm test -- DevSquadAdoDesignApproval DevSquadAdoWorkflowLedger --reporter=dot exit 0: 282 passed / 2 existing skips in 21 files (218 feature + 64 ledger). Formatting/diff pass.
 - Scoped follow-up commit: fix(design-gate): close bounded validation gaps W056. Trailer: Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>. W064 final integrated validation remains pending below.
+
+### W056 bounded lifetime refactor during W064 inspection
+
+- Baseline 3f968aa. Kept original-stage frames out of later-stage/target awaits by returning the existing bounded continuation chain directly. Only the target request, clock, lifecycle and verifier remain in the final continuation; no full ledger record is a continuation argument. This private lifetime refactor changes no public behavior or design criterion, so no artificial RED was manufactured.
+- GREEN npm test -- DevSquadAdoDesignApproval --reporter=dot exit 0: 218 passed / 16 files. npm run typecheck exit 0; formatting/diff pass.
+- Commit scope: publication continuation and this evidence. Subject refactor(design-gate): retire completed stage frames W056. Trailer: Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>.
