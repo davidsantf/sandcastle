@@ -260,7 +260,7 @@ Every task inherits the saved spec and plan, including:
 
 ### W052: Resolve a complete single-page human decision
 
-- [ ] **W052** Implement exact commands, event-bound authorization, and durable resolution in `src/DevSquadAdoDesignApprovalDecision.ts`, `src/DevSquadAdoDesignApprovalLedger.ts`, and `src/DevSquadAdoDesignApproval.decision.test.ts`.
+- [x] **W052** Implement exact commands, event-bound authorization, and durable resolution in `src/DevSquadAdoDesignApprovalDecision.ts`, `src/DevSquadAdoDesignApprovalLedger.ts`, and `src/DevSquadAdoDesignApproval.decision.test.ts`.
   - Parent: US15-01; supports US15-03.
   - Dependency: W051.
   - Estimate: L, 1.5 to 2 engineer-days. Risk: High; supervised.
@@ -840,3 +840,13 @@ All execution CLI calls explicitly select the authorized worktree. No LSP tools 
 - Real ledger test proves durable publication checkpoint can be recovered after its response throws, with no republish and no leaked dependency sentinel. No human resolution is enabled by this task.
 - FR-009/010/019/020/024-026; CC-04/05/14; INV-001/002/007; SC-003/004; SEC-001/002/003/006. Source graph remains offline. Global baseline and platform limitations remain unchanged.
 - Commit subject: feat(design-gate): reconcile verified publication W051. Exact trailer: Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>.
+
+### W052 executed evidence
+
+- Baseline c670259; prior W048–W051 preserved. FR-012–018/020/023–026, CC-01/06/07/08/12/16 and mapped INV/SC/SEC controls exercised through public start/reconcile and portable public ledger.
+- RED: npm test -- DevSquadAdoDesignApproval.decision --reporter=dot exit 1, 17 behavioral failures (publication stayed pending instead of resolving/classifying decisions); no setup errors.
+- GREEN affected regression: npm test -- DevSquadAdoDesignApproval DevSquadAdoWorkflowLedger --reporter=dot exit 0, 158 passed / 2 existing platform skips, 10 files. New decision tests: 17; prior feature 77 and ledger 64 passes preserved.
+- npm run typecheck initially reported an overly narrowed action cast; one localized type correction, final exit 0. Changed TS Prettier write and git diff --check exit 0. No runtime test correction required.
+- Exact commands, explicit event-bound immutable grants, single complete prefix, combined approval/change slot and durable-only results implemented. Multi-page extension remains W053. No execution or live transport.
+- Scope: API, publication continuation, decision reducer, portable fixture and attached tests plus this evidence. Learning disposition N already supplied; no learning files/prompts. No global/build/production durability claim.
+- Commit: feat(design-gate): persist authorized human decisions W052. Trailer: Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>.

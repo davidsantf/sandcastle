@@ -1,3 +1,4 @@
+import { resolveGateDecision } from "./DevSquadAdoDesignApprovalDecision.js";
 import type {
   DevSquadAdoClaimAuthorityInput,
   DevSquadAdoWorkflowLedger,
@@ -71,6 +72,10 @@ export interface DevSquadAdoDesignMutationRequest {
 }
 /** Trusted offline adapters; no hidden retries or live clients are constructed. */
 export interface DevSquadAdoDesignStartDependencies {
+  /** Certified immutable event pages; never current-comments-only evidence. */
+  readonly readDecisionPage?: import("./DevSquadAdoDesignApprovalDecision.js").DevSquadAdoDesignDecisionDependencies["readDecisionPage"];
+  /** Immutable event-specific human authorization, independent of mutation authority. */
+  readonly authorizeHumanDecision?: import("./DevSquadAdoDesignApprovalDecision.js").DevSquadAdoDesignDecisionDependencies["authorizeHumanDecision"];
   /** Verify an original attempt without automatically publishing again. */
   readonly verifyPublication?: DevSquadAdoDesignPublicationVerifier;
   /** Existing public read and checkpoint operations only. */
@@ -133,13 +138,15 @@ import {
 } from "./DevSquadAdoDesignApprovalLifecycle.js";
 import { freshGateAcknowledgement } from "./DevSquadAdoDesignApprovalLedger.js";
 
-const identifier = (v: unknown): v is string =>
+export const identifier = (v: unknown): v is string =>
   typeof v === "string" &&
   v.length <= 256 &&
   unicode(v) &&
   v.trim().length > 0 &&
   Buffer.byteLength(v, "utf8") <= 256;
-const scopeCopy = (value: DevSquadAdoDesignScope): DevSquadAdoDesignScope => {
+export const scopeCopy = (
+  value: DevSquadAdoDesignScope,
+): DevSquadAdoDesignScope => {
   if (!Array.isArray(value) || value.length !== 3 || !value.every(identifier))
     throw new GateFault("invalid-input");
   return [value[0], value[1], value[2]];
@@ -240,7 +247,7 @@ function makeEnvelope(
     rendered,
   };
 }
-const sameGrant = (
+export const sameGrant = (
   value: unknown,
   original: DevSquadAdoDesignMutationRequest,
 ): boolean => {
@@ -308,6 +315,9 @@ export async function startGatePublication(
     const publish = dependencies.publishOnce.bind(dependencies);
     const verifyPublication =
       dependencies.verifyPublication?.bind(dependencies);
+    const readDecisionPage = dependencies.readDecisionPage?.bind(dependencies);
+    const authorizeHumanDecision =
+      dependencies.authorizeHumanDecision?.bind(dependencies);
     const utcNow = dependencies.utcNow ?? Date.now;
     const lifecycle = new GateLifecycle(
       request.signal,
@@ -371,6 +381,8 @@ export async function startGatePublication(
         checkpoint,
         authorize,
         verifyPublication,
+        readDecisionPage,
+        authorizeHumanDecision,
         utcNow,
       });
     }
@@ -489,6 +501,8 @@ export async function startGatePublication(
       checkpoint,
       authorize,
       verifyPublication,
+      readDecisionPage,
+      authorizeHumanDecision,
       utcNow,
       hint,
     });
@@ -537,7 +551,9 @@ export type DevSquadAdoDesignPublicationVerifier = (
     }
   | { readonly kind: "mismatch" | "ambiguous" | "unavailable" }
 >;
-interface PublicationContinuation {
+export interface PublicationContinuation {
+  readonly readDecisionPage?: DevSquadAdoDesignStartDependencies["readDecisionPage"];
+  readonly authorizeHumanDecision?: DevSquadAdoDesignStartDependencies["authorizeHumanDecision"];
   readonly lifecycle: GateLifecycle;
   readonly envelope: DevSquadAdoDesignEnvelope;
   readonly scope: DevSquadAdoDesignScope;
@@ -661,12 +677,17 @@ async function confirmGatePublication(
       if (history.gate.publication !== X)
         return { ...result, reason: "publication-mismatch" };
       if (history.gate.action) return result;
-      return {
-        ...result,
-        durableState: "publication-confirmed",
-        verificationStatus: "decision-pending",
-        reason: "decision-prefix-incomplete",
-      };
+      return resolveGateDecision(
+        {
+          ...result,
+          durableState: "publication-confirmed",
+          verificationStatus: "decision-pending",
+          reason: "decision-prefix-incomplete",
+        },
+        context,
+        witness,
+        X,
+      );
     }
     if (!authority) throw new GateFault("authority-required");
     const checkAuthority = () => {
@@ -740,13 +761,18 @@ async function confirmGatePublication(
       checkAuthority(),
     );
     if (!fresh) return result;
-    return {
-      ...result,
-      durableState: "publication-confirmed",
-      verificationStatus: "decision-pending",
-      reason: "decision-prefix-incomplete",
-      knownRevision: fresh.revision,
-    };
+    return resolveGateDecision(
+      {
+        ...result,
+        durableState: "publication-confirmed",
+        verificationStatus: "decision-pending",
+        reason: "decision-prefix-incomplete",
+        knownRevision: fresh.revision,
+      },
+      context,
+      witness,
+      X,
+    );
   } catch (error) {
     return {
       ...result,

@@ -65,7 +65,10 @@ export interface DevSquadAdoDesignApprovalResult {
     | "publication-mismatch"
     | "publication-ambiguous"
     | "no-eligible-decision"
-    | "decision-prefix-incomplete";
+    | "decision-prefix-incomplete"
+    | "decision-authorization-unresolved"
+    | "resolution-outcome-unknown"
+    | "human-decision-confirmed";
   /** Canonical requested binding, only after validation. */
   readonly binding: {
     readonly workItemId: string;
