@@ -915,14 +915,20 @@ export const runCandidateStep = async (
     toWorkItemCommentId: selection.nextWorkItemCommentId,
     toPullRequest: selection.nextPullRequestCursor,
   };
+  const identity = {
+    step: "checkpoint" as const,
+    passId: context.validated.passId,
+    workItemId: state.workItemId,
+    ordinal: 0,
+    generation,
+  };
   const checkpoint: PendingCheckpoint = {
-    operationId: deriveDevSquadAdoWatcherOperationId({
-      step: "checkpoint",
-      passId: context.validated.passId,
-      workItemId: state.workItemId,
-      ordinal: 0,
-      generation,
-    }),
+    operationId:
+      record.pullRequest.id === null
+        ? deriveDevSquadAdoWatcherOperationId(identity)
+        : deriveDevSquadAdoWatcherOperationId(identity, {
+            pullRequestId: record.pullRequest.id,
+          }),
     expectedRevision: claimed.revision,
     submittedRequest: null,
     patch: { observations },

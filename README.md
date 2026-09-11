@@ -308,18 +308,28 @@ The seam is never invoked to write.
 performs derives its operation identifier deterministically:
 
 ```text
-operationId = "dsw2." + step + "." + sha256hex(canonicalJson(identity)).slice(0, 32)
+legacyOperationId = "dsw2." + step + "." + sha256hex(canonicalJson(identity)).slice(0, 32)
+prCheckpointOperationId = "dsw3.checkpoint." + sha256hex(canonicalJson(identity)).slice(0, 32)
 ```
 
 The identity differs by step family, because the two families need opposite
 properties.
 
-A **checkpoint** identifier is scoped to the exact cursor advance it publishes —
-the anchors it starts from and the cursors it makes durable. Retrying the same
-advance reproduces the identifier, so an already-durable checkpoint replays
-instead of duplicating. Publishing a genuinely different advance derives a
-different identifier, so reusing a `passId` for later work is never falsely
-rejected.
+A newly prepared **checkpoint** involving PR observation is scoped to the
+observed PR destination as well as the anchors it starts from and the cursors
+it makes durable. This includes a WI-only advance when the observed PR has no
+persistable new pair. The identity is exactly
+`{ v: 3, passId, workItemId, step: "checkpoint", ordinal, generation: { pullRequestId, fromWorkItemCommentId, fromPullRequest, toWorkItemCommentId, toPullRequest } }`.
+It uses the PR ID read **before acquisition**, subject to the unchanged
+acquisition staleness gate, never a later PR ID. Different PRs may reuse the
+same local thread/comment pair; their checkpoints must have different IDs.
+No-PR checkpoints retain the legacy v2 identity and bytes. Both forms use the
+same canonical serializer and 32-hex-character hash truncation, producing a
+48-byte checkpoint ID within the ledger's 256-byte bound.
+
+Recovery retains the pending operation ID and submitted request. It validates
+history against that submission before refreshing retry preconditions; it never
+mints another ID or switches versions to bypass an `idempotency-conflict`.
 
 A **claim-lifecycle** identifier (`claim`, `renew`, `release`) is scoped to a
 random claim epoch minted per acquisition. Capability tokens are freshly random
@@ -332,7 +342,13 @@ before its checkpoint landed can simply be run again.
 
 Use `deriveDevSquadAdoWatcherOperationId()` to compute a **checkpoint or
 claim-lifecycle** identifier yourself; the epoch and generation arms are its
-public input types. Discovery initialization uses a separate private derivation
+unchanged public input types. The one-argument helper retains byte-for-byte v2
+output and **cannot isolate PR destinations**. For PR checkpoints, use the
+checkpoint-only overload
+`deriveDevSquadAdoWatcherOperationId(checkpointIdentity, { pullRequestId })`.
+Only newly prepared pass checkpoints involving PR observation intentionally
+switch to v3; existing receipts are not migrated, reinterpreted, or used as a
+fallback. Discovery initialization uses a separate private derivation
 from canonical `{ step: "initialize", workItemId, submissionId, phase, status }`.
 It stays stable across pass IDs and retries, excludes traversal/page/continuation
 and claim identities, and never mints a replacement to bypass a conflict.

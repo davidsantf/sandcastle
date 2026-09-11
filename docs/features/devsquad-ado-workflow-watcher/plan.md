@@ -1393,3 +1393,16 @@ npm test -- DevSquadAdoWorkflowWatcher
 #### Implementation gate
 
 ADR-0026 is Proposed and ADR-0025 remains Proposed. Implementation may proceed against both only while preserving their boundaries and security controls; acceptance remains a separate review action.
+
+### Bounded PR checkpoint identity repair — POST-SKEP-001, 2026-09-11
+
+This amendment qualifies the retained baseline's unchanged-operation-identity statements only for newly prepared checkpoints involving PR observation. Implement FR-037b/FR-037c and the dated ADR-0026 decision without reopening completed W039–W046 or adding a later slice.
+
+- Reproduce the real-ledger collision through the public pass in both modes before source changes: item 137, WI anchor 480, pass P, PR A's pair (1,1); authorized host acquire/checkpoint/release replaces A with B and resets the PR cursor; the same pass observes B's identical local pair. Require one signal per PR, distinct checkpoint IDs, durable B cursor, confirmed cleanup, no watcher initialization, and zero mutations/signals on unchanged reopened B.
+- Preserve the legacy one-argument helper, exported generation/identity shapes and all v2 golden bytes. Add only a checkpoint overload with `{ readonly pullRequestId: string }`, using exactly the v3 generation/formula in ADR-0026. No-PR checkpoints, lifecycle IDs and discovery initialization remain unchanged.
+- At the shared preparation point after the existing staleness gate, use the record's pre-acquisition observed PR ID even for WI-only cursor advances. Keep pending IDs/requests and original-submission history validation before retry-precondition refresh. Never substitute a later PR ID or mint an ID/version after conflict.
+- Add focused public real-ledger namespace/retry/history/renewal/conflict tests and legacy/new helper compatibility, formula and bounds assertions. Retain the existing staleness, replay and cleanup coverage. Update README/JSDoc and add a nonduplicate patch changeset without modifying the existing minor feature entry.
+- Run the focused RED/GREEN regression, combined watcher/ledger selector, focused historical-history selector, typecheck, scoped formatting/diff, canonical build and standalone Effect-free guard. Report the unchanged Windows postbuild failure separately from fresh ESM/DTS; do not claim global-suite, packaging or remote-CI PASS.
+- Append the new independent FAIL and implementation evidence to the review log; W047 remains a pending independent gate, not implementer approval. Preserve all prior document sections/bytes, original severities, historical PASS/FAIL and 403 evidence.
+
+The conductor supplied the bounded DevSquad refine decision and explicit user authorization for genuine material findings. The earlier DevSquad implementation orchestrator stopped solely on an unavailable active board-item workflow without changing files. This local worker does not invent board authorization or execute that forbidden workflow. No branch, commit, push, PR, board, authentication, network, live service, migration, fallback, admission or later-slice work is part of this repair. ADR-0025/0026 remain Proposed.

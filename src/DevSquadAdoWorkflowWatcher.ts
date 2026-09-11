@@ -450,9 +450,11 @@ export type DevSquadAdoWatcherClaimStep = "claim" | "renew" | "release";
  * The exact cursor advance one checkpoint publishes.
  *
  * Both ends are recorded: the persisted anchors the advance was derived from
- * and the cursors it makes durable. Two attempts at the same advance produce
- * the same generation and therefore the same operation identifier; an advance
- * from different anchors, or to different cursors, is a different operation.
+ * and the cursors it makes durable. Within a fixed namespace, two attempts at
+ * the same advance produce the same generation and operation identifier; an
+ * advance from different anchors, or to different cursors, is different.
+ * This legacy shape carries no PR destination. The checkpoint-only helper
+ * overload supplies that namespace separately without changing this type.
  */
 export interface DevSquadAdoWatcherObservationGeneration {
   /** Persisted work-item comment anchor the advance starts from. */
@@ -475,7 +477,9 @@ export interface DevSquadAdoWatcherObservationGeneration {
  * across acquisitions can only ever produce a permanent `idempotency-conflict`
  * that no retry can clear. A checkpoint identifier must instead be **stable
  * per cursor advance**, so retrying an ambiguous mutation replays the original
- * outcome rather than duplicating it.
+ * outcome rather than duplicating it. The legacy one-argument helper cannot
+ * isolate PR destinations; its checkpoint-only second argument adds the
+ * observed PR namespace while preserving both identity arms here.
  */
 export type DevSquadAdoWatcherOperationIdentity =
   | {

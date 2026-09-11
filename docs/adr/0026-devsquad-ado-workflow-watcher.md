@@ -213,6 +213,27 @@ The epoch is an idempotency namespace, not a capability. It authorizes nothing, 
 
 An `idempotency-conflict` remains a terminal outcome for that candidate step. The watcher never resolves one by re-deriving an identifier after the fact.
 
+#### POST-SKEP-001 bounded decision — 2026-09-11
+
+The post-publication independent skeptic found a High correctness defect: one work item and pass can observe PR A, then an authorized host can replace it with PR B and reset its PR cursor. Equal PR-local thread/comment pairs then collide under the legacy checkpoint identity. This dated amendment qualifies the earlier cursor-only identity guarantee; it does not relabel historical review evidence or accept this Proposed ADR.
+
+Preserve the existing one-argument `deriveDevSquadAdoWatcherOperationId` signature, exported identity/generation types and byte-for-byte v2/dsw2 results. Add a checkpoint-only overload whose second argument is `{ readonly pullRequestId: string }`, with exactly:
+
+```text
+identity = {
+  v: 3, passId, workItemId, step: "checkpoint", ordinal,
+  generation: {
+    pullRequestId, fromWorkItemCommentId, fromPullRequest,
+    toWorkItemCommentId, toPullRequest
+  }
+}
+operationId = "dsw3.checkpoint." + sha256hex(canonicalJson(identity)).slice(0, 32)
+```
+
+Use the same canonical serializer, SHA-256 truncation and identifier bounds (48 ASCII bytes for checkpoints, within 256). Every newly prepared pass checkpoint involving PR observation uses the pre-acquisition observed PR ID, including WI-only advances; both supplied mode and discovery's shared existing-record path follow this rule. Preserve the acquisition staleness gate. Never substitute a later PR ID.
+
+Compatibility is explicit rather than pretending the legacy helper can isolate destinations: the one-argument helper cannot. No-PR checkpoints, claim/renew/release and discovery initialization retain their existing bytes. The only intentional version change is newly prepared PR-observing pass checkpoints. Pending recovery retains its ID and submitted request; history uses the original-submission guard before retry-precondition refresh. Never mint another ID/version to evade conflict. No ledger schema/storage/receipt migration, fallback, or admission changes are authorized. ADR-0025 and ADR-0026 remain Proposed.
+
 ### Claim lifetime, leases, and renewal
 
 A claim is acquired only when the watcher intends to mutate. On candidate completion/error/cancellation, invoke release exactly once for previously validated authority, retaining local evidence until the response is validated. Without validated authority invoke no release; never guess authority, reacquire, retry release, or force-release another owner. An unexpired foreign claim is a `claim-conflict` skip.

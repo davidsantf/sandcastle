@@ -601,7 +601,8 @@ export function validateDevSquadAdoWorkflowWatchPassOptions(
  * Derive the ledger operation identifier for one watcher step.
  *
  * ```text
- * operationId = "dsw2." + step + "." + sha256hex(canonicalJson(identity)).slice(0, 32)
+ * legacy = "dsw2." + step + "." + sha256hex(canonicalJson(identity)).slice(0, 32)
+ * namespaced = "dsw3.checkpoint." + sha256hex(canonicalJson(identity)).slice(0, 32)
  * ```
  *
  * The identity object is canonically serialized, which removes delimiter
@@ -618,24 +619,43 @@ export function validateDevSquadAdoWorkflowWatchPassOptions(
  * pass identity for that candidate forever. Scoping by epoch keeps capability
  * tokens random *and* keeps the same `passId` replayable.
  *
- * A **checkpoint** identifier is scoped to the exact cursor advance it
- * publishes. Retrying the same advance reproduces the identifier, so an
- * already-durable mutation replays instead of duplicating; publishing a
- * genuinely different advance derives a different identifier, so a later pass
- * reusing the same `passId` for new work is never falsely rejected.
+ * A **checkpoint** identifier is scoped to the cursor advance it publishes.
+ * The one-argument helper retains its exact v2 bytes and cannot isolate PR
+ * destinations. Pass the checkpoint-only second argument to include the
+ * observed PR identifier in the generation and use v3. Newly prepared pass
+ * checkpoints use that namespace whenever PR observation was involved, even
+ * for a WI-only advance. No-PR checkpoints remain v2.
+ *
+ * The namespace is the pre-acquisition observation destination, never a later
+ * record's PR identifier. Pending recovery retains its operation identifier
+ * and submitted request; no version or identifier is minted to bypass conflict.
  */
-export const deriveDevSquadAdoWatcherOperationId = (
+export function deriveDevSquadAdoWatcherOperationId(
   input: DevSquadAdoWatcherOperationIdentity,
-): string => {
+): string;
+/** Derive a v3 checkpoint identity scoped to the observed PR destination. */
+export function deriveDevSquadAdoWatcherOperationId(
+  input: Extract<DevSquadAdoWatcherOperationIdentity, { step: "checkpoint" }>,
+  namespace: { readonly pullRequestId: string },
+): string;
+export function deriveDevSquadAdoWatcherOperationId(
+  input: DevSquadAdoWatcherOperationIdentity,
+  namespace?: { readonly pullRequestId: string },
+): string {
+  const version =
+    input.step === "checkpoint" && namespace !== undefined ? 3 : 2;
   const identity =
     input.step === "checkpoint"
       ? {
-          v: 2,
+          v: version,
           passId: input.passId,
           workItemId: input.workItemId,
           step: input.step,
           ordinal: input.ordinal,
           generation: {
+            ...(namespace === undefined
+              ? {}
+              : { pullRequestId: namespace.pullRequestId }),
             fromWorkItemCommentId: input.generation.fromWorkItemCommentId,
             fromPullRequest: input.generation.fromPullRequest,
             toWorkItemCommentId: input.generation.toWorkItemCommentId,
@@ -651,8 +671,8 @@ export const deriveDevSquadAdoWatcherOperationId = (
           claimEpoch: input.claimEpoch,
         };
   const digest = sha256Hex(canonicalJson(identity));
-  return `dsw2.${input.step}.${digest.slice(0, 32)}`;
-};
+  return `dsw${version}.${input.step}.${digest.slice(0, 32)}`;
+}
 
 /**
  * Mint the random identity of one claim acquisition attempt.
