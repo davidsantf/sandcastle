@@ -8,9 +8,9 @@ Decomposition of [spec.md](spec.md) and [plan.md](plan.md) under [ADR-0026](../.
 
 At the historical recovery publication checkpoint, local and published [PR #21](https://github.com/davidsantf/sandcastle/pull/21) implementation head are `d5aecf0`, normally fast-forwarded from `fb6a238`, without merge. Review ran on the uncommitted implementation over `fb6a238`, later committed as `d5aecf0`; no original pre-commit cryptographic snapshot is claimed. This documentation follow-up preserves its `src` tree `f8cc4221f4c2ebd787ad9740acc6bfb1bbd6bf06` and unchanged source/configuration/scripts comparison. Parent will record the resulting documentation-only commit SHA in the PR/handoff, not republish a pending implementation.
 
-**Current discovery extension status (2026-09-10): W039–W045 LOCALLY IMPLEMENTED; W046 PENDING independent full integration-base review, parent-owned.** D1-B, D2/D2-A and D3-A extend existing slice 14 / #21. The authoritative requirements remain the plan's **Approved discovery extension**, aligned with Proposed ADR-0026. W001–W038 remain completed historical supplied-candidate work; their technical PASS does not establish discovery conformance. W045 scoped implementation/validation is not overall extension approval, publication, packaging certification or ADR acceptance. ADR-0025/0026 remain Proposed; no W046 review has occurred in this task.
+**Current discovery extension status (2026-09-10): W039–W046 LOCALLY TECHNICALLY COMPLETE; W046 technical PASS, publication PENDING.** Independent full integration-base re-review turn 3 closed W046-001 with all five guardians accounted for and the required security specialist reporting no vulnerabilities. D1-B, D2/D2-A and D3-A extend existing slice 14 / #21 under the plan's **Approved discovery extension**. W001–W038 remain completed historical supplied-candidate work. See [independent re-review](review-log.md#w046-independent-re-review--2026-09-10-turn-3) and [local evidence closure](review-log.md#w046-local-evidence-only-closure--2026-09-10). Technical PASS is not global-suite/packaging certification, publication, governance acceptance or merge approval. ADR-0025/0026 remain Proposed; #20 must precede #21. Parent owns publication and steps 15–19; this local closure does not execute or authorize later slices.
 
-**Historical decomposition checkpoint:** Prepared against HEAD `aed6637` with the approved spec/plan/ADR amendments and the then-designated `expert-garbanzo` worktree; the historical PR #21/#20 branch references were informational, not live verification. **Current W045 execution:** only `C:\repos\copilot-worktrees\sandcastle\users-davidsant-bookish-doodle`, branch `users/davidsant/bookish-doodle`, starting clean at `8264a25b5962585c9c8d7814242317535e3a01e8`. Older unimplemented/pending summaries in spec/plan/ADR describe the approval checkpoint; those artifacts are outside W045 editing permission and remain unchanged. Local tasks are the work-item source. No board work, remote/PR queries or writes, publication, or slices 15–19 are authorized; commit W045 locally and stop before parent-owned W046.
+**Historical decomposition checkpoint:** Prepared against HEAD `aed6637` with the approved spec/plan/ADR amendments and the then-designated `expert-garbanzo` worktree; the historical PR #21/#20 branch references were informational, not live verification. **Historical W045 execution and stop restrictions (superseded by W046 review and local evidence closure):** only `C:\repos\copilot-worktrees\sandcastle\users-davidsant-bookish-doodle`, branch `users/davidsant/bookish-doodle`, starting clean at `8264a25b5962585c9c8d7814242317535e3a01e8`. Older unimplemented/pending summaries in spec/plan/ADR describe the approval checkpoint; those artifacts are outside W045 editing permission and remain unchanged. Local tasks are the work-item source. No board work, remote/PR queries or writes, publication, or slices 15–19 are authorized; commit W045 locally and stop before parent-owned W046.
 
 ## Scope and Conventions
 
@@ -589,7 +589,7 @@ Every extension task inherits the global acceptance constraints and the followin
 
 ## Phase 20: Independent Extension Verification
 
-- [ ] **W046** Independently verify discovery conformance against `docs/features/devsquad-ado-workflow-watcher/spec.md`, `plan.md`, `tasks.md`, and `docs/adr/0026-devsquad-ado-workflow-watcher.md`; record task status/evidence in `docs/features/devsquad-ado-workflow-watcher/tasks.md`
+- [x] **W046** Independently verify discovery conformance against `docs/features/devsquad-ado-workflow-watcher/spec.md`, `plan.md`, `tasks.md`, and `docs/adr/0026-devsquad-ado-workflow-watcher.md`; record task status/evidence in `docs/features/devsquad-ado-workflow-watcher/tasks.md`
   - **Parent:** Scenario 9; verifies Scenarios 1–9. **Dependency:** W045. **Complexity/risk:** L / High; requires independent human/reviewer judgment.
   - Invoke fresh independent `devsquad.review` through the conductor's established review workflow. Review spec/ADR consistency, production code, tests, dependency boundaries and security controls; do not treat implementer self-checks or W038 as extension approval.
   - Verify CC-031–037 and TEST-033–039 end to end while retaining CC-001–030, TEST-001–032 and the focused historical checkpoint-history probes. Independently probe original-request initialization binding, fresh/replay/later-record acknowledgement distinctions, whole-page atomicity, exact matching, anchored retention loss, scheduling bounds, cancellation and count/cleanup truth.
@@ -619,7 +619,7 @@ All new requirements FR-061–069 and conformance criteria CC-031–037 have imp
 
 ### Validation Commands and Evidence Rules
 
-Current W045 validation is scoped and runs only from the designated worktree (historical W038 commands/evidence above remain unchanged):
+Historical W045 validation was scoped and ran only from the designated worktree (historical W038 commands/evidence above remain unchanged):
 
 ```powershell
 Set-Location "C:\repos\copilot-worktrees\sandcastle\users-davidsant-bookish-doodle"
@@ -650,7 +650,7 @@ npx --no-install prettier --ignore-path .gitignore --check .changeset/devsquad-a
 git diff --check
 ```
 
-The earlier draft's full `npm test` / global `npm run format:check` commands are not W045 authorization. Full-suite validation remains unresolved and parent-owned; do not classify unexplained earlier platform failures as preexisting. W046 is a separate independent review, not executed here.
+The earlier draft's full `npm test` / global `npm run format:check` commands are not W045 authorization. Full-suite validation remains unresolved and parent-owned; do not classify unexplained earlier platform failures as preexisting. W046 was subsequently completed by independent full integration-base re-review turn 3; the evidence-only closure does not rerun these commands.
 
 - Historical implementation baseline `d5aecf0`: combined watcher/ledger selector **401 passed, two existing Windows skips**; focused third-history selector **19 passed**. These totals are inherited, not newly executed by decomposition.
 - Record actual new counts, skip reasons and command exit codes. Full-project failures, if any, require attributable evidence rather than silently redefining success.
@@ -659,7 +659,7 @@ The earlier draft's full `npm test` / global `npm run format:check` commands are
 - Formatting failures from untouched files must be reported separately from touched-file verification; do not reformat the repository as collateral work.
 - At the historical decomposition checkpoint no validation commands were executed. W039–W045 execution evidence above now records actual local commands/results, separately from inherited reports; it is not W046 review.
 
-### Current Local Implementation Handoff (Historical Decomposition Preserved)
+### Historical W045 Local Implementation Handoff (Superseded by W046 Closure)
 
 - **Scope:** Existing slice 14 / PR #21 only; local tasks, no board items or delegation assignments.
 - **Task state:** W001–W038 preserved completed; W039–W045 locally implemented; W046 PENDING independent full integration-base review, parent-owned.
@@ -670,7 +670,7 @@ The earlier draft's full `npm test` / global `npm run format:check` commands are
 - **Assumptions:** Host-normalized facts/resolved teams, stable bounded invocation scope, explicit item authorization/state, trusted ledger publication semantics, and settling ledger/delay dependencies. Admission can permanently lose intake; prefix rescans have no eventual tail-progress guarantee.
 - **Governance:** ADR-0025/0026 remain Proposed; #20 precedes #21. This closure authorizes only the local W045 commit. No new PR/remote/board action, push, publication, merge, ADR acceptance or slices 15–19; W046 and publication decisions remain parent-owned.
 
-### W046-001 Remediation Handoff — 2026-09-10, Turn 2
+### Historical W046-001 Remediation Handoff — 2026-09-10, Turn 2 (Superseded by Independent Turn 3)
 
 - W046 remains **unchecked**, with historical independent FAIL preserved. W046-001 has an implementation correction awaiting independent re-review, not an independent closure.
 - Both admission paths now consume the captured validated intake phase/status arrays. Twenty public integrated regression cases cover ordinary controls, overridden/throwing caller methods and page/retry-time mutations across both dimensions, without changing initialization authority.
@@ -678,3 +678,12 @@ The earlier draft's full `npm test` / global `npm run format:check` commands are
 - Fresh canonical build generated ESM and DTS successfully, then exited 1 at the known Windows postbuild rm failure. The separately executed Effect-free guard passed against the fresh declarations. Packaging and global-suite success are NOT certified; the execute worker's interrupted full-suite attempt and transient concurrent timeouts are disclosed in the review log.
 - Full provenance, commands, limitations and decision summary: review-log.md, section **W046-001 implementation remediation — 2026-09-10, turn 2**. The conductor handoff supplies the final commit HEAD/tree.
 - Scope remains local slice 14 only. No board/live/publication actions or slices 15–19; ADR-0025/0026 remain Proposed. Next: conductor-owned independent re-review, not W046 completion by the implementer.
+
+### Current W046 Local Technical Closure and Parent Handoff — 2026-09-10
+
+- **Task state:** W039–W046 locally technically complete; W046 **PASS**, checkbox completed from the existing independent full-slice review, not implementer self-review. W001–W038 history is preserved. W046-001 is independently closed; retained baseline TB046-001–003 remain Major and TB001 remains nonblocking Minor.
+- **Traceability / identity:** W046 acceptance covers FR-001–069 including suffixes, CC-001–037, TEST-001–039, SC-001–014 and SEC-A01–A07. Independent turn 3 reviewed the full delta `9ff6e8e9f74792e131e927bd9bf41358e36cea95` → `9854e9ea5f739ee5ba8a605a97a7fd3569a9cce3`, reviewed tree `7519db940767937691d2ffc41d2bf3a2921711e7`, `src` subtree `6e7c6d3ffb2bdc082b371be38efd773fbfa14a38`. All five guardians and required security specialist are accounted for; no remaining slice blockers.
+- **Previously executed evidence, NOT rerun by this closure:** Combined watcher/ledger 696 passed / 2 Windows skips; focused history 19 passed / 244 selector exclusions (subset); 32 independent public probes; typecheck, scoped formatting, diff and declaration guard PASS. Review guard execution used inherited fresh remediation-generated declarations. Remediation ESM and DTS generation succeeded, then canonical `npm run build` failed at Windows postbuild `rm`. Packaging and global-suite certification remain excluded; eight baseline failures and interrupted global-attempt limitations remain in the log.
+- **Local action only:** Commit `tasks.md` and `review-log.md` on `users/davidsant/bookish-doodle`, with scoped documentation formatting/diff and the existing hook. No new independent review, source/test/configuration changes, board transitions or remote writes. See [local closure evidence](review-log.md#w046-local-evidence-only-closure--2026-09-10) for preservation measurements and parent-supplied CI/publication evidence.
+- **Parent handoff:** Publication remains pending. Parent owns steps 15–19, including subsequent publication/status assessment; this worker does not run them. Existing PR #21 still has parent-reported remote head `aed663765a3a8bcc5864af34a000089961e4eaba` on `users/davidsant/symmetrical-train`, base `users/davidsant/ubiquitous-train`. Current unpublished head statuses have not yet been assessed. API permissions `pull=true`, `push=false` may block publication. The parent established the absence of required repository CI checks from branch/rule evidence, not empty statuses alone.
+- **Boundaries:** ADR-0025/0026 remain Proposed; no governance or merge approval. Preserve #20-before-#21 ordering and all host authority, at-most-once delivery, trusted-adapter and settling-dependency assumptions. Historical W045 stop restrictions and turn-2 pending verdicts above remain provenance, not the current W046 task state. Spec/plan/ADR checkpoint summaries and `final-review-evidence.json` remain untouched historical artifacts.

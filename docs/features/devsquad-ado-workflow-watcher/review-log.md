@@ -1168,3 +1168,248 @@ The execute worker additionally reported a concurrent watcher/ledger attempt wit
 IDE/LSP problems tools were unavailable; text navigation, typecheck and executable tests were used. No standalone lint script exists. No dependency installs, dependency changes, build-script fixes, duplicate changeset, spec/plan/ADR edits, harness learning, live tracker calls, board actions, remote operations, push, PR, merge, force, amend or rebase occurred. Existing W045 minor changeset covers this extension; public docs/API contract are unchanged. ADR-0025/0026 remain Proposed; #20 must precede #21; slices 15–19 remain unauthorized.
 
 **Handoff:** Commit this bounded remediation and preserved review evidence using the git-commit skill and required Copilot App trailer, return exact final HEAD/tree, and request conductor-owned fresh independent re-review. W046 must remain unchecked until that review has no unresolved blockers. No W046 PASS, governance acceptance, publication or merge-readiness claim follows from this entry.
+
+---
+
+## W046 independent re-review — 2026-09-10, turn 3
+
+### Result: PASSED — full slice 14 technical integration disposition
+
+**W046-001 CLOSED (original severity Major). W046 technical gate PASSED.** This disposition encompasses the entire integration-base delta: supplied-candidate watcher, checkpoint recovery and discovery W039–W045, including W042–W046 acceptance. It is not a repair-only verdict. No unresolved Critical or Major **slice implementation** finding remains. The earlier W046 FAIL and turn-2 remediation evidence remain intact as historical evidence; this independent re-review supersedes their pending acceptance status, not their contents.
+
+- New Critical: **0**; new Major: **0**; new Minor: **0**; needs-clarification: **0**.
+- Previously blocking slice finding: **W046-001, Major, independently closed**.
+- Retained baseline/environment findings: **3 Major IDs / 8 previously reproduced failures**, unchanged and not downgraded. They remain outside slice remediation and prevent a global-suite PASS claim.
+- Historical **TB001, Minor**, remains acknowledged and nonblocking, not re-raised as a new finding.
+- Aggregate maximum severity among retained unresolved baseline findings remains **Major**. The bounded slice PASS does not erase those findings or certify the repository globally.
+
+**Remaining local slice work is evidence-only closure:** the parent may separately record the W046 checkbox and commit review/task evidence after checking code-tree identity. This reviewer did not edit tasks, source, tests, specs, ADRs, or any other artifact. Publication and governance remain separate, not implicitly authorized.
+
+### Exact provenance and history preservation
+
+| Property                        | Verified value                                                                                                    |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Workspace                       | `C:\repos\copilot-worktrees\sandcastle\users-davidsant-bookish-doodle` only                                       |
+| Branch                          | `users/davidsant/bookish-doodle`                                                                                  |
+| Reviewed code HEAD              | `9854e9ea5f739ee5ba8a605a97a7fd3569a9cce3`                                                                        |
+| Reviewed committed tree         | `7519db940767937691d2ffc41d2bf3a2921711e7`                                                                        |
+| Reviewed `src` subtree          | `6e7c6d3ffb2bdc082b371be38efd773fbfa14a38`                                                                        |
+| Verified integration merge-base | `9ff6e8e9f74792e131e927bd9bf41358e36cea95`                                                                        |
+| Full integration diff           | 32 files; 24,273 additions; no deletions                                                                          |
+| Previous independent HEAD       | `3c2254884b800a3401594067a13ddd578aedcf20`                                                                        |
+| Repair comparison               | Two production modules, admission regression file, review log and tasks only                                      |
+| Initial / pre-append status     | Clean; parent and test guardian verified unchanged HEAD/tree                                                      |
+| Preserved history               | First **180,862 bytes / 1,170 lines**, SHA-256 `0081cd63dd9209c970471ee2bbc0e04826c67cdccd7cdc170446d3ff6b616597` |
+| Evidence write                  | This section appended only; historical prefix checked before append and verified afterward                        |
+
+Parent freshly executed status, branch, quoted tree identity, merge-base, base-to-HEAD inventory/stat, repair diff, unchanged-ledger/tooling comparison and whitespace checks. An initial unquoted PowerShell tree expression failed; a separately quoted `HEAD^{tree}` invocation supplied the correct tree. Missing conventional `docs/architecture/decisions` was resolved to the actual `docs/adr` directory; two incorrect root-level artifact lookups were corrected to feature paths and supplied no evidence. The test guardian independently verified exact HEAD/tree/base and cleanliness. Static guardians explicitly relied on parent identity rather than claiming Git execution.
+
+The full 32-path inventory retained in the preceding independent report remains the review scope. Production code inspected in full by static guardians:
+
+- `src/DevSquadAdoWorkflowWatcher.ts`
+- `src/DevSquadAdoWorkflowWatcherValidation.ts`
+- `src/DevSquadAdoWorkflowWatcherDiscoveryValidation.ts`
+- `src/DevSquadAdoWorkflowWatcherDiscoveryMatching.ts`
+- `src/DevSquadAdoWorkflowWatcherDiscovery.ts`
+- `src/DevSquadAdoWorkflowWatcherAdmission.ts`
+- `src/DevSquadAdoWorkflowWatcherLedger.ts`
+- `src/DevSquadAdoWorkflowWatcherObservation.ts`
+- `src/DevSquadAdoWorkflowWatcherPass.ts`
+- Watcher root exports in `src/index.ts`; both watcher test-support modules; all eleven watcher test families and dependency tests; README and both watcher changesets.
+
+Large tests were reviewed in substantial targeted ranges, not exhaustively line by line. Fresh combined execution includes ledger regression tests as well. Parent and test guardian base comparisons confirm `src/DevSquadAdoWorkflowLedger*`, manifests, scripts, `tsup.config.ts` and `vitest.config.ts` unchanged. No missing dependency required installation.
+
+### Reference artifacts, checklist and navigation limits
+
+Read approved discovery requirements FIRST: `spec.md` FR-061–069 and shared requirements/invariants/CCs; `plan.md` approved extension through line 615; `tasks.md` extension/W046 acceptance and handoff through line 680; approved amendment in Proposed `docs/adr/0026-devsquad-ado-workflow-watcher.md`. Read retained supplied-candidate/recovery contract SECOND, including original-submission history validation, fencing/staleness, opaque cursors, cancellation and cleanup. Read the complete prior W046 report around lines 904–1120 and remediation from 1122–1170. ADR guardian additionally read ADR-0021/0022/0024/0025, public docs and changesets. Local task artifacts supplied scope; no live board was queried.
+
+Checklist presented before validation: full FR-001–069 including suffixes, CC-001–037, TEST-001–039; both intake snapshot paths; supplied API compatibility; exact matching and pause/reentry; original-request initialization and checkpoint acceptance; bounded traversal; cancellation, independent counts and truthful cleanup; SEC-A01–A07; evidence provenance and platform limitations. Routine sub-agent continuation was preapproved; no interactive confirmation requested.
+
+IDE `changes`, usages and problems/LSP tools were unavailable. Git diff, text navigation, typecheck and executable tests were used; no exhaustive LSP usage or IDE-diagnostic claim is made. `.memory/lsp-status.md` was absent. `AGENTS.md` points to `CLAUDE.md`; no separate coding-guidelines artifact was supplied. Requested documentation-style/reasoning/test-discipline skill files were not available in the inspected workspace skill directory; this entry contains explicit decision rationale and handoff instead. No harness learning was recorded.
+
+### Guardian provenance and aggregation
+
+All five independent guardians ran in parallel through `functions.task`; reports returned synchronously, with no background IDs. None implemented the repair. No worker wrote evidence; the parent owns this append.
+
+| Guardian / invocation                                                 | Fresh work and result                                                                                                              | Execution limits                                                                                                     |
+| --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `devsquad.review.spec` / `w046-r3-spec`                               | Full supplied/recovery/discovery source review and FR/CC/TEST mapping; static PASS; W046-001 closed; no new findings               | View-only; tests mapped, not executed by this worker                                                                 |
+| `devsquad.review.adr` / `w046-r3-adr`                                 | ADR-0021/22/24 boundaries, approved 0025/26 feature contract, exports/docs/changesets; static PASS; W046-001 closed                | No Git/tests; official Microsoft authentication documentation checked as host-boundary context, no migration finding |
+| `devsquad.review.code` / `w046-r3-code`                               | All nine production modules, supports/exports and every test family; static PASS; W046-001 closed; no new consistency findings     | No tests/Git; large tests sampled by targeted ranges                                                                 |
+| `devsquad.review.security` / `w046-r3-security`                       | Fresh trigger assessment: auth, sensitive data, external input, persistence and integration; requested fresh specialist for repair | Limited tools prevented specialist delegation; did not substitute manual security audit                              |
+| `devsquad.review.tests` / `w046-r3-tests`                             | Fresh sequential scoped tests, typecheck, formatting, identity/diff and declaration guard; scoped PASS                             | No build regeneration/global suite; inherited baseline Majors retained                                               |
+| Required specialist `security-review` / `w046-r3-security-specialist` | Parent invoked directly after trigger guardian; returned **No security vulnerabilities found in the reviewed changes.**            | Compact result only; no detailed control matrix, scan transcript or test count supplied                              |
+
+The inherited specialist result at the previous independent HEAD remains historical full-integration evidence. The current specialist invocation supplied full integration context and explicitly requested fresh repair/snapshot/initializer/auth/retry/privacy scrutiny, expanding if necessary. Only its returned no-vulnerability result is claimed; no exhaustive fresh full-slice scan or undocumented control proof is inferred. This accounts for the trigger-based specialist obligation without representing non-security guardians as security auditors.
+
+No guardian severity was downgraded. W046-001 closures from spec/ADR/code/tests are one finding disposition, not four independent bugs. Retained TB046-001–003 remain Major; TB001 remains Minor.
+
+### W046-001 remediation disposition
+
+**Expected:** FR-001/003/041/043/068 and INV-003/016 require structured completion and exact membership in validated intake sets throughout initial and retained retry admission. Explicit item authorization and initial state are separate from intake gating.
+
+**Verified implementation:** `src/DevSquadAdoWorkflowWatcherValidation.ts:163–194,458–463` creates indexed, independent phase/status arrays without caller-owned methods. `src/DevSquadAdoWorkflowWatcherDiscovery.ts:127–135,170–178` passes those validated arrays at BOTH retained-retry and initial admission call sites. `src/DevSquadAdoWorkflowWatcherAdmission.ts:62–68,118–122` consumes them explicitly. This matches comment intake at `src/DevSquadAdoWorkflowWatcherPass.ts:506–509`.
+
+**Executed regression evidence:** All 94 admission tests passed in the fresh combined gate. The 20 new public real-ledger cases at `src/DevSquadAdoWorkflowWatcher.discovery.admission.test.ts:281–452` cover phases/statuses, matching/nonmatching controls, overridden/throwing caller `includes`, page-time mutation and retained-retry mutation. They assert exact counts/signals/outcomes, structured completion, zero caller-method invocation, stable retry submission, pristine initialization and zero observation/acquire/renew/checkpoint/release effects. No private-array identity or internal guard assertion was added.
+
+**Independent parent probes:** Fresh command `node --import tsx --input-type=module -`, supplied an inline PowerShell here-string through stdin, imported only public run/defaults from `src/index.ts`. **32 assertions-based cases passed**, exit 0: two dimensions × original matching/nonmatching × eight scenarios (ordinary, overridden method, throwing method, page mutation, retry mutation, mutation during initialization acknowledgement, mutation plus abort during acknowledgement, replay plus mutation). No probe file was written.
+
+Every probe returned structured results using the original intake decision; caller methods and observation/claim effects were never invoked. Retried requests were identical with one read/page and two initializer calls. Fresh acceptance after abort preserved permitted intake with cancelled stop; replay never signalled regardless of mutated rules. Initialization-only cleanup remained no-claim. These probes used complete in-memory method-valid acknowledgements: they prove public-boundary consumption, **not physical durability**. Physical persistence/reopen/concurrency evidence comes from the independently executed real-ledger suites. Historical test-first RED 16 failed / 78 passed is inherited remediation evidence, not rerun or represented as fresh here.
+
+**Disposition: CLOSED, original severity Major.** No authorization, fresh/replay, operation identity, supplied behavior, schema or public API change was needed beyond the bounded fix.
+
+### Spec compliance and conformance mapping
+
+For compact evidence below, paths abbreviate `src/DevSquadAdoWorkflowWatcher`: `V` = `Validation.ts`, `DV` = `DiscoveryValidation.ts`, `DM` = `DiscoveryMatching.ts`, `D` = `Discovery.ts`, `A` = `Admission.ts`, `L` = `Ledger.ts`, `O` = `Observation.ts`, `P` = `Pass.ts`. Test suffixes: `T` = `.test.ts`, `C` = `.concurrency.test.ts`, `B` = `.bounds.test.ts`, `R` = `.recovery.test.ts`, `M` = `.remediation.test.ts`, `Deps` = `.dependencies.test.ts`, `DT` = `.discovery.test.ts`, `DA` = `.discovery.admission.test.ts`, `DMT` = `.discovery.matching.test.ts`, `DB` = `.discovery.bounds.test.ts`, `DL` = `.discovery.lifecycle.test.ts`.
+
+| Requirement group                   | Assessment                                                                                            | Implementation evidence                                             |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| FR-001–004/008–011/020/061          | PASS: typed exclusive modes, captured validation, compatibility, injected boundaries                  | Watcher.ts:527–559; V:163–194,264–477; DV:318–414; index.ts:265–350 |
+| FR-005–007/044–046/069              | PASS: distinct signals, stable outcomes, independent accounting and no-claim admission                | D:124–184,310–387; A:39–149; P:498–539                              |
+| FR-012–019/021–024/065              | PASS: opaque observations, optional PR, exact matching, stable ordering/poll decisions                | O:211–307,325–445; DM:8–66; DV:502–612; D:186–268                   |
+| FR-025–031/036a                     | PASS: fenced existing-record mutations, renewal, acquisition staleness and cleanup                    | P:215–301,555–606,835–905; V:662–666                                |
+| FR-032–039 including 035a/035b/037a | PASS: bounded unique anchors, cursor-only patches, original-submission acknowledgement and identity   | O:211–307,409–469; P:618–724,907–935; L:534–608                     |
+| FR-040–043/067–068                  | PASS: host state/auth, captured intake, fresh-only admission and stable retry submission              | A:20–149; D:127–178; L:444–479,633–679; V:458–463                   |
+| FR-047–053/062–064                  | PASS: bounded invocation-local traversal, explicit incompletion, fresh abort and retired seams        | D:83–94,186–302; DV:74–309,446–612; O:80–150                        |
+| FR-054–060                          | PASS: guarded error categories, recovery isolation, acknowledgement preservation and truthful cleanup | L:111–218,286–400,411–679; P:215–445,674–724,1147–1170              |
+
+All CCs and TEST obligations have identifiable mapped assertions. Every named suite below was freshly executed by the test guardian; static mapping is not a claim of exhaustive input-space proof.
+
+| CC      | Scenario / test mapping                                                                                                              | Status                                               |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
+| 001–003 | Durable intake, repeat and observation-only calls: T:422–641; Deps:211–310                                                           | Mapped / executed                                    |
+| 004–006 | Overlap, stale fencing and revision/state conflict: C:77–179,344–519                                                                 | Mapped / executed                                    |
+| 007–009 | Cursor-advancing suppression, custom phase, missing records by mode: T:643–752; DA:130–161                                           | Mapped / executed                                    |
+| 010–011 | Ordering, poll budgets/backoff and clocks: T:946–1018; B:102–286; DB:475–558                                                         | Mapped / executed                                    |
+| 012–014 | Abort/acknowledgement, timeout and renewal: M:1545–1606; DL:439–510; B:290–339; C:1135–1237                                          | Mapped / executed                                    |
+| 015–017 | Zero-effect invalid input, seam contract and recovery isolation: T:119–310; M:2727–2820; DB:24–210; R:59–248,493–530                 | Mapped / executed                                    |
+| 018–020 | Privacy, PR completeness, offline/public boundary: T:755–850,1020–1093; M:1990–2024; DL:1045–1170; Deps:211–310                      | Mapped / executed                                    |
+| 021–023 | Reacquisition, stale observation and absent anchor: C:179–341,985–1061; P:890–905; M:1837–1880; DL:226–247                           | Mapped / executed                                    |
+| 024–027 | Typed faults, fresh abort, bounded windows, retired lifecycles: M:1610–1745,1789–2182,2754–2801; DA:481–655; DT:174–265; DL:927–1041 | Mapped / executed                                    |
+| 028–030 | Cleanup/counts, original request/replay/history and metadata: M:200–488,2522–2820; DL:439–657; DA:607–776,882–980                    | Mapped / executed                                    |
+| 031     | Authorized no-comment admission/races/retry/restart and repaired intake: DA:56–278,281–452,655–776,882–980                           | Mapped / executed; W046-001 closed                   |
+| 032     | Exact seven-slot matching, missing/empty and unsupported operators: DMT:18–255; DB:140–238                                           | Mapped / executed                                    |
+| 033     | Pause at 480, reentry to 481, loss and supplied empty control: DL:97–305                                                             | Mapped / executed                                    |
+| 034     | Complete traversal, retained retry order and fresh reopen: DB:475–661,775–843                                                        | Mapped / executed                                    |
+| 035     | Budgets, failed pages, duplicate/cycle/drift and preserved earlier actions: DB:727–773,845–1010                                      | Mapped / executed                                    |
+| 036     | Inclusive count/value/collection/recognized-JSON UTF-8 limits: DB:24–410,1126–1350                                                   | Mapped / executed                                    |
+| 037     | Initialization guards, mutation/abort/replay and privacy: DA:281–452,481–744,779–980; DL:439–657,927–1170; DT:148–265                | Mapped / executed; structured-result repair verified |
+
+TEST-001–032 remain supported by supplied/shared suites; TEST-033–039 map to CC-031–037 respectively. Focused original-history probes preserve original submission before refreshed retry preconditions; admission replay is not generalized into delivery reconstruction. SC-001–014 receive technical conformance support, with environment/build limitations below explicitly excluded from any global-success interpretation.
+
+### ADR, consistency and security-control disposition
+
+| Boundary / obligation | Assessment and evidence                                                                                                                                                                                             |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ADR-0021/0022/0024    | Technical PASS: injected observations only, no live transport/query/external write or execution dispatch; host controls phase/state/authorization. O:316–395; D:1–32,214–233; P:498–539,908–935; Deps:35–58,203–310 |
+| Proposed ADR-0025     | Storage contract preserved; exact base comparison proves ledger/manifests/tooling unchanged; initialization uses only existing four-field typed operation (L:638–657)                                               |
+| Proposed ADR-0026     | Approved discovery contract technically supported alongside supplied behavior; no ADR acceptance inferred                                                                                                           |
+| Code consistency      | Plain Promise modules; shared candidate/guard/observation reuse; exact captured rules in both intake paths; no new actionable duplication/naming/error-handling finding                                             |
+| Public docs/release   | README:425–697 accurately separates modes and limitations; index.ts:265–350 additive exports; minor watcher and historical recovery patch changesets nonduplicate; examples/dependency tests executed               |
+| SEC-A01/A02           | Canonical-item explicit authorization, original initialization request, fresh-only reporting and no fabricated authority retained (A:20–149; L:444–479,633–679)                                                     |
+| SEC-A03/A04           | Bounded whole-page validation and exact matching before item effects; preserved anchors/explicit loss (DV:446–612; DM:8–66; O:184–209,350–445)                                                                      |
+| SEC-A05/A06           | Allowlisted evidence and local bounded traversal; no raw facts/policy/continuation persistence (DM:57–66; D:83–94,186–387; DL:1045–1170)                                                                            |
+| SEC-A07               | Awaited acknowledgements, fresh abort gates and truthful no-claim/exactly-once cleanup; admission result no longer invokes caller methods (A:69–149; O:80–150; P:215–301,1147–1170)                                 |
+
+SEC rows are architectural/code/test traceability, not a substituted specialist vulnerability report. Fresh specialist result is recorded separately above. Trusted adapters are not sandboxed; accepted at-most-once signal loss and settling-dependency liveness assumptions remain explicit. No dependency/network audit was run; inherited dependency audit notices are unassessed.
+
+### Fresh execution versus inherited evidence
+
+Test guardian ran these gates sequentially, without concurrent test commands:
+
+| Command                                                                                                                                          | Fresh result                                                                      |
+| ------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
+| `npm test -- DevSquadAdoWorkflowWatcher DevSquadAdoWorkflowLedger`                                                                               | Exit 0; **696 passed / 2 Windows skips**, 16 files; 36.11 seconds                 |
+| `npm test -- DevSquadAdoWorkflowWatcher.remediation -t "third independent history"`                                                              | Exit 0; **19 passed / 244 selector exclusions**; overlaps combined total          |
+| `npm run typecheck`                                                                                                                              | Exit 0; `tsgo --noEmit`                                                           |
+| `npx --no-install prettier --check` on base-to-HEAD changed `src` and `README.md` paths                                                          | Exit 0; **24 paths**, source/tests/supports/index/README                          |
+| `npx --no-install prettier --ignore-path .gitignore --check .changeset/devsquad-ado-workflow-watcher.md .changeset/watcher-contract-recovery.md` | Exit 0; both changesets                                                           |
+| `git --no-pager diff --check <integration-base> HEAD`                                                                                            | Exit 0; guardian and parent                                                       |
+| `node scripts/check-public-types-effect-free.mjs`                                                                                                | Exit 0; **fresh guard execution on inherited remediation-generated declarations** |
+| Parent inline `node --import tsx --input-type=module -` public probes                                                                            | Exit 0; **32 passed**, in-memory fake ledger, no durable/probe-file write         |
+| `npm run build` / `tsup`                                                                                                                         | **Not run**: read-only review does not regenerate/clean `dist`                    |
+
+Combined breakdown: supplied/shared watcher **329**, dependency guardians **17**, discovery public/examples **20**, matching **45**, admission **94**, bounds **81**, lifecycle **46**, ledger suites **64** = **696**. These are fresh counts; the 19 history cases and 20 repair tests are subsets, not additive totals. No percentage-coverage claim is made.
+
+The two existing platform skips are the Linux-only production ledger initialize/acquire/checkpoint/reopen/list/release test and the non-Windows production-filesystem 1,000-record listing benchmark. The 244 history exclusions are selector exclusions, not platform skips. Portable real-ledger fixtures do not certify production Windows ledger permissions.
+
+Inherited, NOT freshly executed here: remediation test-first RED 16 failed / 78 passed; remediation fresh ESM/DTS generation; canonical build exit 1 at unavailable Windows `rm`; separate guard on those fresh declarations; prior eight baseline/environment failures. The turn-2 isolated scoped green checks are superseded by current fresh scoped execution, not reused as its proof. Current guard does not turn inherited generation into a fresh build. Packaging remains failed/unverified; no build-script repair occurred.
+
+No whole-project `npm test`, global format gate, dependency installation, external audit, deployment or live tracker command was executed. Earlier interrupted global attempts have no complete totals. The narrowed eight unchanged-baseline failures do not classify every unidentified failure from those interrupted attempts.
+
+### Retained findings, severity and limitations
+
+| ID        | Severity retained | Current disposition / evidence                                                                                                                                                              |
+| --------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| W046-001  | Major             | **Closed independently** at both admission call sites; fresh real-ledger regressions and parent public probes above                                                                         |
+| TB046-001 | Major             | Five inherited session-storage/Windows failures, not rerun; prior identical-source evidence at review-log:1087–1090, SessionStore.ts:384 and AgentProvider.test.ts:2192,2285,2336,2461,2568 |
+| TB046-002 | Major             | Inherited missing external `cp`, not rerun; CopyToWorktree.ts:49; prior base-identical failure evidence at review-log:1091                                                                  |
+| TB046-003 | Major             | Two inherited path-separator assertions, not rerun; createWorktree.test.ts:64, createSandbox.test.ts:265; prior evidence at review-log:1092                                                 |
+| TB001     | Minor             | Historical private-guard/object-identity coupling unchanged and nonblocking; remediation.test.ts:953,1021,1288,2423; not a new finding or required fix                                      |
+
+No source correction outside W046-001 is authorized or necessary for the bounded slice PASS. Global tests, canonical package build, production Windows ledger support, audit and deployment remain uncertified. ADR-0025/0026 remain **Proposed**, not governance-accepted and not made technical blockers merely by that status. Stale historical artifact status paragraphs remain historical; this append supplies current review evidence without rewriting spec/plan/ADR history.
+
+### W042–W046 closure
+
+| Task | Independent full-slice disposition                                                                                                                                                                        |
+| ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| W042 | **PASS:** anchored pause/reentry, explicit WI/PR retention loss, supplied empty control and suppression distinction supported by lifecycle tests and shared observation path                              |
+| W043 | **PASS:** bounded multi-page traversal, retained candidates, one page/item step per poll, whole-page rejection, byte/count ceilings, explicit terminal/incomplete and restart proven within scoped suites |
+| W044 | **PASS:** mixed outcomes, original-request retry/recovery, acknowledgement-preserving abort and truthful count/cleanup; prior W046-001 qualification removed by independent closure                       |
+| W045 | **PASS within public-contract scope:** exports/inference, executable examples, host documentation, release alignment and dependency boundaries; no fresh packaging certification                          |
+| W046 | **PASSED, technical only:** all five guardians accounted for, trigger-required specialist completed, zero remaining slice blockers; parent owns separate checkbox/evidence commit                         |
+
+W039/W040/W041 are included and supported, with the W041 intake gate now independently closed. W001–W038 historical completion and all earlier findings remain preserved, not reopened.
+
+### Reasoning log and handoff envelope
+
+- **Decision:** Close W046-001 and issue full integration-slice technical PASS. **Why:** Three independent static guardians traced owned snapshots through both call sites; fresh real-ledger public regressions and 32 parent public probes establish original-rule decisions through callbacks/retries/abort/replay. Full supplied/recovery/discovery suites remain green. Confidence is high for the demonstrated defect and scoped contract, not exhaustive correctness.
+- **Decision:** Retain baseline Major severity and decline global/package certification. **Why:** Their original evidence and platform attribution are unchanged; no fresh full-suite or build was executed. Separating review scope is not downgrading findings.
+- **Decision:** Append only; leave task/governance/publication to parent. **Why:** Technical evidence is distinct from approval and evidence commits change the repository tree even when code is identical.
+
+**Handoff:** Destination: conductor/parent evidence-only closure. Required evidence: this appended session; current `tasks.md:673–680` remediation handoff; regression source `src/DevSquadAdoWorkflowWatcher.discovery.admission.test.ts:281–452`. Blocking slice finding IDs: **none**. Closed ID: **W046-001 (Major)**. Retained non-slice IDs: TB046-001–003 (Major), TB001 (Minor).
+
+Parent may mark W046 and commit only evidence separately after verifying unchanged reviewed code against HEAD `9854e9ea5f739ee5ba8a605a97a7fd3569a9cce3`, committed tree `7519db940767937691d2ffc41d2bf3a2921711e7`, and `src` subtree `6e7c6d3ffb2bdc082b371be38efd773fbfa14a38`. A later evidence-only commit will have a different overall tree; compare code blobs/subtree, not assert that the entire tree is unchanged.
+
+Preserve assumptions: explicit host item authorization/exact state; matching is not execution authority; at-most-once potentially lost admission; supplied no-initialization compatibility; original-submission checkpoint history; no durable continuation; trusted adapters and settling dependencies. No new product/auth decision was needed. Preserve **#20 before #21**; ADR-0025/0026 remain Proposed. No live ADO/board/PR write, push, merge, force, amend, rebase, branch change, harness learning or slices 15+ occurred or is authorized by this verdict.
+
+---
+
+## W046 local evidence-only closure — 2026-09-10
+
+### Technical completion, authority and provenance
+
+**W046 technical PASS recorded; W039–W046 locally technically complete; publication PENDING.** This implementation worker closes only the local checkbox/evidence task from the existing independent turn-3 verdict above. No independent review, code implementation or board workflow transition was performed here. Historical FAIL/PASS verdicts, finding severities and provenance remain intact. W046-001 is independently closed; TB046-001–003 remain retained baseline Majors and TB001 remains nonblocking Minor.
+
+The accepted independent review covers the entire integration delta `9ff6e8e9f74792e131e927bd9bf41358e36cea95` → `9854e9ea5f739ee5ba8a605a97a7fd3569a9cce3`, not just remediation. Reviewed committed tree: `7519db940767937691d2ffc41d2bf3a2921711e7`; reviewed `src` subtree: `6e7c6d3ffb2bdc082b371be38efd773fbfa14a38`. All five guardians are accounted for and the required security specialist reported no vulnerabilities. Traceability remains W046 / FR-001–069 including suffixes / CC-001–037 / TEST-001–039 / SC-001–014 / SEC-A01–A07.
+
+**Inherited by this closure, not rerun:** The independent review's fresh 696 passes / 2 Windows skips, focused history 19 passes / 244 selector exclusions (overlapping total), 32 independent public probes, typecheck, scoped formatting/diff and declaration-guard PASS. That review's guard ran on inherited fresh remediation-generated declarations. Remediation freshly generated ESM and DTS, then canonical `npm run build` failed at the known Windows postbuild `rm`; packaging and global-suite success remain uncertified. The eight baseline failures, interrupted global-suite attempts and platform limitations above are retained. Only documentation formatting, preservation/diff checks and the commit hook belong to this local closure's fresh validation.
+
+### Parent-supplied CI policy and publication evidence (not queried by this worker)
+
+The following is supplied parent evidence, not fresh worker API execution or a remote write:
+
+| Parent evidence                                                                                                                                                | Bounded conclusion                                                                                                                         |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Base branch at `9ff6e8e9f74792e131e927bd9bf41358e36cea95`: `protected=false`, `protection.enabled=false`, required checks `[]`, contexts `[]`, enforcement off | Parent policy assessment established no required repository CI checks                                                                      |
+| Applicable `rules/branches` target `[]`; `rulesets?includes_parents=true` returned `[]`                                                                        | Independent rule evidence supports absence of required checks; empty commit statuses alone do not establish policy                         |
+| Protection endpoint returned 404                                                                                                                               | Not standalone proof that protection or required checks are absent                                                                         |
+| `.github/workflows/ci.yml` triggers on push to `main` only                                                                                                     | Does not establish a required check for this unpublished feature head                                                                      |
+| API permissions `pull=true`, `push=false`                                                                                                                      | May block publication; parent must resolve publication authority separately                                                                |
+| Existing PR #21: remote head `aed663765a3a8bcc5864af34a000089961e4eaba`, branch `users/davidsant/symmetrical-train`, base `users/davidsant/ubiquitous-train`   | Existing remote publication is distinct from this worktree's unpublished reviewed head; current unpublished head statuses not yet assessed |
+
+### Preservation and local validation scope
+
+Before edits, only `review-log.md` was dirty: the reviewer had appended 205 lines / 27,189 bytes. Committed HEAD log size was 180,862 bytes; worktree size was 208,051 bytes. Both the original W038 128,823-byte prefix and the full 180,862-byte HEAD prefix matched HEAD exactly before closure.
+
+The original W038 prefix SHA-256 is `8211e975730800dbee1ae3845566b1b0a76f5f62d30b174e73225e620330d25d`. The reviewer's historical 180,862-byte prefix SHA-256 is `0081cd63dd9209c970471ee2bbc0e04826c67cdccd7cdc170446d3ff6b616597`. Its append-time equality statement above remains a historical measurement, not an assertion that the subsequently formatted reviewer addition is byte-identical. A scoped Prettier preview preserved both prefixes and first changed byte offset 180,863 (zero-based), normalizing recent review whitespace/tables only; the 208,051-byte pre-closure log would normalize to 215,772 bytes before this closure append. Post-format and post-commit measurements are returned with the final commit identity; no historical verdict is rewritten.
+
+Only `tasks.md` and `review-log.md` are included in this logical Conventional Commit unit, with the required Copilot App trailer and no hook bypass. Current task intro/footer now distinguish local completion from publication; earlier W045 stop restrictions and turn-2 pending handoff are explicitly historical. Existing project guidance and the installed git-commit skill were read; `.memory/harness-learnings.md` was absent. No source symbols changed; no IDE/LSP diagnostic or fresh code-validation claim is made.
+
+Fresh pre-commit documentation validation passed: scoped `npx --no-install prettier --check` on these two files, `git diff --check`, W039–W046 checked-task assertions, task-to-review-log anchor checks, exact two-file scope, and unchanged non-doc comparison against reviewed HEAD. After scoped formatting, both the 128,823-byte W038 prefix and the 180,862-byte historical HEAD prefix still matched HEAD byte-for-byte with the hashes above. Hook execution and final post-commit identity/cleanliness are reported in the worker return, not preclaimed here.
+
+### Decision and parent handoff
+
+- **Decision:** Record W046 completed technically. **Basis:** Existing independent full-delta PASS, all five guardians plus specialist, and W046-001 closure satisfy the task gate; no new review is needed for evidence-only edits. Confidence: high within the accepted scope.
+- **Decision:** Keep publication, governance and packaging separate. **Basis:** Policy evidence is parent-supplied, write permissions may block publication, and known global/build limitations persist. ADR-0025/0026 remain **Proposed**; no governance/merge approval follows.
+- **Handoff:** Parent owns steps 15–19 and publication/status assessment. Preserve #20 before #21; this worker does not execute later steps or authorize later slices. No push, PR update, board creation/transition, merge, branch change, source/test/configuration/package/script edit or remote write occurs in this closure. Final HEAD/tree will change for evidence only; compare non-doc content and `src` identity to reviewed HEAD, not the entire tree.
