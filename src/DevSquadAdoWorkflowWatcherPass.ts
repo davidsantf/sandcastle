@@ -1151,6 +1151,9 @@ export const finalizeWatcherCandidate = async (
   context: PassContext,
   state: CandidateState,
 ): Promise<DevSquadAdoWatchCandidateOutcome> => {
+  // W044 / FR-052: an earlier candidate's awaited cleanup may abort the
+  // parent. Read it afresh without retracting already acknowledged outcomes.
+  if (isAborted(context.signal)) context.cancelled = true;
   if (state.resolved === null) {
     state.resolved = outcomeFor(
       state,

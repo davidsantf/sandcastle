@@ -357,7 +357,10 @@ export const runDevSquadAdoDiscoveryWatchPass = async (
         initializationReplayed: states.filter(
           (s) => s.admission?.outcome.acceptance.kind === "replayed",
         ).length,
-        paused: outcomes.filter((o) => o.category === "matching").length,
+        // W044 / CC-034: matching completed for the whole accepted page,
+        // even when cancellation leaves its item effects unscheduled.
+        paused: states.filter((s) => s.item.matching.decision !== "matched")
+          .length,
         processed: outcomes.filter((o) => o.category !== "unprocessed").length,
         examined: states.filter((s) => s.observation?.examined).length,
         eligible: states.filter((s) => s.observation?.eligible).length,

@@ -9,6 +9,8 @@ import { discoveryOptions } from "./DevSquadAdoWorkflowWatcherDiscoveryTestSuppo
 import {
   cleanupWatcherRepositories,
   createWatcherLedgerFixture,
+  openWatcherLedger,
+  readWatcherLedgerArtifacts,
 } from "./DevSquadAdoWorkflowWatcherTestSupport.js";
 
 afterEach(cleanupWatcherRepositories);
@@ -604,4 +606,427 @@ describe("initialization acknowledgements with later records", () => {
     expect(initializeRecord.mock.calls[0]![0].phase).toBe("ready");
     expect(effect).not.toHaveBeenCalled();
   });
+});
+
+// W044 / FR-052/067-069 / CC-027-031: acknowledgement is not delivery recovery.
+describe("integrated admission cancellation and restart [W044]", () => {
+  it("counts evaluated pauses independently of unscheduled dispositions after accepted initialization abort", async () => {
+    const f = await fixture();
+    const controller = new AbortController();
+    f.initializeRecord.mockImplementation(async (request) => {
+      const accepted = await f.ledger.initializeRecord(request);
+      controller.abort();
+      return accepted;
+    });
+    const result = await runDevSquadAdoWorkflowWatchPass({
+      ...f.input,
+      signal: controller.signal,
+      discovery: {
+        ...f.input.discovery,
+        policy: {
+          version: "pause-count",
+          filters: [
+            { dimension: "state", operator: "one-of", values: ["included"] },
+          ],
+        },
+      },
+      seam: {
+        ...f.input.seam,
+        discoverWorkItemsPage: async (request) => ({
+          ...request,
+          items: [
+            {
+              workItemId: "999",
+              facts: { state: { kind: "known", value: "included" } },
+            },
+            {
+              workItemId: "a",
+              facts: { state: { kind: "known", value: "excluded" } },
+            },
+            { workItemId: "b", facts: {} },
+            {
+              workItemId: "c",
+              facts: { state: { kind: "known", value: "included" } },
+            },
+          ],
+          next: { kind: "terminal" },
+        }),
+      },
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      value: {
+        stopReason: "cancelled",
+        traversal: { status: "incomplete", terminalPageSeen: true },
+        counts: {
+          pageCalls: 1,
+          pagesValidated: 1,
+          discovered: 4,
+          evaluated: 4,
+          paused: 2,
+          processed: 1,
+          admitted: 1,
+          acted: 1,
+          eligible: 0,
+          suppressed: 0,
+          skipped: 3,
+          failed: 0,
+          cleanupNotRequired: 4,
+          cleanupReleased: 0,
+          cleanupFailed: 0,
+          cleanupIndeterminate: 0,
+        },
+        signals: [{ kind: "discovery-admission", workItemId: "999" }],
+        outcomes: [
+          { category: "admission", acceptance: { kind: "fresh" } },
+          {
+            category: "unprocessed",
+            workItemId: "a",
+            matching: { decision: "excluded" },
+          },
+          {
+            category: "unprocessed",
+            workItemId: "b",
+            matching: { decision: "facts-missing" },
+          },
+          {
+            category: "unprocessed",
+            workItemId: "c",
+            matching: { decision: "matched" },
+          },
+        ],
+      },
+    });
+    expect(f.initializeRecord).toHaveBeenCalledTimes(1);
+    expect(f.effect).not.toHaveBeenCalled();
+    expect(await f.ledger.readRecord(999)).toMatchObject({
+      ok: true,
+      value: { revision: 1, activeClaim: null },
+    });
+  });
+
+  it.each(["lost", "malformed"] as const)(
+    "does not reconstruct discovery delivery after durable %s acknowledgement and reopen",
+    async (failure) => {
+      const f = await fixture();
+      f.initializeRecord.mockImplementation(async (request) => {
+        const accepted = await f.ledger.initializeRecord(request);
+        if (failure === "lost") throw Error("private-lost-ack");
+        return {
+          ...accepted,
+          value: { private: "private-malformed-ack" },
+        } as unknown as Awaited<
+          ReturnType<DevSquadAdoWorkflowLedger["initializeRecord"]>
+        >;
+      });
+      const first = await runDevSquadAdoWorkflowWatchPass(f.input);
+      expect(first).toMatchObject({
+        ok: true,
+        value: {
+          signals: [],
+          counts: { admitted: 0, failed: 1, cleanupNotRequired: 1 },
+          outcomes: [
+            {
+              reason: "ledger-unavailable",
+              ledgerErrorKind: "ledger-fault",
+              acceptance: { kind: "unconfirmed" },
+            },
+          ],
+        },
+      });
+      const before = await readWatcherLedgerArtifacts(f.repositoryRoot);
+      const reopened = await openWatcherLedger(f.repositoryRoot, f.input.clock);
+      const observe = vi.fn<
+        NonNullable<typeof f.input.seam.observeWorkItemComments>
+      >(async () => ({ kind: "window", commentIds: [] }));
+      const second = await runDevSquadAdoWorkflowWatchPass({
+        ...f.input,
+        passId: "reopened",
+        ledger: reopened,
+        seam: { ...f.input.seam, observeWorkItemComments: observe },
+      });
+      expect(second).toMatchObject({
+        ok: true,
+        value: {
+          signals: [],
+          counts: { admitted: 0, initializationReplayed: 0 },
+        },
+      });
+      expect(observe).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ sinceCommentId: null }),
+      );
+      expect(await readWatcherLedgerArtifacts(f.repositoryRoot)).toEqual(
+        before,
+      );
+      // A real comment is still observable later; initialization seeded no cursor.
+      observe.mockResolvedValue({
+        kind: "window",
+        commentIds: ["real-comment"],
+      });
+      const later = await runDevSquadAdoWorkflowWatchPass({
+        ...f.input,
+        passId: "later-comment",
+        ledger: reopened,
+        seam: { ...f.input.seam, observeWorkItemComments: observe },
+      });
+      expect(later).toMatchObject({
+        ok: true,
+        value: {
+          signals: [{ kind: "comment-observation", workItemId: "999" }],
+          counts: { acted: 1, admitted: 0 },
+        },
+      });
+      expect(f.effect).not.toHaveBeenCalled();
+      for (const surface of [
+        first,
+        second,
+        later,
+        await reopened.listResumableRecords(),
+        await reopened.inspectRecoveryErrors(),
+        await readWatcherLedgerArtifacts(f.repositoryRoot),
+      ])
+        expect(JSON.stringify(surface)).not.toMatch(
+          /private-|submission-secret/,
+        );
+    },
+  );
+});
+
+// W044 / FR-037/046/052/068: retained admission is one lane per invocation.
+describe("awaited initialization and retained admission lane [W044]", () => {
+  it.each([
+    "fresh",
+    "replayed",
+    "already-recorded",
+    "lost",
+    "malformed",
+  ] as const)(
+    "awaits in-flight %s initialization after abort without comment fallback or release",
+    async (acceptance) => {
+      const f = await fixture();
+      if (acceptance === "replayed")
+        await runDevSquadAdoWorkflowWatchPass(f.input);
+      if (acceptance === "already-recorded") {
+        expect(
+          (
+            await f.ledger.initializeRecord({
+              workItemId: 999,
+              operationId: "other-initializer",
+              phase: "ready",
+              status: "open",
+            })
+          ).ok,
+        ).toBe(true);
+      }
+      const controller = new AbortController();
+      let enter!: () => void;
+      const entered = new Promise<void>((resolve) => {
+        enter = resolve;
+      });
+      let settle!: () => void;
+      const held = new Promise<void>((resolve) => {
+        settle = resolve;
+      });
+      f.initializeRecord.mockImplementation(async (request) => {
+        const result = await f.ledger.initializeRecord(request);
+        enter();
+        await held;
+        if (acceptance === "lost") throw Error("private-lost-initialization");
+        if (acceptance === "malformed")
+          return { ok: true, value: {} } as unknown as typeof result;
+        return result;
+      });
+      let returned = false;
+      const pass = runDevSquadAdoWorkflowWatchPass({
+        ...f.input,
+        signal: controller.signal,
+        passId: "different-pass",
+        ledger: { ...f.input.ledger, readRecord: missing },
+      }).then((result) => {
+        returned = true;
+        return result;
+      });
+      await entered;
+      controller.abort();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(returned).toBe(false);
+      settle();
+      const result = await pass;
+      expect(result).toMatchObject({
+        ok: true,
+        value: {
+          stopReason: "cancelled",
+          traversal: { status: "incomplete", terminalPageSeen: true },
+          counts: {
+            admitted: acceptance === "fresh" ? 1 : 0,
+            acted: acceptance === "fresh" ? 1 : 0,
+            initializationReplayed: acceptance === "replayed" ? 1 : 0,
+            cleanupNotRequired: 1,
+            cleanupReleased: 0,
+            cleanupFailed: 0,
+            cleanupIndeterminate: 0,
+          },
+          outcomes: [
+            {
+              acceptance: {
+                kind:
+                  acceptance === "fresh"
+                    ? "fresh"
+                    : acceptance === "replayed"
+                      ? "replayed"
+                      : acceptance === "already-recorded"
+                        ? "none"
+                        : "unconfirmed",
+              },
+            },
+          ],
+        },
+      });
+      expect(f.effect).not.toHaveBeenCalled();
+      if (acceptance === "replayed")
+        expect(f.initializeRecord.mock.calls[0]![0]).toEqual(
+          f.initializeRecord.mock.calls[1]![0],
+        );
+      const reopened = await openWatcherLedger(f.repositoryRoot, f.input.clock);
+      expect(await reopened.readRecord(999)).toMatchObject({
+        ok: true,
+        value: {
+          revision: 1,
+          activeClaim: null,
+          observations: { workItemCommentId: null },
+        },
+      });
+      for (const surface of [
+        result,
+        await reopened.inspectRecoveryErrors(),
+        await readWatcherLedgerArtifacts(f.repositoryRoot),
+      ])
+        expect(JSON.stringify(surface)).not.toMatch(
+          /private-|submission-secret/,
+        );
+    },
+  );
+});
+
+// W044 / FR-047/051/068: traversal failure and cancellation cannot invent
+// acceptance or erase a prior admission, and rejected pages contribute no IDs.
+describe("admission traversal exits [W044]", () => {
+  it.each(["before-initialize", "between-retries"] as const)(
+    "does not issue initialization after abort at %s",
+    async (boundary) => {
+      const f = await fixture();
+      const controller = new AbortController();
+      f.initializeRecord.mockResolvedValue({
+        ok: false,
+        error: { kind: "storage", outcome: "indeterminate" },
+      });
+      const result = await runDevSquadAdoWorkflowWatchPass({
+        ...f.input,
+        signal: controller.signal,
+        ledger: {
+          ...f.input.ledger,
+          readRecord: async () => {
+            if (boundary === "before-initialize") controller.abort();
+            return missing();
+          },
+        },
+        delay: (ms, signal) => {
+          if (ms === 10) return f.input.delay(ms, signal);
+          controller.abort();
+          return Promise.resolve();
+        },
+      });
+      expect(result).toMatchObject({
+        ok: true,
+        value: {
+          stopReason: "cancelled",
+          signals: [],
+          counts: {
+            admitted: 0,
+            initializationReplayed: 0,
+            cleanupNotRequired: 1,
+          },
+          outcomes: [
+            {
+              acceptance: {
+                kind: boundary === "before-initialize" ? "none" : "unconfirmed",
+              },
+            },
+          ],
+        },
+      });
+      expect(f.initializeRecord).toHaveBeenCalledTimes(
+        boundary === "before-initialize" ? 0 : 1,
+      );
+      expect(f.effect).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["page-failed", "duplicate-item", "unstable-scope"] as const)(
+    "retains admission and excludes rejected-page IDs after %s",
+    async (reason) => {
+      const f = await fixture();
+      const result = await runDevSquadAdoWorkflowWatchPass({
+        ...f.input,
+        seam: {
+          ...f.input.seam,
+          discoverWorkItemsPage: async (request) => {
+            if (request.pageOrdinal === 1)
+              return {
+                ...request,
+                items: [{ workItemId: 999, facts: {} }],
+                next: {
+                  kind: "continue",
+                  continuation: "private-continuation",
+                },
+              };
+            if (reason === "page-failed") throw Error("private-page-failure");
+            return {
+              ...request,
+              binding:
+                reason === "unstable-scope"
+                  ? { ...request.binding, scopeId: "private-drift" }
+                  : request.binding,
+              items: [
+                { workItemId: 1000, facts: {} },
+                { workItemId: 999, facts: {} },
+              ],
+              next: { kind: "terminal" },
+            };
+          },
+        },
+      });
+      expect(result).toMatchObject({
+        ok: true,
+        value: {
+          stopReason: "discovery-incomplete",
+          traversal: { status: "incomplete", reason, terminalPageSeen: false },
+          counts: {
+            pageCalls: 2,
+            pagesValidated: 1,
+            discovered: 1,
+            evaluated: 1,
+            processed: 1,
+            admitted: 1,
+            acted: 1,
+            cleanupNotRequired: 1,
+          },
+          outcomes: [{ workItemId: "999", acceptance: { kind: "fresh" } }],
+          signals: [{ kind: "discovery-admission", workItemId: "999" }],
+        },
+      });
+      if (!result.ok) throw Error("expected discovery result");
+      expect(result.value.outcomes).toHaveLength(1);
+      expect(f.initializeRecord).toHaveBeenCalledTimes(1);
+      expect(f.effect).not.toHaveBeenCalled();
+      for (const surface of [
+        result,
+        await readWatcherLedgerArtifacts(f.repositoryRoot),
+      ])
+        expect(JSON.stringify(surface)).not.toMatch(
+          /private-|submission-secret/,
+        );
+    },
+  );
 });
