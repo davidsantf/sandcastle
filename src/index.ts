@@ -301,6 +301,8 @@ export type {
   RunDevSquadAdoWorkflowWatchPassOptions,
 } from "./DevSquadAdoWorkflowWatcher.js";
 
+// W045 / FR-008/061: discovery contracts are additive; supplied overloads and
+// signal unions stay unchanged. Internal traversal/admission helpers stay private.
 export { DEFAULT_DEVSQUAD_ADO_DISCOVERY_LIMITS } from "./DevSquadAdoWorkflowWatcher.js";
 export type {
   DevSquadAdoDiscoveryFilter,

@@ -8,9 +8,9 @@ Decomposition of [spec.md](spec.md) and [plan.md](plan.md) under [ADR-0026](../.
 
 At the historical recovery publication checkpoint, local and published [PR #21](https://github.com/davidsantf/sandcastle/pull/21) implementation head are `d5aecf0`, normally fast-forwarded from `fb6a238`, without merge. Review ran on the uncommitted implementation over `fb6a238`, later committed as `d5aecf0`; no original pre-commit cryptographic snapshot is claimed. This documentation follow-up preserves its `src` tree `f8cc4221f4c2ebd787ad9740acc6bfb1bbd6bf06` and unchanged source/configuration/scripts comparison. Parent will record the resulting documentation-only commit SHA in the PR/handoff, not republish a pending implementation.
 
-**Current discovery extension status (2026-09-10): APPROVED PLAN; W039–W046 PENDING.** D1-B, D2/D2-A and D3-A extend existing slice 14 / #21. The authoritative implementation target is the plan's **Approved discovery extension**, aligned with amended Proposed ADR-0026. W001–W038 remain completed historical supplied-candidate work; their technical PASS does not establish discovery conformance. The discovery extension is unimplemented and not independently reviewed.
+**Current discovery extension status (2026-09-10): W039–W045 LOCALLY IMPLEMENTED; W046 PENDING independent full integration-base review, parent-owned.** D1-B, D2/D2-A and D3-A extend existing slice 14 / #21. The authoritative requirements remain the plan's **Approved discovery extension**, aligned with Proposed ADR-0026. W001–W038 remain completed historical supplied-candidate work; their technical PASS does not establish discovery conformance. W045 scoped implementation/validation is not overall extension approval, publication, packaging certification or ADR acceptance. ADR-0025/0026 remain Proposed; no W046 review has occurred in this task.
 
-This decomposition was prepared against worktree HEAD `aed6637`, preserving the intentional uncommitted amendments to `spec.md`, `plan.md`, and `docs/adr/0026-devsquad-ado-workflow-watcher.md`. Implementation remains within existing PR #21, head `users/davidsant/symmetrical-train`, based on PR #20 `users/davidsant/ubiquitous-train`. The designated execution worktree is `C:\repos\copilot-worktrees\sandcastle\users-davidsant-expert-garbanzo`; do not switch to the main checkout. No new board items, PRs, publication, or slice 15 work is authorized by this task draft.
+**Historical decomposition checkpoint:** Prepared against HEAD `aed6637` with the approved spec/plan/ADR amendments and the then-designated `expert-garbanzo` worktree; the historical PR #21/#20 branch references were informational, not live verification. **Current W045 execution:** only `C:\repos\copilot-worktrees\sandcastle\users-davidsant-bookish-doodle`, branch `users/davidsant/bookish-doodle`, starting clean at `8264a25b5962585c9c8d7814242317535e3a01e8`. Older unimplemented/pending summaries in spec/plan/ADR describe the approval checkpoint; those artifacts are outside W045 editing permission and remain unchanged. Local tasks are the work-item source. No board work, remote/PR queries or writes, publication, or slices 15–19 are authorized; commit W045 locally and stop before parent-owned W046.
 
 ## Scope and Conventions
 
@@ -404,7 +404,7 @@ Execute in order. No production or test edits are part of W029. DevSquad retains
 
 ---
 
-## Approved Discovery Extension — Pending Implementation
+## Approved Discovery Extension — Locally Implemented Through W045; W046 Pending
 
 The approved plan's discovery extension and amended Proposed ADR-0026 govern this section. Historical supplied-candidate algorithms remain authoritative for shared observation, fencing, checkpoint acknowledgement/recovery and cleanup.
 
@@ -569,7 +569,7 @@ Every extension task inherits the global acceptance constraints and the followin
 
 ## Phase 19: Public Documentation and Release Alignment
 
-- [ ] **W045** Align public exports and host documentation in `src/DevSquadAdoWorkflowWatcher.ts`, `src/index.ts`, `README.md`, and `.changeset/devsquad-ado-workflow-watcher.md`
+- [x] **W045** Align public exports and host documentation in `src/DevSquadAdoWorkflowWatcher.ts`, `src/index.ts`, `README.md`, and `.changeset/devsquad-ado-workflow-watcher.md`
   - **Parent:** Scenario 9; supports Scenarios 7 and 8. **Dependency:** W044. **Complexity/risk:** M / Medium.
   - Audit and complete JSDoc/root exports for all new discovery contracts, defaults and overloads. Preserve legacy supplied inference and runtime shapes; consumers of supplied signals must not narrow a new admission union.
   - Document both modes, complete matching semantics, normalized facts/resolved teams, explicit item authorization/state, policy-version evidence, page/poll/byte bounds, anchored reentry, terminal/incomplete results and all host responsibilities.
@@ -579,6 +579,13 @@ Every extension task inherits the global acceptance constraints and the followin
   - **Acceptance:** Public compile assertions and example fixtures under `src/DevSquadAdoWorkflowWatcher.discovery.test.ts` pass; documentation matches observed discriminators/limits; dependency tests pass; generated public declarations are Effect-free. Record build generation and postbuild/package outcomes separately. Update task evidence in this file without altering historical W038 evidence or marking ADRs Accepted.
   - **Traceability:** FR-008–011/040/044/045/058/061–069; CC-003/018/020/031–037; TEST-024/025/033–039; SC-007/009/010/014.
   - **Verify:** full watcher/ledger selector, typecheck, canonical build, public declaration check against freshly generated declarations, formatting and diff checks.
+
+- **W045 execution and provenance (2026-09-10):** Worked only in the designated `users-davidsant-bookish-doodle` worktree/branch from clean `8264a25b5962585c9c8d7814242317535e3a01e8`. Read approved discovery requirements/ADR-0026 before retained baseline/ADR-0021/0022/0024/0025, project guidance, test discipline and git-commit skill. All `.changeset` entries were inspected first; package name is `@ai-hero/sandcastle`. Extended the existing minor watcher feature entry (pre-1.0); the separate `watcher-contract-recovery.md` historical patch is unchanged. Prior independent verify-worker results supplied by the parent are inherited, not this worker's reruns: W042 `68a16b6` **573 passed / 2 Windows skips**, W043 `6f74321` **622 passed / 2 skips**, W044 `8264a25` **662 passed / 2 skips**, each with focused history **19 passed / 244 unselected** and a separate scoped PASS. No independent reviewer was invoked by W045.
+- **W045 fresh baseline and integrated RED:** `npm test -- DevSquadAdoWorkflowWatcher DevSquadAdoWorkflowLedger` **662 passed / 2 Windows skips** (16 files, exit 0); `npm run typecheck` passed (exit 0). Before documentation/guardian implementation, `npm test -- DevSquadAdoWorkflowWatcher.discovery.test DevSquadAdoWorkflowWatcher.dependencies` was **5 failed / 29 passed** (exit 1): side-effect import, literal dynamic import and CommonJS import syntax escaped dependency protection; discovery/runtime-union run overloads lacked their own JSDoc; README lacked the exact executable typed fixture. Runtime examples and public compile assertions already passed against established behavior; no artificial behavior failure was introduced. Test-first `npm run typecheck` passed. First focused GREEN was **34 passed** (exit 0); subsequent added active supplied-mode and external/direct-effect controls also passed without implementation correction.
+- **W045 public contract/documentation acceptance:** Audited all root types/defaults and run/validation overloads. All required exports already existed; root annotation and JSDoc now distinguish supplied/discovery/runtime-union contracts without changing declarations' type shapes or runtime algorithms. Compile assertions retain exact supplied inference, discovery inference, runtime-union inference and discriminated signal fields; active supplied passes in both implicit/explicit modes prove no initializer inspection, unchanged signal shapes and unchanged missing-record behavior. The exact README fixture is compiled and executed against a real ledger for empty terminal discovery, authorized item 999 without comments/claims, paused item 137 and persisted-anchor reentry from 480 to 481, then repeat without redelivery. Documentation covers full matching semantics, normalized facts/resolved teams, explicit authorization/state, minimized policy evidence, every default/ceiling and recognized JSON byte accounting, loss anchors, page-per-poll scheduling, terminal-versus-pending retries, accounting, claim-free cleanup, permanent signal loss/replay reconciliation, fresh prefix rescans without eventual tail progress and cooperative settling dependencies. Dependency guardians inventory all nine production watcher modules, traverse the shared schema graph, guard type/runtime imports including side-effect/dynamic/CommonJS forms, reject unreviewed external dependencies/direct host-effect primitives and keep internal helpers private. They are static regression protection, not a sandbox for arbitrary code. Covers FR-008–011/040/044/045/058/061–069; CC-003/018/020/031–037; TEST-024/025/033–039; SC-007/009/010/014.
+- **W045 final scoped GREEN:** `npm test -- DevSquadAdoWorkflowWatcher.discovery DevSquadAdoWorkflowWatcher.dependencies` **283 passed**, six files, no skips; exact `npm test -- DevSquadAdoWorkflowWatcher.discovery` **266 passed**, five files, no skips; final combined `npm test -- DevSquadAdoWorkflowWatcher DevSquadAdoWorkflowLedger` **676 passed / 2 Windows skips**, 16 files (14 new tests: five public-example/compatibility tests and nine guardians). `npm test -- DevSquadAdoWorkflowWatcher.remediation -t "third independent history"` **19 passed / 244 unselected**, one file. All exited 0. The two platform skips are the Linux-only production initialize/acquire/checkpoint/reopen/list/release test and the non-Windows 1,000-record production listing test; history's 244 are selector exclusions, not new platform skips. Final `npm run typecheck` passed (exit 0).
+- **W045 canonical build/declaration evidence:** Required `npm run build` ran `tsup` 8.5.1 with clean output and freshly generated **ESM success (18,404 ms)** and **DTS success (27,492 ms)**. It emitted unused external-import warnings for `createRequire` and `Readable`. Overall command **exit 1**: Windows postbuild could not find `rm`; the chained `cp` and declaration guard did not execute in that command. No script workaround/fix was made and packaging success is not claimed. Then standalone `node scripts/check-public-types-effect-free.mjs` checked the freshly generated declarations and **passed (exit 0)**; this is not a stale-artifact claim. The approved expected postbuild limitation does not block this local W045 closure.
+- **W045 hygiene and limits:** Touched-file `npx --no-install prettier --check src/DevSquadAdoWorkflowWatcher.ts src/index.ts README.md .changeset/devsquad-ado-workflow-watcher.md src/DevSquadAdoWorkflowWatcher.dependencies.test.ts src/DevSquadAdoWorkflowWatcher.discovery.test.ts docs/features/devsquad-ado-workflow-watcher/tasks.md`, an explicit changeset check with `--ignore-path .gitignore` (root Prettier normally ignores `.changeset`), and `git diff --check` passed before staging. LF/UTF-8, historical W038 evidence, historical patch changeset, spec/plan/ADRs, package/dependency files, tooling and runtime implementation are preserved. IDE/LSP tools were unavailable; `git grep`, scoped tests and typecheck were used without an IDE claim. No install, agents, live client/SDK/transport, remote/PR/board operation, branch change, push, full `npm test`, global formatting, harness-learning write, W046 review, deployment or later slice occurred. The earlier interrupted full-suite run remains unresolved with no comparable full baseline; platform/session/sandbox failures are unclassified, not proven preexisting. Scoped PASS and fresh declarations are not overall-suite or packaging PASS, extension approval, publication, ADR acceptance or merge readiness. W046 stays unchecked for the parent's independent full integration-base review.
 
 ## Phase 20: Independent Extension Verification
 
@@ -612,10 +619,10 @@ All new requirements FR-061–069 and conformance criteria CC-031–037 have imp
 
 ### Validation Commands and Evidence Rules
 
-Run later implementation validation only from the designated worktree:
+Current W045 validation is scoped and runs only from the designated worktree (historical W038 commands/evidence above remain unchanged):
 
 ```powershell
-Set-Location "C:\repos\copilot-worktrees\sandcastle\users-davidsant-expert-garbanzo"
+Set-Location "C:\repos\copilot-worktrees\sandcastle\users-davidsant-bookish-doodle"
 
 npm test -- DevSquadAdoWorkflowWatcher
 npm test -- DevSquadAdoWorkflowWatcher DevSquadAdoWorkflowLedger
@@ -623,7 +630,7 @@ npm test -- DevSquadAdoWorkflowWatcher.remediation -t "third independent history
 npm run typecheck
 ```
 
-Focused extension selectors, once their suites exist:
+Implemented focused extension selectors:
 
 ```powershell
 npm test -- DevSquadAdoWorkflowWatcher.discovery
@@ -633,30 +640,32 @@ npm test -- DevSquadAdoWorkflowWatcher.discovery.bounds
 npm test -- DevSquadAdoWorkflowWatcher.discovery.lifecycle
 ```
 
-Final verification:
+W045 build and touched-file verification (not a full-suite or global-format gate):
 
 ```powershell
-npm test
 npm run build
 node scripts/check-public-types-effect-free.mjs
-npm run format:check
+npx --no-install prettier --check src/DevSquadAdoWorkflowWatcher.ts src/index.ts README.md .changeset/devsquad-ado-workflow-watcher.md src/DevSquadAdoWorkflowWatcher.dependencies.test.ts src/DevSquadAdoWorkflowWatcher.discovery.test.ts docs/features/devsquad-ado-workflow-watcher/tasks.md
+npx --no-install prettier --ignore-path .gitignore --check .changeset/devsquad-ado-workflow-watcher.md
 git diff --check
 ```
+
+The earlier draft's full `npm test` / global `npm run format:check` commands are not W045 authorization. Full-suite validation remains unresolved and parent-owned; do not classify unexplained earlier platform failures as preexisting. W046 is a separate independent review, not executed here.
 
 - Historical implementation baseline `d5aecf0`: combined watcher/ledger selector **401 passed, two existing Windows skips**; focused third-history selector **19 passed**. These totals are inherited, not newly executed by decomposition.
 - Record actual new counts, skip reasons and command exit codes. Full-project failures, if any, require attributable evidence rather than silently redefining success.
 - The canonical build has a preexisting Windows postbuild `rm` failure after ESM/DTS generation passes. Preserve and report that limitation; do not fix unrelated tooling or claim packaging success. Record whether fresh ESM and DTS generation actually completed.
 - The declaration guard consumes generated `dist` output. A standalone successful guard against stale declarations is not fresh public-surface evidence.
 - Formatting failures from untouched files must be reported separately from touched-file verification; do not reformat the repository as collateral work.
-- No validation commands were executed during this decomposition. The draft creates acceptance obligations, not passing evidence.
+- At the historical decomposition checkpoint no validation commands were executed. W039–W045 execution evidence above now records actual local commands/results, separately from inherited reports; it is not W046 review.
 
-### Decomposition Handoff
+### Current Local Implementation Handoff (Historical Decomposition Preserved)
 
 - **Scope:** Existing slice 14 / PR #21 only; local tasks, no board items or delegation assignments.
-- **Task state:** W001–W038 preserved completed; W039–W046 pending.
-- **Start:** W039, then the exact dependency chain above.
+- **Task state:** W001–W038 preserved completed; W039–W045 locally implemented; W046 PENDING independent full integration-base review, parent-owned.
+- **Next:** Commit W045 locally and stop. Only the parent owns subsequent W046 review; no overall extension approval is recorded.
 - **Authoritative inputs:** `spec.md`; the plan's **Approved discovery extension**; Proposed `docs/adr/0026-devsquad-ado-workflow-watcher.md`.
 - **Preserved boundaries:** Proposed ADR-0025; ADR-0021, ADR-0022 and ADR-0024; existing ledger canonicalization/storage and supplied checkpoint recovery.
 - **Supporting evidence:** `review-log.md` and `final-review-evidence.json` remain historical supplied-candidate evidence, not discovery review.
 - **Assumptions:** Host-normalized facts/resolved teams, stable bounded invocation scope, explicit item authorization/state, trusted ledger publication semantics, and settling ledger/delay dependencies. Admission can permanently lose intake; prefix rescans have no eventual tail-progress guarantee.
-- **Governance:** ADR acceptance is separate; #20 precedes #21. No new PR, commit/push, publication, merge or slice 15 action is part of this decomposition.
+- **Governance:** ADR-0025/0026 remain Proposed; #20 precedes #21. This closure authorizes only the local W045 commit. No new PR/remote/board action, push, publication, merge, ADR acceptance or slices 15–19; W046 and publication decisions remain parent-owned.

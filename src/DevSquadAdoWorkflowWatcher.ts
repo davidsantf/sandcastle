@@ -175,7 +175,7 @@ export interface DevSquadAdoWatchBackoffConfig {
   readonly multiplier?: number;
   /** Interval ceiling in milliseconds; defaults to 30,000. */
   readonly maxIntervalMs?: number;
-  /** Optional injected jitter; the only source of randomness permitted. */
+  /** Optional injected jitter; the only source of backoff randomness. */
   readonly jitter?: (baseDelayMs: number, pollIndex: number) => number;
 }
 
@@ -511,10 +511,12 @@ export type DevSquadAdoWatcherOperationIdentity =
     };
 
 /**
- * Run exactly one bounded, offline, deterministic watch pass.
+ * W045 / FR-008/061: run one bounded offline supplied-candidate pass.
+ * Omitting `mode` preserves this overload and its original comment signal type.
+ * Missing records are skipped; initialization is never required or inspected.
  *
  * Every external observation is obtained through the injected seam, every
- * mutation goes through the injected ledger under a fenced claim, and the pass
+ * supplied-mode mutation goes through the ledger under a fenced claim, and the pass
  * terminates at the first of: all candidates resolved, poll budget reached,
  * poll-start elapsed budget reached, or cancellation.
  *
@@ -526,12 +528,26 @@ export type DevSquadAdoWatcherOperationIdentity =
 export function runDevSquadAdoWorkflowWatchPass(
   options: RunDevSquadAdoWorkflowWatchPassOptions,
 ): Promise<DevSquadAdoWatchPassOutcome>;
+/**
+ * W045 / FR-061–069: run one fresh, bounded discovery traversal.
+ * Matching precedes item effects. Existing records use fenced checkpoints;
+ * explicitly authorized missing records may initialize without acquiring claims.
+ * Only fresh acknowledged initialization can return discovery admission intake;
+ * replay reconciles acceptance without redelivery. Both modes can permanently
+ * lose intake after durable writes. No queue, dispatch or lifecycle authority.
+ *
+ * At most one page is initiated per poll. Terminal evidence is necessary but
+ * insufficient for completion while retries remain. Ledger/delay dependencies
+ * must settle; budgets and cancellation do not guarantee physical termination.
+ */
 export function runDevSquadAdoWorkflowWatchPass(
   options: RunDevSquadAdoDiscoveryWatchPassOptions,
 ): Promise<DevSquadAdoDiscoveryPassOutcome>;
+/** Runtime-selected mode returns the corresponding supplied/discovery union. */
 export function runDevSquadAdoWorkflowWatchPass(
   options: DevSquadAdoWorkflowWatchPassRequest,
 ): Promise<DevSquadAdoWatchPassOutcome | DevSquadAdoDiscoveryPassOutcome>;
+/** Dispatch only after fail-closed mode validation; no injected effects on error. */
 export async function runDevSquadAdoWorkflowWatchPass(
   options: DevSquadAdoWorkflowWatchPassRequest,
 ): Promise<DevSquadAdoWatchPassOutcome | DevSquadAdoDiscoveryPassOutcome> {
@@ -546,25 +562,45 @@ export async function runDevSquadAdoWorkflowWatchPass(
       );
 }
 
-/** W039 / FR-061: supported bounded, exact host-normalized matching predicates. */
+/**
+ * W039/W045 / FR-065: AND every configured predicate; values compare exactly and
+ * case-sensitively without trimming, Unicode normalization or team inference.
+ * State/team members are OR sets; tags combine all/any/none. Configured sets
+ * must be nonempty and duplicate-free. At most one of each of seven slots.
+ * Paths are segment arrays: exact means equal length/values, subtree means a
+ * complete prefix including the root itself. [] is root, never a text prefix.
+ */
 export type DevSquadAdoDiscoveryFilter =
   | {
+      /** Configured host-normalized fact dimension. */
       readonly dimension: "state" | "team";
+      /** Exact supported comparison; unknown operators fail preflight. */
       readonly operator: "one-of";
+      /** Nonempty duplicate-free opaque set members, within collection/value bounds. */
       readonly values: readonly string[];
     }
   | {
+      /** Configured host-normalized fact dimension. */
       readonly dimension: "tags";
+      /** Exact supported comparison; unknown operators fail preflight. */
       readonly operator: "all" | "any" | "none";
+      /** Nonempty duplicate-free opaque set members, within collection/value bounds. */
       readonly values: readonly string[];
     }
   | {
+      /** Configured host-normalized fact dimension. */
       readonly dimension: "area" | "iteration";
+      /** Exact supported comparison; unknown operators fail preflight. */
       readonly operator: "exact" | "subtree";
+      /** Normalized opaque path segments; [] represents root. */
       readonly segments: readonly string[];
     };
 
-/** Host-versioned policy. Empty filters are unrestricted; at most seven slots. */
+/**
+ * Host-versioned policy. Empty filters are unrestricted; at most seven slots.
+ * Snapshot once per invocation; hosts must change version when meaning changes.
+ * Version is correlation evidence, not a hash or integrity/authorization proof.
+ */
 export interface DevSquadAdoDiscoveryMatchingPolicy {
   /** Nonsecret correlation label, at most 256 UTF-8 bytes. */
   readonly version: string;
@@ -572,7 +608,13 @@ export interface DevSquadAdoDiscoveryMatchingPolicy {
   readonly filters: readonly DevSquadAdoDiscoveryFilter[];
 }
 
-/** Complete positive-safe-integer processing limits; all bounds are inclusive. */
+/**
+ * Complete positive-safe-integer processing limits; all bounds are inclusive.
+ * UTF-8 JSON sizes count recognized fields, keys, punctuation, discriminators,
+ * escaping and binding/request metadata. Pages count only configured facts and
+ * continuation, not unrelated fields. Bounds are conjunctive, never truncating.
+ * Hosts must separately bound allocations/transport before returning a page.
+ */
 export interface DevSquadAdoDiscoveryLimits {
   /** Initiated page calls: default 32, ceiling 1,000. */
   readonly maxPageCalls: number;
@@ -611,27 +653,48 @@ export const DEFAULT_DEVSQUAD_ADO_DISCOVERY_LIMITS: DevSquadAdoDiscoveryLimits =
     maxAuthorizationBytes: 262144,
   });
 
-/** Explicit item-specific host authority; neither matching nor a claim supplies it. */
+/**
+ * Explicit item-specific host authority; neither matching nor a claim supplies it.
+ * Initialization identity binds canonical item, submissionId and initial state,
+ * independently of pass/traversal/continuation/claim identities; retain on retry.
+ * No authorization or unavailable initial state means no initialization.
+ */
 export type DevSquadAdoDiscoveryAuthorization =
   | {
+      /** Canonicalized ledger identity; never inferred from facts or array position. */
       readonly workItemId: DevSquadAdoWorkItemId;
+      /** Discriminator for this contract arm. */
       readonly kind: "authorized";
+      /** Host submission identity, at most 256 UTF-8 bytes; never public evidence. */
       readonly submissionId: string;
+      /** Exact authorized initial phase/status, each within the ledger 256-byte limit. */
       readonly initial: { readonly phase: string; readonly status: string };
     }
   | {
+      /** Canonicalized ledger identity; never inferred from facts or array position. */
       readonly workItemId: DevSquadAdoWorkItemId;
+      /** Discriminator for this contract arm. */
       readonly kind: "unavailable";
+      /** Stable machine-readable category, never dependency-controlled text. */
       readonly reason: "not-authorized" | "initial-state-missing";
     };
 
-/** Invocation-stable host scope; the library cannot verify host honesty. */
+/**
+ * Invocation-stable host scope; the library cannot verify host honesty.
+ * The host owns stable partitions, normalized facts, resolved teams, policy
+ * meaning/version, explicit item authority/state, transport and credentials.
+ * None of these declarations grants execution, transition or external-write authority.
+ */
 export interface DevSquadAdoWatchDiscoveryConfiguration {
   /** Nonsecret correlation labels, each at most 256 UTF-8 bytes. */
   readonly scope: {
+    /** Host-declared nonsecret scope correlation label. */
     readonly scopeId: string;
+    /** Host-declared stable bounded partition correlation label. */
     readonly partitionId: string;
+    /** Host-declared stable enumeration/fact-view identity for this invocation. */
     readonly stabilityId: string;
+    /** Required true assertion of stable enumeration and facts, not proof. */
     readonly stableForInvocation: true;
   };
   /** Matching runs before projection and before item effects. */
@@ -644,44 +707,75 @@ export interface DevSquadAdoWatchDiscoveryConfiguration {
 
 /** Correlation binding echoed exactly by every page. */
 export interface DevSquadAdoDiscoveryBinding {
+  /** Host-declared nonsecret scope correlation label. */
   readonly scopeId: string;
+  /** Host-declared stable bounded partition correlation label. */
   readonly partitionId: string;
+  /** Host-declared stable enumeration/fact-view identity for this invocation. */
   readonly stabilityId: string;
+  /** Exact public host policy-version label, not integrity proof. */
   readonly policyVersion: string;
 }
 
-/** Known empty collections differ from missing facts; values are compared verbatim. */
+/**
+ * Known empty collections differ from missing facts; values compare verbatim.
+ * Missing/omitted required facts pause only the item; malformed required facts
+ * invalidate the whole page. Empty tags match none, not nonempty all/any;
+ * empty teams do not match a configured team predicate.
+ */
 export type DevSquadAdoDiscoveryFact<T> =
   | { readonly kind: "known"; readonly value: T }
   | { readonly kind: "missing" };
 
 /** Only configured fields are inspected; no assigned-to/team inference is performed. */
 export interface DevSquadAdoDiscoveryFacts {
+  /** Optional known opaque state or explicit missing fact. */
   readonly state?: DevSquadAdoDiscoveryFact<string>;
+  /** Optional host-resolved team membership; no assignedTo inference. */
   readonly teams?: DevSquadAdoDiscoveryFact<readonly string[]>;
+  /** Optional known opaque tag set or explicit missing fact. */
   readonly tags?: DevSquadAdoDiscoveryFact<readonly string[]>;
+  /** Optional normalized area path segments; known [] is root. */
   readonly area?: DevSquadAdoDiscoveryFact<readonly string[]>;
+  /** Optional normalized iteration path segments; known [] is root. */
   readonly iteration?: DevSquadAdoDiscoveryFact<readonly string[]>;
 }
 
 /** Private traversal correlation; continuation starts null on every invocation. */
 export interface DevSquadAdoDiscoveryPageRequest {
+  /** Captured scope/partition/stability/policy-version binding, echoed exactly. */
   readonly binding: DevSquadAdoDiscoveryBinding;
+  /** Private invocation correlation, never authority or durable mutation identity. */
   readonly traversalId: string;
+  /** One-based page-call ordinal; every new invocation starts at one. */
   readonly pageOrdinal: number;
+  /** Opaque token forwarded verbatim, initially null; never persisted or exposed. */
   readonly continuation: string | null;
+  /** Child cancellation signal retired when this page call settles/aborts/times out. */
   readonly signal: AbortSignal;
 }
 
-/** Whole-page atomic input; empty pages are not terminal without explicit evidence. */
+/**
+ * Whole-page atomic input; empty pages are not terminal without explicit evidence.
+ * Validate every entry/binding/bound before item effects, including the last entry.
+ * Reject canonical duplicates within/across pages and repeated continuations.
+ * Retain host page order and canonical UTF-8 item order within each accepted page.
+ */
 export interface DevSquadAdoDiscoveryPage {
+  /** Captured scope/partition/stability/policy-version binding, echoed exactly. */
   readonly binding: DevSquadAdoDiscoveryBinding;
+  /** Private invocation correlation, never authority or durable mutation identity. */
   readonly traversalId: string;
+  /** One-based page-call ordinal; every new invocation starts at one. */
   readonly pageOrdinal: number;
+  /** Bounded canonical-unique items; the entire page must validate before effects. */
   readonly items: readonly {
+    /** Canonicalized ledger identity; never inferred from facts or array position. */
     readonly workItemId: DevSquadAdoWorkItemId;
+    /** Host-normalized facts; only configured dimensions are read and byte-counted. */
     readonly facts: DevSquadAdoDiscoveryFacts;
   }[];
+  /** Explicit terminal evidence or a bounded nonempty opaque continuation. */
   readonly next:
     | { readonly kind: "terminal" }
     | { readonly kind: "continue"; readonly continuation: string };
@@ -706,12 +800,15 @@ export type DevSquadAdoDiscoveryPullRequestObservation =
 
 /** Read-only injected host seam; no query, live client or execution lifecycle. */
 export interface DevSquadAdoWatcherDiscoverySeam {
+  /** Required read-only page call; at most one initiated per poll, including empty/failing calls. */
   readonly discoverWorkItemsPage: (
     input: DevSquadAdoDiscoveryPageRequest,
   ) => Promise<DevSquadAdoDiscoveryPage>;
+  /** Required anchor-inclusive discovery observation; empty window means known no-new-events. */
   readonly observeWorkItemComments: (
     input: DevSquadAdoWatcherWorkItemObservationInput,
   ) => Promise<DevSquadAdoDiscoveryWorkItemObservation>;
+  /** Optional; required during processing only when the durable record carries a PR ID. */
   readonly observePullRequestActivity?: (
     input: DevSquadAdoWatcherPullRequestObservationInput,
   ) => Promise<DevSquadAdoDiscoveryPullRequestObservation>;
@@ -722,9 +819,13 @@ export interface RunDevSquadAdoDiscoveryWatchPassOptions extends Omit<
   RunDevSquadAdoWorkflowWatchPassOptions,
   "mode" | "candidates" | "seam" | "discovery"
 > {
+  /** Explicit discovery discriminator; supplied callers retain their historical shapes. */
   readonly mode: "discovery";
+  /** Forbidden in discovery mode; candidates come only from validated pages. */
   readonly candidates?: never;
+  /** Injected read-only page and observation methods, never a live client owned by the watcher. */
   readonly seam: DevSquadAdoWatcherDiscoverySeam;
+  /** Complete immutable-at-preflight discovery configuration. */
   readonly discovery: DevSquadAdoWatchDiscoveryConfiguration;
 }
 
@@ -737,8 +838,11 @@ export type DevSquadAdoWorkflowWatchPassRequest =
 export type DevSquadAdoDiscoveryError =
   | DevSquadAdoWatchError
   | {
+      /** Discriminator for this contract arm. */
       readonly kind: "seam-contract";
+      /** Required discovery seam method whose structural validation failed. */
       readonly method: "discoverWorkItemsPage";
+      /** Stable machine-readable category, never dependency-controlled text. */
       readonly reason: "missing" | "not-a-function";
     };
 
@@ -747,8 +851,11 @@ export interface DevSquadAdoDiscoveryValidatedPass extends Omit<
   DevSquadAdoWatchValidatedPass,
   "candidates"
 > {
+  /** Explicit discovery discriminator; supplied callers retain their historical shapes. */
   readonly mode: "discovery";
+  /** Captured scope/partition/stability/policy-version binding, echoed exactly. */
   readonly binding: DevSquadAdoDiscoveryBinding;
+  /** Complete immutable-at-preflight discovery configuration. */
   readonly discovery: DevSquadAdoWatchDiscoveryConfiguration;
 }
 
@@ -757,16 +864,29 @@ export type DevSquadAdoDiscoveryValidationResult =
   | { readonly ok: true; readonly value: DevSquadAdoDiscoveryValidatedPass }
   | { readonly ok: false; readonly error: DevSquadAdoDiscoveryError };
 
-/** Honest traversal accounting, independent of candidate success. */
+/**
+ * Honest traversal accounting, independent of candidate success.
+ * Complete requires terminal evidence and finalized accepted-item dispositions,
+ * not universal item success. Terminal evidence never erases pending retries,
+ * cancellation or budget exhaustion. Earlier accepted effects survive bad pages.
+ * Every invocation restarts at ordinal 1/null; no durable continuation or eventual
+ * tail-progress guarantee for repeated bounded prefix rescans.
+ */
 export type DevSquadAdoDiscoveryTraversal =
   | {
+      /** Stable outcome status; workflow state values remain entirely host-defined. */
       readonly status: "complete";
+      /** Stable machine-readable category, never dependency-controlled text. */
       readonly reason: "terminal-page";
+      /** Whether an accepted terminal page was seen, independent of unfinished retries. */
       readonly terminalPageSeen: true;
     }
   | {
+      /** Stable outcome status; workflow state values remain entirely host-defined. */
       readonly status: "incomplete";
+      /** Whether an accepted terminal page was seen, independent of unfinished retries. */
       readonly terminalPageSeen: boolean;
+      /** Stable machine-readable category, never dependency-controlled text. */
       readonly reason:
         | "page-budget-exhausted"
         | "item-budget-exhausted"
@@ -783,21 +903,38 @@ export type DevSquadAdoDiscoveryTraversal =
 
 /** Discovery counts extend, rather than redefine, supplied observation accounting. */
 export interface DevSquadAdoDiscoveryPassCounts extends DevSquadAdoWatchPassCounts {
+  /** Actual initiated page calls, including empty, failed and timed-out calls. */
   readonly pageCalls: number;
+  /** Whole pages accepted after complete validation. */
   readonly pagesValidated: number;
+  /** Distinct canonical items in accepted pages; rejected-page IDs do not count. */
   readonly discovered: number;
+  /** Accepted items whose required matching facts were evaluated. */
   readonly evaluated: number;
+  /** Fresh acknowledged initializations, whether or not intake rules allow a signal. */
   readonly admitted: number;
+  /** Accepted matching-excluded/fact-missing items, including those not scheduled. */
   readonly paused: number;
+  /** Finalized accepted dispositions, including matching; unprocessed items are excluded. */
   readonly processed: number;
+  /** Validated replayed initialization acceptances, never redelivered admission signals. */
   readonly initializationReplayed: number;
 }
 
-/** Fixed predicate evidence, ordered independently of caller filter order (W040). */
+/**
+ * Fixed predicate evidence in state/team/tags-all/tags-any/tags-none/area/iteration
+ * order, independently of caller filter order (W040/W045). No raw facts, operands,
+ * authorization submission IDs, capabilities, continuations or sensitive hashes.
+ * Missing required facts take precedence over unmatched predicates.
+ */
 export interface DevSquadAdoDiscoveryMatchingEvidence {
+  /** Exact public host policy-version label, not integrity proof. */
   readonly policyVersion: string;
+  /** Missing facts take precedence; otherwise all predicates must match. */
   readonly decision: "matched" | "excluded" | "facts-missing";
+  /** Configured predicates only, in the documented fixed evidence order. */
   readonly predicates: readonly {
+    /** Fixed non-sensitive predicate category, without operands or hashes. */
     readonly predicate:
       | "state"
       | "team"
@@ -806,17 +943,30 @@ export interface DevSquadAdoDiscoveryMatchingEvidence {
       | "tags-none"
       | "area"
       | "iteration";
+    /** Fixed non-sensitive predicate result, without actual/expected fact values. */
     readonly outcome: "matched" | "unmatched" | "missing";
   }[];
 }
-/** Fresh-only claim-free admission; never carries synthetic comment metadata (W041). */
+/**
+ * Fresh-only claim-free admission; never carries synthetic comment metadata (W041).
+ * Requires validated fresh durable acceptance plus matching intake phase/status.
+ * At most one signal per item per invocation. Replay/restart cannot reconstruct
+ * this signal; lost acknowledgements or crashes can permanently lose intake.
+ */
 export interface DevSquadAdoDiscoveryAdmissionSignal {
+  /** Discriminator for this contract arm. */
   readonly kind: "discovery-admission";
+  /** Canonicalized ledger identity; never inferred from facts or array position. */
   readonly workItemId: string;
+  /** Original initialization revision one, never the latest record revision. */
   readonly acceptedInitializationRevision: 1;
+  /** Exact host-defined workflow phase; no ordering or lifecycle semantics imposed. */
   readonly phase: string;
+  /** Exact authorized initial workflow status; no lifecycle semantics imposed. */
   readonly status: string;
+  /** Minimized policy-versioned evidence; no raw policy/facts/authorization identifiers. */
   readonly matching: DevSquadAdoDiscoveryMatchingEvidence;
+  /** Fixed indication of explicit host authority, not the submission ID. */
   readonly authorization: "host-authorized";
 }
 /** Discovery signals do not widen the historical supplied signal type. */
@@ -826,16 +976,28 @@ export type DevSquadAdoDiscoveryIntakeSignal =
 /** Original durable initialization acceptance, separate from latest record revision. */
 export type DevSquadAdoDiscoveryAdmissionAcceptance =
   | {
+      /** Discriminator for this contract arm. */
       readonly kind: "fresh" | "replayed";
+      /** Original accepted initialization revision one, even with a later latest record. */
       readonly acceptedRevision: 1;
+      /** Canonical UTC time of original acceptance, not the latest record timestamp. */
       readonly acceptedAt: string;
     }
   | { readonly kind: "unconfirmed" | "none" };
-/** Admission-only disposition: no claim/release obligation, even after uncertainty. */
+/**
+ * Admission-only disposition: no claim/release obligation, even after uncertainty.
+ * Cleanup is not-required / no-claim-acquired with null category/revision. It
+ * proves no acquisition, not initialization success. No same-invocation fallback
+ * to comment observation after initialization starts, including replay/already-exists.
+ */
 export interface DevSquadAdoDiscoveryAdmissionOutcome {
+  /** Discovery disposition category; supplied outcomes have no category field. */
   readonly category: "admission";
+  /** Canonicalized ledger identity; never inferred from facts or array position. */
   readonly workItemId: string;
+  /** Discriminator for this contract arm. */
   readonly kind: "acted" | "no-change" | "skipped" | "failed";
+  /** Stable machine-readable category, never dependency-controlled text. */
   readonly reason:
     | DevSquadAdoWatchReasonCode
     | "admission-accepted"
@@ -845,45 +1007,68 @@ export interface DevSquadAdoDiscoveryAdmissionOutcome {
     | "admission-not-authorized"
     | "admission-initial-state-missing"
     | "initialization-indeterminate";
+  /** Minimized policy-versioned evidence; no raw policy/facts/authorization identifiers. */
   readonly matching: DevSquadAdoDiscoveryMatchingEvidence;
+  /** Validated original acceptance, or explicit none/unconfirmed without fabricated durability. */
   readonly acceptance: DevSquadAdoDiscoveryAdmissionAcceptance;
+  /** Validated ledger category or ledger-fault; never a raw dependency error. */
   readonly ledgerErrorKind: DevSquadAdoWatchLedgerErrorKind | null;
+  /** Independent claim cleanup evidence; initialization-only paths never acquire or release. */
   readonly cleanup: DevSquadAdoWatchCleanup;
 }
 /** Discovery outcomes retain minimized matching evidence and truthful cleanup. */
 export type DevSquadAdoDiscoveryCandidateOutcome =
   | (DevSquadAdoWatchCandidateOutcome & {
+      /** Discovery disposition category; supplied outcomes have no category field. */
       readonly category: "observation";
+      /** Minimized policy-versioned evidence; no raw policy/facts/authorization identifiers. */
       readonly matching: DevSquadAdoDiscoveryMatchingEvidence;
     })
   | DevSquadAdoDiscoveryAdmissionOutcome
   | {
+      /** Discovery disposition category; supplied outcomes have no category field. */
       readonly category: "matching" | "unprocessed";
+      /** Canonicalized ledger identity; never inferred from facts or array position. */
       readonly workItemId: string;
+      /** Discriminator for this contract arm. */
       readonly kind: "skipped";
+      /** Stable machine-readable category, never dependency-controlled text. */
       readonly reason:
         | "matching-paused"
         | "matching-facts-missing"
         | "discovery-not-processed";
+      /** Minimized policy-versioned evidence; no raw policy/facts/authorization identifiers. */
       readonly matching: DevSquadAdoDiscoveryMatchingEvidence;
+      /** Independent claim cleanup evidence; initialization-only paths never acquire or release. */
       readonly cleanup: DevSquadAdoWatchCleanup;
     };
 
-/** Discovery result for the traversal; item contracts are extended by their owning slices. */
+/**
+ * Complete discovery accounting and minimized item dispositions (W045 / FR-069).
+ * Outcomes retain first-discovery/page-local order; signals use acknowledgement
+ * order. Rejected-page identities never enter accepted outcomes/counts. Inspect
+ * traversal separately from candidate failures and acknowledged actions.
+ */
 export interface DevSquadAdoDiscoveryPassResult extends Omit<
   DevSquadAdoWatchPassResult,
   "stopReason" | "counts" | "outcomes" | "signals"
 > {
+  /** Explicit discovery discriminator; supplied callers retain their historical shapes. */
   readonly mode: "discovery";
+  /** Scheduling stop; consult traversal and item outcomes independently. */
   readonly stopReason:
     | "completed"
     | "discovery-incomplete"
     | "cancelled"
     | "poll-budget-exhausted"
     | "poll-start-budget-exhausted";
+  /** Independent tallies; acted includes either signal, eligible remains observation-only. */
   readonly counts: DevSquadAdoDiscoveryPassCounts;
+  /** Explicit completion/incompletion and terminal-page evidence. */
   readonly traversal: DevSquadAdoDiscoveryTraversal;
+  /** Accepted items in first-discovery/page-local order, including unprocessed dispositions. */
   readonly outcomes: readonly DevSquadAdoDiscoveryCandidateOutcome[];
+  /** At most one signal per item, in acknowledgement order; failures may overlap actions. */
   readonly signals: readonly DevSquadAdoDiscoveryIntakeSignal[];
 }
 

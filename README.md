@@ -175,8 +175,13 @@ valid initialized record; the host decides which ones should resume.
 
 ## Bounded DevSquad/ADO workflow watch passes
 
-`runDevSquadAdoWorkflowWatchPass()` runs **one bounded observation pass** over a
-caller-supplied candidate set. It reads ledger records, asks an injected seam
+`runDevSquadAdoWorkflowWatchPass()` runs **one bounded offline pass** in either
+**supplied mode** (default, or `mode: "supplied"`) or explicit
+**discovery mode** (`mode: "discovery"`). Supplied mode takes a caller-supplied
+candidate set; discovery takes bounded pages from a host-injected read-only seam.
+The supplied overload and its signal/result shapes remain unchanged: supplied
+consumers need not narrow a discovery union or provide an initializer. For
+existing records in either mode, it reads ledger records, asks an injected seam
 what is new, advances opaque observation cursors through fenced ledger
 checkpoints, and returns token-free per-candidate outcomes plus at most one
 intake signal per candidate. It is not a daemon: poll scheduling is bounded, and
@@ -254,9 +259,9 @@ for (const signal of outcome.value.signals) {
 }
 ```
 
-### The observation seam
+### Supplied mode and the shared observation seam
 
-The seam exposes exactly two read methods. `observeWorkItemComments` is
+The supplied seam exposes exactly two read methods. `observeWorkItemComments` is
 required. `observePullRequestActivity` is required only for candidates whose
 record carries a pull-request identifier; a candidate that needs it while the
 method is absent reports `pull-request-observation-unavailable`.
@@ -325,8 +330,12 @@ retry could clear. Scoping by epoch keeps tokens cryptographically random and
 keeps the same `passId` retryable: a pass that acquired a claim and then failed
 before its checkpoint landed can simply be run again.
 
-Use `deriveDevSquadAdoWatcherOperationId()` to compute an identifier yourself;
-the epoch and generation arms are part of its public input type.
+Use `deriveDevSquadAdoWatcherOperationId()` to compute a **checkpoint or
+claim-lifecycle** identifier yourself; the epoch and generation arms are its
+public input types. Discovery initialization uses a separate private derivation
+from canonical `{ step: "initialize", workItemId, submissionId, phase, status }`.
+It stays stable across pass IDs and retries, excludes traversal/page/continuation
+and claim identities, and never mints a replacement to bypass a conflict.
 
 ### Intake rules, budgets, leases, and backoff
 
@@ -336,7 +345,7 @@ them, and a record whose phase or status is not admitted still has its cursor
 advanced and reports `intake-suppressed` — suppression is an intake decision,
 not an observation decision.
 
-A pass stops at the first of: all candidates resolved, `maxPolls` reached,
+A supplied pass stops at the first of: all candidates resolved, `maxPolls` reached,
 `maxPollStartElapsedMs` reached, or cancellation, and reports which in
 `stopReason`.
 
@@ -354,9 +363,11 @@ The clock is read once per poll and that single reading drives every eligibility
 lease, and timestamp decision in that poll. Between polls the watcher asks the
 injected `delay` for `min(baseIntervalMs * multiplier^(n-1), maxIntervalMs)`,
 truncated to an integer; defaults are 1,000 ms, 2, and 30,000 ms. There is no
-randomness unless you inject `backoff.jitter`.
+backoff randomness unless you inject `backoff.jitter`; claim epochs, capability
+tokens and discovery traversal IDs are separately random.
 
-Claims are acquired only when the watcher intends to mutate. The default lease is
+Claims are acquired only for existing-record cursor mutations, never
+initialization. The default lease is
 60,000 ms (raise it up to the 24-hour ceiling with `lease.leaseDurationMs`), and
 the default renewal threshold is one third of the lease. Before mutating under a
 held claim the watcher renews when `now + renewalThresholdMs >= expiresAt`,
@@ -368,8 +379,10 @@ A record is read before its observation and again as part of the acquisition,
 and the two are compared. If another owner advanced a cursor in that window, the
 selection in hand was computed from anchors that are no longer durable, so the
 watcher attempts cleanup once without writing. Only an acknowledged release
-allows `no-change` / `stale-observation` and a later poll to re-observe from the
-advanced anchor. Unconfirmed cleanup instead finalizes a failed candidate with
+allows `no-change` / `stale-observation` and, if scheduling continues, a later
+poll to re-observe from the advanced anchor. Discovery finalizes this disposition
+when terminal enumeration leaves no pending mutation recovery. Unconfirmed
+cleanup instead finalizes a failed candidate with
 explicit cleanup evidence. The stale selection never moves a cursor backwards.
 
 Cancellation is observed before each seam call, before each non-cleanup ledger
@@ -413,7 +426,8 @@ and either may overlap `counts.failed`. `cleanupReleased`, `cleanupFailed`,
 
 Intake signals are **returned in the pass result**. There is no callback, queue,
 retry, or transport: host code never runs inside a claimed step. A candidate's
-cursor checkpoint is acknowledged as durable before its signal enters the result.
+cursor checkpoint (or discovery initialization) is acknowledged as durable before
+its corresponding signal enters the result.
 A crash before return can therefore lose a signal whose cursor already advanced.
 
 Delivery is **at-most-once, and never duplicating** — it is not lossless. The
@@ -446,11 +460,15 @@ validated authority receives one cleanup attempt, and no message, stack, or
 arbitrary error category reaches the result. A malformed acquire establishes
 no authority; a malformed mutation acknowledgement never fabricates durability.
 
-The host keeps everything else. It chooses the candidate set (the watcher never
-discovers work items), initializes ledger records (a missing record is a stable
-`skipped` / `record-not-found`), defines what phases and statuses mean, decides
-whether a transition is legal, schedules execution, and performs every external
-tracker write and pull-request action.
+The host keeps everything else. In supplied mode it chooses candidates and
+initializes records; missing records remain `skipped` / `record-not-found`.
+In discovery mode it supplies stable bounded pages, normalized facts and explicit
+item authorization/initial state; the watcher evaluates matching and can perform
+claim-free authorized initialization. In both modes the host defines phase/status
+meaning and transition legality, schedules execution, owns transport/credentials,
+and performs every external tracker write and pull-request action. Neither mode
+constructs live queries/clients, invokes agents, dispatches intake, approves or
+merges PRs, or implements lifecycle orchestration.
 
 Note that every ledger mutation advances the record revision, including claim
 acquisition, renewal, and release. A candidate outcome therefore reports
@@ -463,6 +481,346 @@ required. A replay may acknowledge an older revision than its latest record.
 Candidate outcomes and ledger errors are reduced to stable categories —
 `ledgerErrorKind` carries the ledger's own category and never raw JSON, artifact
 contents, or an operating-system message.
+
+### Discovery matching and host responsibilities
+
+<!-- W045 / FR-061–069 / CC-031–037 -->
+
+Discovery requests supply `mode: "discovery"`, no `candidates`, and a complete
+`discovery` configuration. Its seam adds `discoverWorkItemsPage` to required WI
+and optional PR observation methods. Discovery observations return
+`{ kind: "window", commentIds }` / `{ kind: "window", entries }`, or explicit
+`{ kind: "anchor-missing" }`. Supplied observation shapes do not change.
+
+The host declares `scopeId`, `partitionId`, `stabilityId`,
+`stableForInvocation: true`, and a policy `version`. Every page must echo the
+request's exact binding, traversal ID and one-based ordinal. The watcher snapshots
+configuration once; the host must provide a stable enumeration/fact view and
+change policy version when meaning changes. These labels detect declaration drift;
+they do **not** prove adapter honesty, integrity or authorization. Adapters are
+trusted in-process dependencies, not sandboxed or cryptographically verified.
+
+The watcher evaluates the complete policy itself, not an upstream `eligible`
+boolean or query filter:
+
+| Dimension           | Operator             | Meaning                                                               |
+| ------------------- | -------------------- | --------------------------------------------------------------------- |
+| `state`             | `one-of`             | Match any allowed opaque state.                                       |
+| `team`              | `one-of`             | Match any allowed **host-resolved** team membership.                  |
+| `tags`              | `all`, `any`, `none` | Require all, any, or none of the configured tags.                     |
+| `area`, `iteration` | `exact`, `subtree`   | Equal segment paths, or a complete segment prefix including its root. |
+
+- AND every configured predicate, including separate tag predicates. State/team
+  set members are OR alternatives. At most seven predicate slots: one each of
+  state, team, area, iteration, tags-all, tags-any, tags-none. Unknown operators
+  and duplicate slots fail configuration before injected effects.
+- Empty `filters` is unrestricted. Configured state/team/tag sets must be
+  nonempty and duplicate-free; no silent deduplication or truncation.
+- Values compare exactly and case-sensitively: no trimming, case folding, Unicode
+  normalization, synonyms, separator splitting or `assignedTo` team inference.
+  Only work-item IDs retain the ledger's canonicalization rules.
+- Paths are host-normalized segment arrays, not textual prefixes. `[]` is root;
+  root subtree matches every known path, exact root only root. `['A']` includes
+  itself and `['A', 'B']` as a subtree, but not the sibling `['AB']`.
+- Facts use optional `state`, `teams`, `tags`, `area`, `iteration` fields with
+  `{ kind: "known", value }` or `{ kind: "missing" }`. Omission means missing.
+  Known empty tags satisfy `none`, but not nonempty `all`/`any`; known empty teams
+  fail a configured team predicate. Empty paths are known roots, not missing.
+- Unconfigured fact getters and unrelated properties are not read. Required
+  malformed facts invalidate the **whole page**, even in its last entry; valid
+  missing facts pause just that candidate. Missing facts take precedence over
+  an unmatched predicate. Validation uses bounded indexed reads, not custom
+  iterators, and rejects changing arrays.
+
+Matching precedes authorization use, ledger reads, observations and mutations.
+An excluded item reports `matching-paused`; missing required facts report
+`matching-facts-missing`. Both perform **zero item effects** and persist no pause
+marker. Reentry uses the unchanged durable `since` anchors. It never resets to a
+synthetic baseline or infers a latest event. An ordinary empty discovery window
+means known no-new-events; explicit `anchor-missing` requires a supplied durable
+anchor and fails even an otherwise empty response. Nonempty windows missing the
+anchor also fail. Loss in either WI or PR blocks checkpointing **both** kinds;
+the host must deliberately reconcile retention loss. Intake-rule suppression is
+different: matched existing records still advance cursors without returning intake.
+
+Public matching evidence contains only the exact `policyVersion`, decision
+`matched | excluded | facts-missing`, and fixed predicate/outcome categories in
+state/team/tags-all/tags-any/tags-none/area/iteration order. Raw policy operands,
+facts, authorization submission IDs, continuations, traversal IDs, capability
+tokens, sensitive hashes and dependency bodies/messages are not exposed or
+persisted. Necessary public IDs and explicitly authorized initial workflow values
+remain public. Hosts should keep correlation labels nonsecret and bound upstream
+payloads as well as the library's recognized fields.
+
+### Authorized no-comment admission and signal interpretation
+
+A matched, method-valid missing record is initialized only with explicit
+canonical-item authorization:
+`{ workItemId, kind: "authorized", submissionId, initial: { phase, status } }`.
+Omitted authorization or `{ kind: "unavailable", reason: "not-authorized" |
+"initial-state-missing" }` never initializes. Matching, external state, team
+membership and ledger claims are **not** authorization. The host alone defines
+initial phase/status and intake rules.
+
+Initialization submits only `workItemId`, `operationId`, `phase`, `status` to the
+existing ledger. It seeds no cursors, PR/execution references, histories or claims.
+No comments are needed. Requests and method-specific acknowledgements are
+validated independently, including original state/acceptance when a later latest
+record is returned. A fresh publisher can produce exactly one
+`kind: "discovery-admission"` signal if its initial phase/status matches intake
+rules. This signal carries `acceptedInitializationRevision: 1`, initial state,
+minimized matching evidence and `authorization: "host-authorized"`, **not** source
+revision, changed-comment kinds, checkpoint or claim metadata.
+
+Existing-record discovery intake instead has `kind: "comment-observation"` plus
+the historical comment fields. Narrow this discovery-only signal union by `kind`.
+Supplied signals remain unchanged without a new discriminator. Runtime-selected
+request unions return a supplied/discovery result union; validation has matching
+overloads. Neither mode dispatches signals.
+
+Initialization replay reports original acceptance (`acceptance.kind: "replayed"`)
+**without redelivery**. Already-recorded initialization infers no acceptance for
+this request; identity conflict is terminal. Bounded contention/indeterminate
+retries retain the exact original submission. Once initialization starts there is
+no same-invocation comment fallback, including replay/already-exists; genuine
+comments may be observed in a later invocation. Fresh-only admission rules do not
+replace existing comment checkpoint direct/replay/history recovery.
+
+All initialization-only outcomes have `cleanup.status: "not-required"`,
+`reason: "no-claim-acquired"`, and null `ledgerErrorKind`/`acceptedRevision`, even
+when initialization is uncertain. This proves **no acquisition**, not successful
+initialization or rollback. No release is invented. A durable initialization with
+lost/malformed acknowledgement, or a crash before consumption, can **permanently
+lose the admission signal**. Restart/replay/reconciliation cannot reconstruct it.
+The host must reconcile durable workflow state separately; this is at-most-once
+reporting, not lossless delivery or exactly-once execution. There is no outbox.
+
+### Discovery limits, traversal and accounting
+
+Supply the full `limits` object, usually `DEFAULT_DEVSQUAD_ADO_DISCOVERY_LIMITS`.
+All configured limits are positive safe integers; actual collections may be empty
+where allowed. All limits apply conjunctively and exact boundaries are inclusive.
+
+| Limit                   |   Default |   Ceiling |
+| ----------------------- | --------: | --------: |
+| `maxPageCalls`          |        32 |     1,000 |
+| `maxItems`              |     1,000 |     1,000 |
+| `maxEntriesPerPage`     |       128 |     1,000 |
+| `maxCollectionValues`   |       128 |     1,024 |
+| `maxPathSegments`       |        32 |       128 |
+| `maxOpaqueValueBytes`   |     1,024 |     4,096 |
+| `maxContinuationBytes`  |     4,096 |    16,384 |
+| `maxPolicyBytes`        |    65,536 |   262,144 |
+| `maxPageBytes`          | 1,048,576 | 4,194,304 |
+| `maxAuthorizationBytes` |   262,144 | 1,048,576 |
+
+Additional limits: seven predicates, 1,000 canonical-unique authorizations,
+256 UTF-8 bytes per scope/partition/stability/policy-version/submission identifier,
+120-byte canonical work-item IDs, and 256-byte phase/status values. Existing
+observation-window and ledger bounds also apply. New discovery strings reject
+ill-formed Unicode; opaque comparisons never normalize it.
+
+Individual lengths count actual UTF-8 bytes. Aggregate limits count canonical
+JSON of recognized fields, including keys, punctuation, escaping, discriminators
+and metadata: policy `{ version, filters }`, authorization array, and page
+`{ binding, traversalId, pageOrdinal, items, next }`. Page items contain canonical
+`workItemId` and configured `facts`; required omitted facts count as explicit
+`{ kind: "missing" }`. Binding contains scope/partition/stability/policy version;
+`next` includes continuation when present. Unconfigured facts/unrelated properties
+are neither read nor counted. Accounting is incremental, rejecting overflow before
+retention rather than serializing an oversized object. These are library
+processing/retention limits, not limits on allocations an adapter already made.
+
+Each invocation starts at **page ordinal 1 with null continuation** and a fresh
+private traversal ID. Tokens are nonempty bounded opaque strings, forwarded
+verbatim and compared only for repetition, never parsed/sorted or persisted.
+There is no durable continuation, pause/admission marker, cursor repurposing,
+sidecar or schema change. Repeated bounded **prefix rescans have no eventual tail
+progress guarantee**; the host must choose stable partitions and budgets that fit.
+
+Each poll processes pending candidates in first-discovery order, then initiates
+**at most one new page** when scheduling permits. Accepted page items run
+sequentially in canonical UTF-8 order; no candidate runs twice in one poll. This
+is page-local ordering, not a global sort independent of partitioning. Candidate
+retries never reset page/item/poll counters. `pageCalls` counts actual invocations,
+including empty, failed and timed-out calls; no hidden page retry loop exists.
+Empty continued pages consume a call and continue. At the item limit, only empty
+pages can establish terminal evidence; another item overflows. A terminal final
+permitted call can complete; a continued final call cannot.
+
+`traversal.status: "complete"` requires both explicit terminal evidence and
+finalized accepted-item dispositions. Completion does not mean every item
+succeeded. `terminalPageSeen: true` alone does not erase pending mutation retries,
+cancellation or exhausted budgets. Ordinary no-new-events finalize after their
+observation attempt once terminal is known; genuine retries may need more polls.
+Rejected/duplicate/unstable/oversized later pages preserve earlier outcomes and
+acknowledged writes, but contribute no accepted item identities.
+
+Incomplete reasons are `page-budget-exhausted`, `item-budget-exhausted`,
+`poll-budget-exhausted`, `poll-start-budget-exhausted`, `page-failed`,
+`page-timeout`, `invalid-page`, `duplicate-item`, `repeated-continuation`,
+`unstable-scope`, or `cancelled`. Pass `stopReason` is separately `completed`,
+`discovery-incomplete`, `cancelled`, `poll-budget-exhausted`, or
+`poll-start-budget-exhausted`. Inspect traversal and individual dispositions, not
+just `ok: true` or the stop reason.
+
+Counts remain independent: `pagesValidated`, `discovered`, `evaluated`, `admitted`
+(fresh accepted initializations, with or without intake), `paused`, `processed`
+(finalized dispositions including matching, excluding unprocessed items),
+and `initializationReplayed` are not aliases for `pageCalls` or `acted`.
+`acted` counts both signal kinds; `eligible` keeps its observation-only meaning;
+`suppressed` counts only acknowledged suppressed cursor advances, not pauses or
+unmatched/replayed admission. Paused counts include validated but unscheduled
+items, whose outcome is explicitly `unprocessed`. Outcomes use first-discovery
+order; signals use acknowledgement order. Final failures may overlap actions;
+the four cleanup counts partition all returned candidates.
+
+Fresh abort gates precede pages, candidate effects, observations and non-cleanup
+mutations. In-flight ledger writes are **awaited** and their acknowledgements
+validated; permitted fresh admission or comment signals survive abort and cleanup
+failure. Page/observation child controllers and timers retire late results without
+late effects. Validated existing-record authority still gets exactly one cleanup
+attempt. Ledger/delay dependencies must settle; page/observation timeouts use the
+injected delay and are not a hard runtime guarantee. Poll-start elapsed limits
+bound scheduling, not duration; the clock is read at pass start and once per poll.
+
+### Typed offline discovery examples
+
+The following fixture is compiled and executed by
+`src/DevSquadAdoWorkflowWatcher.discovery.test.ts`; it performs no live query,
+network operation or dispatch. Supply an opened repository-local ledger, a UTC
+clock and a cooperative delay (as in the supplied example). Preconditions: item
+999 is absent, while item 137 is already initialized at phase `ready`, status
+`open`, WI cursor `480`, with no PR. Those are fixture prerequisites, not automatic
+seeding by the watcher. The calls demonstrate terminal empty discovery, authorized
+no-comment admission, exclusion without observation, anchored reentry to `481`,
+and a repeat with no redelivery.
+
+```typescript
+import {
+  DEFAULT_DEVSQUAD_ADO_DISCOVERY_LIMITS,
+  runDevSquadAdoWorkflowWatchPass,
+  type DevSquadAdoWorkflowLedger,
+  type DevSquadAdoDiscoveryPage,
+  type DevSquadAdoWatcherDiscoverySeam,
+  type RunDevSquadAdoDiscoveryWatchPassOptions,
+} from "@ai-hero/sandcastle";
+
+async function offlineDiscoveryExamples(
+  ledger: DevSquadAdoWorkflowLedger,
+  clock: () => Date,
+  delay: RunDevSquadAdoDiscoveryWatchPassOptions["delay"],
+) {
+  const emptySeam: DevSquadAdoWatcherDiscoverySeam = {
+    discoverWorkItemsPage: async (request) => ({
+      binding: request.binding,
+      traversalId: request.traversalId,
+      pageOrdinal: request.pageOrdinal,
+      items: [],
+      next: { kind: "terminal" },
+    }),
+    observeWorkItemComments: async () => ({ kind: "window", commentIds: [] }),
+  };
+  const options: RunDevSquadAdoDiscoveryWatchPassOptions = {
+    mode: "discovery",
+    ledger,
+    seam: emptySeam,
+    passId: "offline-example",
+    ownerId: "host",
+    clock,
+    delay,
+    intakeRules: { phases: ["ready"], statuses: ["open"] },
+    budgets: {
+      maxPolls: 2,
+      maxPollStartElapsedMs: 1000,
+      observationTimeoutMs: 10,
+    },
+    discovery: {
+      scope: {
+        scopeId: "example",
+        partitionId: "small-partition",
+        stabilityId: "snapshot-1",
+        stableForInvocation: true,
+      },
+      policy: { version: "policy-v1", filters: [] },
+      limits: DEFAULT_DEVSQUAD_ADO_DISCOVERY_LIMITS,
+    },
+  };
+  const empty = await runDevSquadAdoWorkflowWatchPass(options);
+  const pageFor =
+    (
+      items: DevSquadAdoDiscoveryPage["items"],
+    ): DevSquadAdoWatcherDiscoverySeam["discoverWorkItemsPage"] =>
+    async (request) => ({
+      binding: request.binding,
+      traversalId: request.traversalId,
+      pageOrdinal: request.pageOrdinal,
+      items,
+      next: { kind: "terminal" },
+    });
+
+  // Precondition: 999 is absent. Admission never calls the comment method.
+  const admission = await runDevSquadAdoWorkflowWatchPass({
+    ...options,
+    seam: {
+      discoverWorkItemsPage: pageFor([{ workItemId: 999, facts: {} }]),
+      observeWorkItemComments: async () => {
+        throw new Error("admission must not observe comments");
+      },
+    },
+    discovery: {
+      ...options.discovery,
+      authorizations: [
+        {
+          workItemId: 999,
+          kind: "authorized",
+          submissionId: "host-submission-999",
+          initial: { phase: "ready", status: "open" },
+        },
+      ],
+    },
+  });
+
+  // Precondition: 137 already has phase ready/status open, WI cursor 480, no PR.
+  const reentryOptions: RunDevSquadAdoDiscoveryWatchPassOptions = {
+    ...options,
+    seam: {
+      discoverWorkItemsPage: pageFor([
+        {
+          workItemId: 137,
+          facts: { state: { kind: "known", value: "included" } },
+        },
+      ]),
+      observeWorkItemComments: async ({ sinceCommentId }) => {
+        if (sinceCommentId !== "480" && sinceCommentId !== "481")
+          throw new Error("expected the durable anchor");
+        return { kind: "window", commentIds: ["480", "481"] };
+      },
+    },
+  };
+  const paused = await runDevSquadAdoWorkflowWatchPass({
+    ...reentryOptions,
+    discovery: {
+      ...options.discovery,
+      policy: {
+        version: "policy-excluded",
+        filters: [
+          { dimension: "state", operator: "one-of", values: ["other"] },
+        ],
+      },
+    },
+  });
+  const reentry = await runDevSquadAdoWorkflowWatchPass(reentryOptions);
+  const repeat = await runDevSquadAdoWorkflowWatchPass(reentryOptions);
+  return { empty, admission, paused, reentry, repeat };
+}
+```
+
+The discovery implementation and documentation are locally implemented through
+W045. W046 remains **pending independent full integration-base review** owned by
+the parent. Historical W038 supplied-candidate approval is not discovery approval;
+ADR-0025/0026 remain Proposed. No overall extension approval, publication or ADR
+acceptance is implied by these local examples or scoped validation.
 
 ## Sandbox Providers
 

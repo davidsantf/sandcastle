@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import * as packageEntryPoint from "./index.js";
@@ -51,6 +51,9 @@ const RUNTIME_IMPORT =
   /(?:^|\n)\s*import\s+(?!type\b)[^;]*?from\s+["']([^"']+)["']/g;
 const EXPORT_FROM =
   /(?:^|\n)\s*export\s+(?!type\b)[^;]*?from\s+["']([^"']+)["']/g;
+// W045: guard side-effect imports and literal dynamic/CommonJS imports too.
+const SIDE_EFFECT_IMPORT = /(?:^|\n)\s*import\s+["']([^"']+)["']/g;
+const CALL_IMPORT = /\b(?:import|require)\s*\(\s*["']([^"']+)["']\s*\)/g;
 const ANY_SPECIFIER = /from\s+["']([^"']+)["']/g;
 
 /** Compile-time exact-union equality, independent of member ordering. */
@@ -160,7 +163,12 @@ const readModule = async (filename: string): Promise<string> =>
 
 const runtimeSpecifiers = (source: string): readonly string[] => {
   const found: string[] = [];
-  for (const pattern of [RUNTIME_IMPORT, EXPORT_FROM]) {
+  for (const pattern of [
+    RUNTIME_IMPORT,
+    EXPORT_FROM,
+    SIDE_EFFECT_IMPORT,
+    CALL_IMPORT,
+  ]) {
     pattern.lastIndex = 0;
     let match = pattern.exec(source);
     while (match !== null) {
@@ -215,10 +223,62 @@ describe("DevSquadAdoWorkflowWatcher dependency boundary", () => {
     );
   });
 
+  // W045 / CC-020/036: keep the guardian inventory complete as modules evolve.
+  it("[W045] inventories every production watcher module, excluding test support", async () => {
+    const files = await readdir(fileURLToPath(new URL(".", import.meta.url)));
+    expect(
+      files
+        .filter(
+          (file) =>
+            /^DevSquadAdoWorkflowWatcher.*\.ts$/.test(file) &&
+            !file.endsWith(".test.ts") &&
+            !file.endsWith("TestSupport.ts"),
+        )
+        .sort(),
+    ).toEqual([...WATCHER_MODULES].sort());
+  });
+
+  it.each([
+    'import "node:http";',
+    'const client = import("@azure/identity");',
+    'const shell = require("node:child_process");',
+    'export { run } from "./DevSquadSandcastleExecutionAdapter.js";',
+    'import { team } from "./AdoTeamRunner.js";',
+  ])("[W045] recognizes forbidden dependency syntax: %s", (source) => {
+    expect(runtimeSpecifiers(source).join("\n")).toMatch(FORBIDDEN);
+  });
+
+  it("[W045] allows no unreviewed external runtime dependency or direct host effects", async () => {
+    const graph = await walkRuntimeGraph(WATCHER_ENTRY_POINT);
+    for (const [filename, specifiers] of graph) {
+      for (const specifier of specifiers) {
+        if (!specifier.startsWith("."))
+          expect(specifier, filename).toBe("node:crypto");
+      }
+      const source = await readModule(filename);
+      // Static architecture regression guard, not a sandbox for arbitrary code.
+      expect(source, filename).not.toMatch(
+        /\b(?:fetch|WebSocket|XMLHttpRequest)\s*\(/,
+      );
+      expect(source, filename).not.toMatch(
+        /\bprocess\s*\.\s*(?:env|exec|spawn)/,
+      );
+      expect(source, filename).not.toMatch(
+        /\b(?:import|require)\s*\(\s*(?!["'])/,
+      );
+    }
+  });
+
   it("[TEST-024] keeps Effect out of every watcher module, including type positions", async () => {
     for (const filename of WATCHER_MODULES) {
       const source = await readModule(filename);
-      expect(source, filename).not.toMatch(/from\s+["'](?:effect|@effect\/)/);
+      expect(
+        [
+          ...runtimeSpecifiers(source),
+          ...[...source.matchAll(ANY_SPECIFIER)].map((match) => match[1]),
+        ].join("\n"),
+        filename,
+      ).not.toMatch(/(?:^|\n)(?:effect|@effect\/)/);
     }
   });
 
@@ -226,9 +286,10 @@ describe("DevSquadAdoWorkflowWatcher dependency boundary", () => {
     for (const filename of WATCHER_MODULES) {
       const source = await readModule(filename);
       ANY_SPECIFIER.lastIndex = 0;
-      const specifiers = [...source.matchAll(ANY_SPECIFIER)].map(
-        (match) => match[1],
-      );
+      const specifiers = [
+        ...runtimeSpecifiers(source),
+        ...[...source.matchAll(ANY_SPECIFIER)].map((match) => match[1]),
+      ];
       expect(specifiers.join("\n"), filename).not.toMatch(FORBIDDEN);
     }
   });
@@ -345,6 +406,39 @@ describe("DevSquadAdoWorkflowWatcher public surface", () => {
     ] as const;
     for (const name of exported) {
       expect(source, name).toContain(`  ${name},`);
+    }
+  });
+
+  it("[W045] exports all discovery public types without internal helpers", async () => {
+    const contract = await readModule(WATCHER_ENTRY_POINT);
+    const root = await readModule("index.ts");
+    for (const match of contract.matchAll(
+      /^export (?:type|interface) (\w+)/gm,
+    )) {
+      expect(root, match[1]).toContain(`  ${match[1]},`);
+    }
+    expect(packageEntryPoint).not.toHaveProperty(
+      "runDevSquadAdoDiscoveryWatchPass",
+    );
+    expect(packageEntryPoint).not.toHaveProperty("matchDevSquadAdoDiscovery");
+    expect(packageEntryPoint).not.toHaveProperty(
+      "initializeDiscoveryCandidate",
+    );
+  });
+
+  it("[W045] documents each public run overload, not just supplied mode", async () => {
+    const source = await readModule(WATCHER_ENTRY_POINT);
+    const lines = source.split("\n");
+    const declarations = lines.flatMap((line, index) =>
+      /^export (?:async )?function runDevSquadAdoWorkflowWatchPass\(/.test(line)
+        ? [index]
+        : [],
+    );
+    expect(declarations).toHaveLength(4);
+    for (const index of declarations) {
+      expect(lines[index - 1]?.trim(), `overload at ${index + 1}`).toMatch(
+        /^(?:\*\/|\/\*\*.*\*\/)$/,
+      );
     }
   });
 
