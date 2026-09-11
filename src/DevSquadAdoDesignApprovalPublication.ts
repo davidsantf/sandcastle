@@ -136,7 +136,10 @@ import {
   GateFault,
   GateLifecycle,
 } from "./DevSquadAdoDesignApprovalLifecycle.js";
-import { freshGateAcknowledgement } from "./DevSquadAdoDesignApprovalLedger.js";
+import {
+  freshGateAcknowledgement,
+  gateLedgerRejection,
+} from "./DevSquadAdoDesignApprovalLedger.js";
 
 export const identifier = (v: unknown): v is string =>
   typeof v === "string" &&
@@ -473,6 +476,8 @@ export async function startGatePublication(
     const accepted = await lifecycle.call("checkpoint", () =>
       checkpoint(structuredClone(original)),
     );
+    const rejection = gateLedgerRejection(accepted);
+    if (rejection) return { ...result, reason: rejection };
     const fresh = freshGateAcknowledgement(
       accepted,
       original,
@@ -754,6 +759,8 @@ async function confirmGatePublication(
     const accepted = await lifecycle.call("checkpoint", () =>
       checkpoint(structuredClone(original)),
     );
+    const rejection = gateLedgerRejection(accepted);
+    if (rejection) return { ...result, reason: rejection };
     const fresh = freshGateAcknowledgement(
       accepted,
       original,

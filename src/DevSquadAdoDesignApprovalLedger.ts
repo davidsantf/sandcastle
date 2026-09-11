@@ -92,3 +92,33 @@ export function freshGateAcknowledgement(
     return null;
   }
 }
+
+// W054 / FR-020: known CAS/capability rejections are not an invitation to rebase.
+export function gateLedgerRejection(
+  response: unknown,
+):
+  | import("./DevSquadAdoDesignApproval.js").DevSquadAdoDesignApprovalResult["reason"]
+  | null {
+  try {
+    const r = response as { ok?: unknown; error?: { kind?: unknown } };
+    if (r?.ok !== false) return null;
+    switch (r.error?.kind) {
+      case "revision-conflict":
+        return "revision-conflict";
+      case "state-conflict":
+        return "state-conflict";
+      case "idempotency-conflict":
+        return "idempotency-conflict";
+      case "claim-expired":
+        return "authority-expired";
+      case "stale-fencing":
+      case "claim-not-held":
+      case "claim-token-mismatch":
+        return "authority-rejected";
+      default:
+        return null;
+    }
+  } catch {
+    return null;
+  }
+}

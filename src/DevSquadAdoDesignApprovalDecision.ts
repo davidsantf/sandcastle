@@ -21,7 +21,10 @@ import {
   unicode,
   isB32,
 } from "./DevSquadAdoDesignApprovalValidation.js";
-import { freshGateAcknowledgement } from "./DevSquadAdoDesignApprovalLedger.js";
+import {
+  freshGateAcknowledgement,
+  gateLedgerRejection,
+} from "./DevSquadAdoDesignApprovalLedger.js";
 import type { CheckpointDevSquadAdoWorkflowInput } from "./DevSquadAdoWorkflowLedger.js";
 /** Immutable authoritative proposal anchor; opaque IDs are equality-only. */
 export type DevSquadAdoDesignProposalAnchor = readonly [
@@ -517,6 +520,8 @@ export async function resolveGateDecision(
     const ack = await lifecycle.call("checkpoint", () =>
       c.checkpoint(structuredClone(original)),
     );
+    const rejection = gateLedgerRejection(ack);
+    if (rejection) return { ...result, reason: rejection };
     const fresh = freshGateAcknowledgement(ack, original, before, check());
     if (!fresh) return result;
     return {

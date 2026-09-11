@@ -293,7 +293,7 @@ Every task inherits the saved spec and plan, including:
 
 ### W054: Preserve original submissions under races
 
-- [ ] **W054** Complete adversarial acknowledgement and CAS composition in `src/DevSquadAdoDesignApprovalLedger.ts`, `src/DevSquadAdoDesignApprovalHistory.ts`, and `src/DevSquadAdoDesignApproval.concurrency.test.ts`.
+- [x] **W054** Complete adversarial acknowledgement and CAS composition in `src/DevSquadAdoDesignApprovalLedger.ts`, `src/DevSquadAdoDesignApprovalHistory.ts`, and `src/DevSquadAdoDesignApproval.concurrency.test.ts`.
   - Parent: US15-01; supports US15-02 through US15-04.
   - Dependency: W053.
   - Estimate: M, 1 to 1.5 engineer-days. Risk: High.
@@ -859,3 +859,12 @@ All execution CLI calls explicitly select the authorized worktree. No LSP tools 
 - Fixed snapshot/cursor/anchor binding, contiguous ordinals, duplicate/cycle/gap/overlap rejection, event-version chains, denied versus unresolved authorization and page-independent semantic commitment integrated. Selection can stop at certified winner; empty/no-command result requires terminal completeness.
 - Changed TS Prettier write and git diff --check pass. No global suite or production platform claim. Scope: decision reducer, ordering tests, task evidence.
 - Commit: feat(design-gate): verify complete decision prefixes W053. Trailer: Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>.
+
+### W054 executed evidence
+
+- Baseline W053 7f2db82. FR-005–008/016/018/020/021, CC-11–14, original-submission and replay controls.
+- RED: npm test -- DevSquadAdoDesignApproval.concurrency --reporter=dot exit 1, 1 behavioral failure / 13 passes: real ledger revision conflict was incorrectly collapsed into unknown reservation outcome.
+- GREEN affected selector npm test -- DevSquadAdoDesignApproval DevSquadAdoWorkflowLedger --reporter=dot exit 0, 186 passed / 2 existing skips across 12 files. W054 adds 14 tests. Typecheck exit 0; changed TS formatting and diff check pass.
+- Real identical/different reservation races, opposing resolution CAS, nine acknowledgement mutation families, and same-J/changed-token private ledger digest rejection covered. No retries, rebase, new IDs, or permission from history. Stable exact CAS failure categories retained without exposing errors.
+- Scope: original-submission ledger guard, API reason types, publication/decision call sites, concurrency tests, evidence. No ledger schema/storage changes. Portable tests do not certify production Windows durability.
+- Commit: fix(design-gate): preserve original submission guards W054. Trailer: Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>.
