@@ -227,7 +227,7 @@ Every task inherits the saved spec and plan, including:
 
 ### W050: Reserve and invoke publication once
 
-- [ ] **W050** Implement the fresh-only publication path in `src/DevSquadAdoDesignApprovalPublication.ts`, `src/DevSquadAdoDesignApprovalLedger.ts`, `src/DevSquadAdoDesignApprovalLifecycle.ts`, and `src/DevSquadAdoDesignApproval.publication.test.ts`.
+- [x] **W050** Implement the fresh-only publication path in `src/DevSquadAdoDesignApprovalPublication.ts`, `src/DevSquadAdoDesignApprovalLedger.ts`, `src/DevSquadAdoDesignApprovalLifecycle.ts`, and `src/DevSquadAdoDesignApproval.publication.test.ts`.
   - Parent: US15-01; supports US15-02 and US15-04.
   - Dependency: W049.
   - Estimate: L, 1.5 to 2 engineer-days. Risk: High; supervised.
@@ -815,3 +815,16 @@ All execution CLI calls explicitly select the authorized worktree. No LSP tools 
 - Real public ledger checkpoint fixtures prove exact 226/182/226/226 bytes and same-state checkpoints. Malformed grammar, noncanonical encodings, mismatches, duplicate/conflicting stages, missing predecessors, state-changing entries, other occurrences, canonical work-item distinction, and irrelevant current references covered.
 - Limits: external witnesses are not reconstructed; history does not prove original capability equality; no publication or new mutation entry is enabled yet. No production platform or global-suite claim.
 - Commit scope: API, new history reducer, attached history tests, this evidence. Subject feat(design-gate): recover canonical gate history W049. Exact trailer: Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>.
+
+### W050 executed evidence
+
+- W049 commit: 8fb4348b67de8fddfce3a515101e9a268c684e5f, required Copilot App trailer present.
+- Enabled fresh-only start with immutable proposal/manifest validation, exact rendering, independently bound design and mutation grants, host capability, complete-history eligibility and exact CAS. Private original request/pre-write snapshots are separated from adapter inputs. Timely method-specific acknowledgement alone reaches the single publisher call site; repeated/reentrant/concurrent/recovered/late paths do not recreate permission.
+- Introduced fixed call ceilings, 180000 ms invocation deadline, 5000 ms ledger/design deadlines, 1000 ms mutation grant deadline, 10000 ms publisher deadline, cooperative cancellation and late-result retirement with the effects. Initial target support is explicit no-target only; bound-target support remains W060. No publication confirmation or human resolution is claimed before W051/W052.
+- RED: npm test -- DevSquadAdoDesignApproval.publication --reporter=dot, exit 1: 11 behavioral failures, 9 passes. Start's read-only skeleton neither reserved nor published; fixture setup succeeded.
+- Initial GREEN: npm test -- DevSquadAdoDesignApproval --reporter=dot, exit 0: 58 passed across 3 files. Typecheck then found two test-double contextual return discriminator errors; one localized correction parameterized vi.fn with the public dependency signatures. No production correction or test rollback was needed; npm run typecheck then passed.
+- Added attached schedules while green: real CAS contenders, reentrant publisher, late durable acknowledgement, adapter mutation of proposal/read record, and exact 32768/32769 UTF-8 byte boundaries. npm test -- DevSquadAdoDesignApproval.publication --reporter=dot: exit 0, 26 passed; npm run typecheck exit 0.
+- Final affected regression: npm test -- DevSquadAdoDesignApproval DevSquadAdoWorkflowLedger --reporter=dot, exit 0: 8 files, 128 passed, 2 existing platform skips (130 total; 64 new feature tests plus 64 existing ledger passes). No global rerun or global PASS.
+- Changed-file Prettier check and git diff --check: exit 0. No manifest/lock changes, live transport, execution, claim lifecycle, cursor/reference patch or private receipt inspection.
+- Conformance: FR-001-008/011/020/023-026; CC-02/03/10/11/13; SEC-001/002/003/005/006. Complete slice validation remains W064 and independent review W065.
+- Commit subject: feat(design-gate): reserve one publication attempt W050. Exact trailer: Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>.

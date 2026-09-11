@@ -1,3 +1,4 @@
+import { startGatePublication } from "./DevSquadAdoDesignApprovalPublication.js";
 import { reduceGateHistory } from "./DevSquadAdoDesignApprovalHistory.js";
 import {
   canonicalWorkItem,
@@ -32,12 +33,14 @@ export interface DevSquadAdoDesignApprovalResult {
     | "attempt-consumed"
     | "publication-confirmed"
     | "approved"
-    | "changes-requested";
+    | "changes-requested"
+    | "reservation-unconfirmed";
   /** Whether the inspected evidence supports the reported state. */
   readonly verificationStatus:
     | "verified"
     | "evidence-unavailable"
-    | "publication-unverified";
+    | "publication-unverified"
+    | "mutation-unconfirmed";
   /** Recovery does not infer an execution target. */
   readonly targetHandoff: "not-requested";
   /** Stable category, never dependency-controlled diagnostics. */
@@ -49,7 +52,15 @@ export interface DevSquadAdoDesignApprovalResult {
     | "dependency-timeout"
     | "evidence-unavailable"
     | "conflicting-gate-history"
-    | "publication-evidence-unavailable";
+    | "publication-evidence-unavailable"
+    | "authority-required"
+    | "authority-expired"
+    | "authority-rejected"
+    | "host-authorization-unavailable"
+    | "design-mismatch"
+    | "reservation-outcome-unknown"
+    | "publication-outcome-unknown"
+    | "dependency-limit";
   /** Canonical requested binding, only after validation. */
   readonly binding: {
     readonly workItemId: string;
@@ -174,4 +185,12 @@ export async function recoverDevSquadAdoDesignApproval(
   } catch {
     return failed("invalid-input");
   }
+}
+
+/** Start an explicitly selected occurrence; development approval is not a grant. */
+export async function startDevSquadAdoDesignApproval(
+  request: import("./DevSquadAdoDesignApprovalPublication.js").DevSquadAdoDesignStartRequest,
+  dependencies: import("./DevSquadAdoDesignApprovalPublication.js").DevSquadAdoDesignStartDependencies,
+): Promise<DevSquadAdoDesignApprovalResult> {
+  return startGatePublication(request, dependencies);
 }
