@@ -381,3 +381,152 @@ it("W056 follow-up bounds the combined minimized selection witness package", asy
     reason: "input-limit",
   });
 });
+it.each([16384, 16385])(
+  "W056 manifest serialized byte boundary %i",
+  async (size) => {
+    const f = await fixture();
+    const artifacts: any[] = Array.from({ length: 64 }, (_, i) => [
+      f.request.scope,
+      "id-" + i,
+      "v",
+      f.request.occurrence,
+    ]);
+    let remaining = size - Buffer.byteLength(JSON.stringify(artifacts));
+    for (const e of artifacts) {
+      for (const index of [1, 2]) {
+        const add = Math.min(remaining, 256 - e[index].length);
+        e[index] += "x".repeat(add);
+        remaining -= add;
+      }
+    }
+    expect(remaining).toBe(0);
+    expect(Buffer.byteLength(JSON.stringify(artifacts))).toBe(size);
+    const r = await start(
+      { ...f.request, design: { ...f.request.design, artifacts } },
+      f.dependencies,
+    );
+    expect(f.publishOnce).toHaveBeenCalledTimes(size === 16384 ? 1 : 0);
+    if (size === 16385) expect(r.reason).toBe("input-limit");
+  },
+);
+it.each([8192, 8193])(
+  "W056 target serialized byte boundary %i",
+  async (size) => {
+    const f = await fixture();
+    const scalar = '"'.repeat(256);
+    const target: any = [
+      "bound",
+      [scalar, scalar, scalar],
+      scalar,
+      scalar,
+      f.request.occurrence,
+      scalar,
+      "C:/",
+      scalar,
+      scalar,
+      scalar,
+    ];
+    const extra = size - Buffer.byteLength(JSON.stringify(target));
+    target[6] += '"'.repeat(Math.floor(extra / 2)) + (extra % 2 ? "x" : "");
+    expect(Buffer.byteLength(JSON.stringify(target))).toBe(size);
+    const r = await start(
+      { ...f.request, design: { ...f.request.design, target } },
+      f.dependencies,
+    );
+    expect(f.publishOnce).toHaveBeenCalledTimes(size === 8192 ? 1 : 0);
+    if (size === 8193) expect(r.reason).toBe("input-limit");
+  },
+);
+it.each([262144, 262145])(
+  "W056 aggregate immutable stream serialized byte boundary %i",
+  async (size) => {
+    const f = await fixture();
+    const d = decisionAdapters(f);
+    const base = d.readDecisionPage.getMockImplementation()!;
+    let pages: any[][] | undefined;
+    let index = 0;
+    d.readDecisionPage.mockImplementation(async (q) => {
+      if (!pages) {
+        const r = await base(q);
+        pages = Array.from({ length: 8 }, (_, page) => {
+          const p: any = structuredClone(r.page);
+          p[6] = 133;
+          p[7] = page === 0 ? null : "cursor-" + page;
+          p[8] = 6 + 16 * page;
+          p[9] = 21 + 16 * page;
+          p[11] = page === 7 ? null : "cursor-" + (page + 1);
+          p[12] = page === 7;
+          p[10] = Array.from({ length: 16 }, (_, i) => {
+            const e = structuredClone(r.page[10][0]);
+            const n = page * 16 + i;
+            e[1] = 6 + n;
+            e[2] = "event-" + n;
+            e[5] = "comment-" + n;
+            e[12] = "";
+            return e;
+          });
+          return p;
+        });
+        let remaining =
+          size -
+          pages.reduce(
+            (sum, p) => sum + Buffer.byteLength(JSON.stringify(p)),
+            0,
+          );
+        for (const p of pages)
+          for (const e of p[10]) {
+            const add = Math.min(remaining, 4096);
+            e[12] = "x".repeat(add);
+            remaining -= add;
+          }
+        expect(remaining).toBe(0);
+      }
+      return { kind: "verified", page: pages[index++]! };
+    });
+    const r = await start(f.request, d as any);
+    expect(r).toMatchObject({
+      durableState: "publication-confirmed",
+      reason: size === 262144 ? "no-eligible-decision" : "input-limit",
+    });
+    expect(d.authorizeHumanDecision).not.toHaveBeenCalled();
+  },
+);
+it.each([16777216, 16777217])(
+  "W056 projected public record byte boundary %i",
+  async (size) => {
+    const f = await fixture();
+    const raw: any = structuredClone(f.record);
+    raw.phase = "p".repeat(256);
+    raw.status = "s".repeat(256);
+    raw.revision = 30001;
+    raw.checkpoints = Array.from({ length: 10000 }, (_, i) => ({
+      revision: i + 2,
+      operationId: String(i).padStart(256, "o"),
+      acceptedAt: raw.updatedAt,
+      previous: { phase: raw.phase, status: raw.status },
+      resulting: { phase: raw.phase, status: raw.status },
+    }));
+    const entry = {
+      id: "a".repeat(256),
+      revision: 20001,
+      activatedAt: raw.updatedAt,
+    };
+    raw.agent.current = entry.id;
+    const base = Buffer.byteLength(JSON.stringify(raw));
+    const per = Buffer.byteLength(JSON.stringify(entry)) + 1;
+    const count = Math.floor((size - base - 3500) / per);
+    raw.agent.history = Array.from({ length: count }, (_, i) => ({
+      ...entry,
+      revision: 20001 + i,
+    }));
+    const bytes = Buffer.byteLength(JSON.stringify(raw));
+    raw.worktreePath = "C:/" + "x".repeat(size - bytes - 1);
+    expect(Buffer.byteLength(JSON.stringify(raw))).toBe(size);
+    const r = await recover(f.request, {
+      ledger: { readRecord: async () => ({ ok: true, value: raw }) },
+    });
+    expect(r.durableState).toBe(
+      size === 16777216 ? "unreserved" : "unreadable",
+    );
+  },
+);

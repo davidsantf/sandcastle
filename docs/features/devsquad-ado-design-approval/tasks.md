@@ -976,3 +976,10 @@ All execution CLI calls explicitly select the authorized worktree. No LSP tools 
 - Baseline 3f968aa. Kept original-stage frames out of later-stage/target awaits by returning the existing bounded continuation chain directly. Only the target request, clock, lifecycle and verifier remain in the final continuation; no full ledger record is a continuation argument. This private lifetime refactor changes no public behavior or design criterion, so no artificial RED was manufactured.
 - GREEN npm test -- DevSquadAdoDesignApproval --reporter=dot exit 0: 218 passed / 16 files. npm run typecheck exit 0; formatting/diff pass.
 - Commit scope: publication continuation and this evidence. Subject refactor(design-gate): retire completed stage frames W056. Trailer: Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>.
+
+### W064 exact-byte validation follow-up to W056
+
+- Added eight implementation-attached public-entry cases for serialized manifest 16384/16385, target 8192/8193, complete 8-page stream 262144/262145, and projected ledger record 16777216/16777217 bytes. The first record fixture exceeded its separate path limit; corrected its fill allocation once, not counted as behavioral RED.
+- Genuine RED after fixture correction: npm test -- DevSquadAdoDesignApproval.bounds --reporter=dot exit 1, 41 passed / 1 failed. A 16 MiB+1 record was incorrectly accepted because nullable object projections omitted their JSON null token bytes.
+- Minimal fix charges null through the same scalar byte counter. GREEN affected selector npm test -- DevSquadAdoDesignApproval DevSquadAdoWorkflowLedger --reporter=dot exit 0: 290 passed / 2 existing skips, 21 files (226 feature + 64 ledger). Typecheck exit 0; formatting/diff pass.
+- Scope: validation counter, attached bounds tests, this evidence. Commit fix(design-gate): count nullable projection bytes W056 with trailer Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>. Earlier final-suite/build observations at 207c612 are now intermediate; rerun final source validation below.

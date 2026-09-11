@@ -232,7 +232,7 @@ export function inspectDesignGateRecord(
     const nullableProjection =
       (project: Projector): Projector =>
       (value) =>
-        value === null ? null : project(value);
+        value === null ? scalar(null) : project(value);
     const collection =
       (maximum: number, project: Projector): Projector =>
       (value) => {
