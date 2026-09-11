@@ -554,6 +554,10 @@ payloads as well as the library's recognized fields.
 
 ### Authorized no-comment admission and signal interpretation
 
+Only a matched item whose initial guarded record read reports missing can enter
+admission. A later claim/checkpoint rejection is not admission evidence: its
+existing-record failure and any failed or indeterminate cleanup remain visible.
+
 A matched, method-valid missing record is initialized only with explicit
 canonical-item authorization:
 `{ workItemId, kind: "authorized", submissionId, initial: { phase, status } }`.

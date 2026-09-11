@@ -75,6 +75,8 @@ export interface CandidateState {
   readonly workItemId: string;
   resolved: DevSquadAdoWatchCandidateOutcome | null;
   examined: boolean;
+  /** W046 SKEP1 / FR-067: only a guarded initial read can authorize admission. */
+  initialReadMissing: boolean;
   eligible: boolean;
   pendingReason: DevSquadAdoWatchReasonCode;
   sourceRevision: number | null;
@@ -691,6 +693,8 @@ const resumeCheckpoint = async (
     return;
   }
   if (read.status === "error") {
+    state.initialReadMissing =
+      state.sourceRevision === null && read.error.kind === "record-not-found";
     const mapped = mapReadError(read.error);
     await resolveCandidate(context, state, mapped.kind, mapped.reason, {
       ledgerErrorKind: mapped.ledgerErrorKind,
@@ -752,6 +756,8 @@ export const runCandidateStep = async (
     return;
   }
   if (read.status === "error") {
+    state.initialReadMissing =
+      state.sourceRevision === null && read.error.kind === "record-not-found";
     const mapped = mapReadError(read.error);
     await resolveCandidate(context, state, mapped.kind, mapped.reason, {
       ledgerErrorKind: mapped.ledgerErrorKind,
@@ -1131,6 +1137,7 @@ export const createWatcherCandidateState = (
   workItemId,
   resolved: null,
   examined: false,
+  initialReadMissing: false,
   eligible: false,
   pendingReason: "no-new-observations",
   sourceRevision: null,

@@ -159,7 +159,8 @@ export const runDevSquadAdoDiscoveryWatchPass = async (
       signals.push({ ...signal, kind: "comment-observation" });
     // W043: never finalize a pending step here: finalization clears its original
     // checkpoint submission and releases the authority needed on the next poll.
-    if (observation.resolved?.reason === "record-not-found") {
+    // W046 SKEP1: mutation failures are not evidence of initial absence.
+    if (observation.initialReadMissing) {
       state.admission = createDiscoveryAdmission(
         item.workItemId,
         item.matching,
