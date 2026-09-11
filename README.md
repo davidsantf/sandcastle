@@ -2180,6 +2180,149 @@ hooks: {
 - If any hook exits non-zero, setup fails fast.
 - When a `signal` is passed to `run()`, it is threaded to all hooks — aborting the signal cancels any in-flight hook commands.
 
+## Offline immutable design approval
+
+The slice-15 design gate is a **host-composed offline primitive**, not a daemon,
+phase runner, live ADO client, or operational end-to-end workflow. It binds one
+canonical work item, an explicitly host-authorized occurrence `G`, and immutable
+design `D` (the exact proposal plus exact referenced artifact versions).
+
+```ts
+import {
+  startDevSquadAdoDesignApproval,
+  reconcileDevSquadAdoDesignApproval,
+  recoverDevSquadAdoDesignApproval,
+  type DevSquadAdoDesignStartRequest,
+  type DevSquadAdoDesignStartDependencies,
+} from "@ai-hero/sandcastle";
+
+// The host supplies trusted offline adapters, a current ledger capability,
+// exact material, and an explicitly authorized occurrence. No fake live adapter.
+async function reviewOnce(
+  request: DevSquadAdoDesignStartRequest,
+  host: DevSquadAdoDesignStartDependencies,
+) {
+  const result = await startDevSquadAdoDesignApproval(request, host);
+  // Inspect durableState, verificationStatus, targetHandoff, reason, binding,
+  // knownRevision and checkpointRevisions separately. Do not execute a phase.
+  return result;
+}
+```
+
+Executable offline examples are in
+[`src/DevSquadAdoDesignApproval.examples.test.ts`](src/DevSquadAdoDesignApproval.examples.test.ts).
+
+### Effects and independent authorities
+
+| Entry                                | Maximum checkpoints | Publisher calls | Purpose                                                                             |
+| ------------------------------------ | ------------------: | --------------: | ----------------------------------------------------------------------------------- |
+| `startDevSquadAdoDesignApproval`     |                   3 |               1 | Reserve one attempt, confirm publication, resolve a human decision                  |
+| `reconcileDevSquadAdoDesignApproval` |                   2 |               0 | Advance missing stages of an existing reservation; no publisher dependency required |
+| `recoverDevSquadAdoDesignApproval`   |                   0 |               0 | Inspect durable history and optionally verify the current target                    |
+
+All coordinators must inject the same explicit host ledger root and namespace on
+a supported trusted-owner local filesystem. A watcher comment signal or
+claim-free discovery admission is **historical provenance only**. Its revision,
+phase/status, owner/fence metadata, and cleanup result are not a current capability
+or product approval. The gate never acquires, renews, transfers, or releases claims.
+
+The host separately supplies: current ledger capability; exact same-state mutation
+authorization; immutable design verification; independent publication verification;
+immutable event-time human permission; and, when requested, current target proof.
+A publisher locator/success echo is not a receipt. Existing control-plane comment
+results do not supply these guarantees. Trusted adapters must not hide retries.
+
+The published envelope shows `G`, `D`, proposal/manifest/target commitments, exact
+artifact versions, and both commands. Submit exactly one of these as the **entire
+comment**, substituting canonical 43-character unpadded base64url operands:
+
+```text
+/devsquad approve-design <G> <D>
+/devsquad request-changes <G> <D>
+```
+
+Exactly one ASCII space separates tokens; command lengths are 112 and 113 UTF-8
+bytes. No whitespace trimming, trailing newline, quotes, prose, aliases, substring
+matching, `lgtm`, development checkpoint approval, or automatic approval is accepted.
+Approval applies only to that occurrence and immutable design. Changes requested
+never authorizes implementation. Revised material requires an independently
+authorized new occurrence and fresh human review, not approval transfer.
+
+The decision adapter must supply a certified contiguous **immutable event-version
+prefix** after the verified proposal anchor: fixed snapshot/cursor, complete
+coverage, event actors, bodies and version chains, including unrelated events,
+edits and deletes. Current visible comments alone are insufficient. A command
+introduced by an edit is evaluated at that edit's ordinal; deletion does not erase
+an earlier decision. Opaque IDs are equality-only, never chronology. First eligible
+explicit human grant wins; an earlier unresolved authorization blocks later
+commands, while explicit denial may be skipped. Durable resolution has one shared
+approval/change-request slot. In-memory selection is not effective approval.
+
+### Uncertainty runbook
+
+**Permanent publication loss is an accepted tradeoff.** Only the timely direct
+fresh reservation acknowledgement permits the original invocation's single
+`publishOnce` call. The attempt remains consumed even if the process stops before
+that call. History, replay, readback, restart, timeout and late acknowledgements
+never recreate permission. The guarantee is at most one gate-mediated application
+invocation, **not exactly-once tracker storage** or downstream delivery.
+
+| Condition                                        | Safe operator/host action                                                                                                                                                                                        |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Reservation/write outcome unknown                | Use read-only recovery to inspect durable state. Do not repeat publication or manufacture another occurrence.                                                                                                    |
+| Consumed attempt or lost publisher response      | Investigate existing host evidence. Reconcile only a verified receipt attributable to the original attempt, using current mutation authority. Permanently missing evidence may block permanently.                |
+| Missing/ambiguous publication or decision prefix | Restore authoritative immutable witnesses if available; do not infer success, skip unresolved candidates, or bypass approval.                                                                                    |
+| Capacity exceeded after reservation              | Keep the occurrence blocked. No reserved future capacity, sidecar, outbox, eviction, migration or automatic rollover is provided.                                                                                |
+| Corrupt/unsupported ledger                       | Fail closed; preserve evidence. Do not fall back from corrupt highest state to an older apparent approval.                                                                                                       |
+| Unsupported production Windows platform          | The ledger cannot currently establish required permissions/directory-sync guarantees. Portable offline test fixtures do not make production Windows durable.                                                     |
+| Target missing/mismatched/stale                  | Preserve historical design approval separately, but block target-specific handoff. Restore original witnesses and independently observe current state; never infer historical target from current ledger fields. |
+
+Optional `targetVerification` supplies the original descriptor and a host-issued
+nonsecret request challenge. The target verifier checks exact repository, immutable
+source/content, branch, absolute worktree path/identity and bound agent/session
+references. Proof age is at most five seconds at return. `verified-current` is
+**descriptive only**, not a lock, executable resume instruction or present-day human
+reauthorization. The host must revalidate at any later execution boundary.
+
+Recovered durable approval may coexist with `evidence-unavailable` or blocked target
+handoff. Never treat `durableState: "approved"` alone as verification of newly
+supplied material. Results and durable gate checkpoints exclude bodies, reviewer
+prose, tokens, credentials, session contents and dependency diagnostics. Hashes
+are commitments, not encryption or secret detection; publish only host-approved
+nonsecret material.
+
+### Bounds and liveness
+
+Fixed ceilings (UTF-8 / canonical serialized bytes, never silent truncation):
+proposal 32 KiB; manifest 16 KiB/64 artifacts; target 8 KiB; rendering 64 KiB;
+evidence identifier 256 bytes; cursor 1 KiB; 8 pages/16 events each/128 total;
+event body 4 KiB; normalized decision stream 256 KiB; individual publication or
+selection/authorization package 16 KiB; retained non-ledger logical payload 1 MiB.
+Public ledger records are at most 16 MiB, with 10,000 entries per checkpoint,
+agent or session history; invocation inspection is capped at 7 records, 112 MiB,
+210,000 history-entry visits and two simultaneous full projected records. These
+are logical processing limits, not JavaScript heap isolation guarantees.
+
+A start permits at most **150 dependency calls**: 4 reads, 3 checkpoints, 3 mutation
+grants, 1 design verifier, 1 publisher, 1 publication verifier, 8 pages, 128 human
+grants and 1 current-target verifier. Failures count; there are zero automatic
+retries. Whole invocation deadline is 180,000 ms; ledger/design/publication/page/
+current-target calls get at most 5,000 ms, mutation/human grants 1,000 ms and
+publisher 10,000 ms, further limited by remaining invocation time. Cancellation and
+timeout retire continuations and request cooperative cancellation. They cannot
+cancel an unsettled ledger write or hard-terminate a noncooperating in-process
+adapter; late settlement cannot launch more effects or upgrade a completed result.
+
+Canonical Windows `npm run build` also has a **separate packaging limitation**:
+POSIX `rm`/`cp` postbuild commands may fail even after ESM and DTS generation
+succeeds. Successful compilation/declaration checks do not establish packaging,
+global-suite or production Windows durability success.
+
+Slice 16 still owns the plugin resumable phase runner and Sandcastle delegation;
+slice 17 broader feedback routing; slice 18 human-confirmed finalization and
+pause/resume/cancel/status/audit; slice 19 real host-side ADO MCP transport.
+No later-slice execution, merge authority, or live integration is delivered here.
+
 ## Development
 
 ```bash

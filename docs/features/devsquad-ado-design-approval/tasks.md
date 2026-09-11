@@ -444,7 +444,7 @@ Every task inherits the saved spec and plan, including:
 
 ### W063: Document the host contract and operational limits
 
-- [ ] **W063** Document offline usage and the uncertainty runbook in `README.md`, add the appropriate feature changeset under `.changeset/`, and verify examples in `src/DevSquadAdoDesignApproval.examples.test.ts`.
+- [x] **W063** Document offline usage and the uncertainty runbook in `README.md`, add the appropriate feature changeset under `.changeset/`, and verify examples in `src/DevSquadAdoDesignApproval.examples.test.ts`.
   - Parent: US15-01; supports every scenario.
   - Dependency: W062.
   - Estimate: M, 0.5 to 1 engineer-day. Risk: Medium.
@@ -951,3 +951,14 @@ All execution CLI calls explicitly select the authorized worktree. No LSP tools 
 - Root exports only intended operations/contracts. Reconcile dependency subset requires no publisher or initial design verifier. Runtime/type guardian covers every feature production module, imports/reexports/side-effects/dynamic/CommonJS forms, forbidden nonliteral calls, and fixture/execution/transport/Effect dependencies. Existing watcher public guardian still passes.
 - Fresh npx --no-install tsup exit 0: ESM success 8663ms, DTS success 14689ms. node scripts/check-public-types-effect-free.mjs exit 0 against those freshly generated declarations. Existing unused createRequire/Readable bundle warnings retained. This direct compilation does not run canonical postbuild or establish packaging success; W064 will run canonical npm build.
 - Commit: feat(design-gate): expose the offline gate API W062. Trailer: Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>.
+
+### W063 executed evidence
+
+- Baseline W062 65ceb0e. FR-008/011/012/017–019/022–026, CC-02–04/07–09/15/16, operational honesty/privacy controls.
+- Inspected all seven existing changeset markdown files (including changeset README); none duplicates design approval. Package name confirmed @ai-hero/sandcastle. Added one minor feature changeset; existing entries/manifests unchanged.
+- Documentation RED: npm test -- DevSquadAdoDesignApproval.examples --reporter=dot exit 1: one missing README protocol/runbook assertion and two passing executable behavior examples. This is documentation alignment RED, not a new production behavior defect.
+- GREEN examples + dependencies: 13 passed / 2 files. Full feature regression npm test -- DevSquadAdoDesignApproval --reporter=dot exit 0: 212 passed / 16 files. Typecheck exit 0.
+- README diff is 143 added lines only: exact commands, host authorities, entry effect ceilings, immutable prefix, permanent loss runbook, bounded liveness, target revalidation and slices 16–19. Distinct production Windows ledger and POSIX packaging limitations retained.
+- README/example Prettier check passes. Changeset is ignored by CLI formatting; explicit Prettier API check initially false, formatted once and rechecked true. git diff --check passes.
+- Original spec/plan/ADR remain untracked and byte-preserved: normal precommit formatting would rewrite them if staged, so this worker intentionally does not include them in a formatting-hook commit. Parent retains these authoritative local inputs.
+- Commit: docs(design-gate): explain host review and loss limits W063. Trailer: Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>.
