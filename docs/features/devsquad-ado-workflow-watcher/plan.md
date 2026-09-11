@@ -6,7 +6,9 @@
 
 ### Approved discovery extension — slice 14 / #21
 
-**Status:** Approved planning target; unimplemented and not independently reviewed. D1-B, D2/D2-A and D3-A are approved requirements. The historical W038 technical PASS covers the supplied-candidate implementation and checkpoint-recovery contract only.
+> For current implementation and review status, see [tasks](tasks.md) and [review evidence](review-log.md).
+
+**Historical approval-checkpoint status:** Approved planning target; unimplemented and not independently reviewed at that checkpoint. D1-B, D2/D2-A and D3-A are approved requirements. The historical W038 technical PASS covers the supplied-candidate implementation and checkpoint-recovery contract only.
 
 This extension follows [ADR-0026](../../adr/0026-devsquad-ado-workflow-watcher.md), as amended for discovery, and preserves [ADR-0025](../../adr/0025-devsquad-ado-workflow-ledger.md), [ADR-0024](../../adr/0024-devsquad-sandcastle-execution-adapter-boundary.md), and the existing ADR-0021/0022 integration boundaries. ADR filenames already referenced elsewhere in this plan remain authoritative; verify relative links against the existing directory when persisting.
 

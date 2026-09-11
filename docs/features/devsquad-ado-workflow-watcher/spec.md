@@ -6,7 +6,9 @@
 
 ## Executive Summary
 
-**Approved specification amendment (2026-09-10):** D1-B (authorized first-seen admission), D2 matching with D2-A (eligibility pause/reentry), and D3-A (bounded restart-from-beginning discovery) are approved requirements for existing slice 14 / #21, **unimplemented and not independently reviewed**. The W038 technical PASS above covers the historical supplied-candidate implementation and recovery contract only; it does not cover this extension. This is the specification checkpoint, not a plan, ADR acceptance, implementation authorization, merge-readiness claim, or permission to start slice 15.
+> The approval-checkpoint statement below is historical, not current implementation status. See [current task status](tasks.md) and [review evidence](review-log.md).
+
+**Historical approved specification amendment checkpoint (2026-09-10):** D1-B (authorized first-seen admission), D2 matching with D2-A (eligibility pause/reentry), and D3-A (bounded restart-from-beginning discovery) are approved requirements for existing slice 14 / #21, **unimplemented and not independently reviewed**. The W038 technical PASS above covers the historical supplied-candidate implementation and recovery contract only; it does not cover this extension. This is the specification checkpoint, not a plan, ADR acceptance, implementation authorization, merge-readiness claim, or permission to start slice 15.
 
 - **Objective:** Give a DevSquad host a deterministic, bounded watcher that observes injected ADO/GitHub work-item and pull-request signals, applies host-defined discovery and eligibility policy, and records durable coordination outcomes without owning the DevSquad lifecycle.
 - **Primary user:** A DevSquad host coordinator that supplies candidates or an explicitly bounded host-stable discovery scope, matching policy, admission authorization, exact initial phase/status and intake rules, and consumes typed intake signals.
