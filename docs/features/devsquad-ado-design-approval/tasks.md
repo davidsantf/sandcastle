@@ -461,7 +461,7 @@ Every task inherits the saved spec and plan, including:
 
 ### W064: Validate the integrated slice
 
-- [ ] **W064** Validate the complete implementation and record exact evidence in `docs/features/devsquad-ado-design-approval/tasks.md`.
+- [x] **W064** Validate the complete implementation and record exact evidence in `docs/features/devsquad-ado-design-approval/tasks.md`.
   - Parent: US15-01; supports every scenario.
   - Dependency: W063.
   - Estimate: M, 0.5 to 1 engineer-day excluding newly discovered remediation.
@@ -983,3 +983,125 @@ All execution CLI calls explicitly select the authorized worktree. No LSP tools 
 - Genuine RED after fixture correction: npm test -- DevSquadAdoDesignApproval.bounds --reporter=dot exit 1, 41 passed / 1 failed. A 16 MiB+1 record was incorrectly accepted because nullable object projections omitted their JSON null token bytes.
 - Minimal fix charges null through the same scalar byte counter. GREEN affected selector npm test -- DevSquadAdoDesignApproval DevSquadAdoWorkflowLedger --reporter=dot exit 0: 290 passed / 2 existing skips, 21 files (226 feature + 64 ledger). Typecheck exit 0; formatting/diff pass.
 - Scope: validation counter, attached bounds tests, this evidence. Commit fix(design-gate): count nullable projection bytes W056 with trailer Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>. Earlier final-suite/build observations at 207c612 are now intermediate; rerun final source validation below.
+
+## W064 final integrated validation — 2026-09-11
+
+### Identity and executed commands
+
+- Branch: `users/davidsant/agent-team-slice15-loop`.
+- Final validated production/test source: `328f52f328143b4cf0b8d23ea2387cd79176e71e`.
+- Full-slice predecessor: `e7e46dc76597d2e16782c779e8a8eaa4dd5accca`.
+- Continuation entry: `c670259e2d7b058c5afade5c43d9f4cf80f9e8d5`; W048–W051 were not restarted.
+- This completion commit changes only task evidence; production/test source remains the exact validated source above. W065 is deliberately unchecked for independent parent review.
+- Every own/nested CLI invocation explicitly selected the authorized worktree. No dependency installation, global baseline rerun, external board/auth operation, push, PR, merge, publication, or learning-file write occurred in this continuation.
+
+| Command                                                                                                     | Exit | Actual evidence                                                                                                                                                                             |
+| ----------------------------------------------------------------------------------------------------------- | ---: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm test -- DevSquadAdoDesignApproval DevSquadAdoWorkflowWatcher DevSquadAdoWorkflowLedger --reporter=dot` |    0 | 34 files passed; 958 tests passed, 2 existing ledger platform skips, 960 total. 226 feature tests plus all 732 accepted predecessor passes.                                                 |
+| `npm test -- DevSquadAdoWorkflowWatcher.remediation -t 'third independent history' --reporter=dot`          |    0 | 19 passed; 244 name-selector exclusions, 263 total in one file. Overlaps the broad affected run; not additive coverage.                                                                     |
+| `npm run typecheck`                                                                                         |    0 | Final `tsgo --noEmit` passed.                                                                                                                                                               |
+| `npm run build`                                                                                             |    1 | Fresh ESM success in 17647ms and DTS success in 24703ms. Postbuild failed at `'rm' is not recognized`; `cp` and automatic declaration guard were not reached. No packaging success claimed. |
+| `node scripts/check-public-types-effect-free.mjs`                                                           |    0 | Separately run against the fresh final declarations: no Effect references in public `.d.ts` files.                                                                                          |
+| Changed-file Prettier API checks using resolved repository config                                           |    0 | 29/29 full-slice changed files passed, including the changeset ignored by CLI formatting.                                                                                                   |
+| `git diff --check e7e46dc76597d2e16782c779e8a8eaa4dd5accca HEAD`                                            |    0 | No whitespace errors.                                                                                                                                                                       |
+| `git diff --exit-code e7e46dc76597d2e16782c779e8a8eaa4dd5accca -- package.json package-lock.json`           |    0 | Manifests/lock unchanged.                                                                                                                                                                   |
+
+Existing bundle warnings for unused `createRequire` and `Readable` remain; neither prevents ESM/DTS output. Production Windows ledger permissions/directory-sync remain unsupported independently of the POSIX postbuild failure. Portable fixtures establish offline composition and supported fixture durability only.
+
+### Baseline comparison and coverage scope
+
+The authorized failing global baseline remains exactly: `e7e46dc`, global JSON run exit 1, **2077 passed / 171 failed / 8 skipped**, 2256 tests, 351 suites (295 passed / 56 failed). The previously recorded 23-file failure inventory remains authoritative and not wholly classified. No global suite was rerun or repaired. Fresh affected verification preserves every accepted predecessor pass and both existing platform skips, adding 226 passing feature tests; **no new attributable affected regression remains**. This is not global-suite, remote CI, packaging, production Windows, live-transport, or coverage-percentage certification.
+
+Feature file counts: recovery tracer 13; history 25; publication 26; receipt 13; decision 17; ordering 14; concurrency 14; recovery 5; bounds 42; failure 9; changes 5; authority 9; target 15; target-race 6; dependencies 10; examples 3. Total: 226 in 16 files. Counts from overlapping runs are not summed.
+
+### Executed requirement reconciliation
+
+The following references are to `src/DevSquadAdoDesignApproval.<name>.test.ts`, except `test` means the original `DevSquadAdoDesignApproval.test.ts`. These are implementation-attached public-entry tests, not a disconnected conformance project. Bounds and dependency guardians supplement, rather than replace, the integrated public-ledger tracers.
+
+| Functional requirement | Actual evidence                                                                                                                                                                           |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| FR-001                 | `history`, `publication`, `changes`, `target`: canonical occurrence/design/target commitments and no transfer.                                                                            |
+| FR-002                 | `publication`, `changes`: exact reviewed bytes, immutable artifact commitments, revised content/version rejection.                                                                        |
+| FR-003                 | `authority`, `dependencies`: both typed watcher shapes, independent capability, zero claim operations.                                                                                    |
+| FR-004                 | `authority`, `concurrency`, `recovery`: historical signal revision differs from current CAS and accepted stage revisions.                                                                 |
+| FR-005                 | `publication`, `concurrency`, `authority`, `bounds`: exact CAS, token/fence/owner, inclusive expiry, cancellation.                                                                        |
+| FR-006                 | `publication`, `recovery`: real reservation precedes publisher; uncertain acknowledgement grants no permission.                                                                           |
+| FR-007                 | `publication`, `concurrency`, `bounds`: original fresh-only invocation, replay/reentrancy/races/late acknowledgement suppression.                                                         |
+| FR-008                 | `recovery`, `changes`, `examples`: crash-before-invocation, lost response, no automatic replacement occurrence.                                                                           |
+| FR-009                 | `receipt`, `failure`: independent bound normalized witness, wrong/ambiguous/echo evidence blocked.                                                                                        |
+| FR-010                 | `receipt`, `recovery`, `decision`: no decision before durable matching publication; late original receipt reconciliation.                                                                 |
+| FR-011                 | `publication`, `examples`: exact rendering, both commands and immutable binding, no required-byte truncation.                                                                             |
+| FR-012                 | `decision`, `examples`: both exact whole-comment commands; 112/113-byte assertions.                                                                                                       |
+| FR-013                 | `decision`: quoted/prose/newline/double-space/unsupported/wrong-binding/development-only input never resolves.                                                                            |
+| FR-014                 | `decision`, `ordering`, `bounds`: event/action/actor/binding-specific grant, denied versus unresolved, no late grant.                                                                     |
+| FR-015                 | `ordering`: fixed anchor/snapshot/cursor, complete contiguous immutable ordinals; misleading opaque IDs never sort.                                                                       |
+| FR-016                 | `decision`, `ordering`, `concurrency`, `changes`: one combined resolution slot; first eligible grant, edits/deletes/replay cannot replace it.                                             |
+| FR-017                 | `changes`, `examples`: durable nonapproving change request; separately authorized revised occurrence and new human review.                                                                |
+| FR-018                 | `decision`, `recovery`, `target`: uncertain resolution is not effective approval; historical durable state and target handoff separate.                                                   |
+| FR-019                 | `test`, `history`, `recovery`, `failure`: unreadable, unreserved, consumed, publication-confirmed, approved/changes states and stable failures.                                           |
+| FR-020                 | `concurrency`, `publication`: original request/record isolation; same J with changed token remains a ledger idempotency conflict; no rebase/retry.                                        |
+| FR-021                 | `history`, `failure`, `bounds`, `dependencies`: schema-v1 same-state checkpoints, exact ID byte widths, real highest-generation corruption, capacities and no private storage dependency. |
+| FR-022                 | `target`, `target-race`, `authority`: independent original/current target, no current-ledger historical inference; cursor-only change does not change design.                             |
+| FR-023                 | `publication`, `concurrency`, `dependencies`: preserve host phase/status; no execution/lifecycle vocabulary or forbidden runtime imports.                                                 |
+| FR-024                 | `bounds`, `target-race`, `publication`: exact serialized-byte/count boundaries, aggregate counters, call ceilings/deadlines, pre-copy checks, retirement and no hidden retries.           |
+| FR-025                 | `failure`, `publication`, `concurrency`: portable durable-artifact/result sentinel scans and minimized error projection; no body/prose/token/session diagnostics.                         |
+| FR-026                 | `dependencies`, `examples`, all integration fixtures: root typed offline seams and Effect-free declarations, no live client or fabricated MCP evidence.                                   |
+
+| Conformance | Actual integrated case                                                                                                                                          |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CC-01       | `decision`: publication then explicit human grant then durable approval, three same-state checkpoints.                                                          |
+| CC-02       | `recovery`: reopen after durable reservation/lost acknowledgement before publisher, zero restart publication.                                                   |
+| CC-03       | `publication`, `recovery`: throwing/lost publisher response never creates another invocation.                                                                   |
+| CC-04       | `receipt`, `examples`: original late receipt reconciles without publisher dependency.                                                                           |
+| CC-05       | `receipt`: wrong item/design/target/content/scope/version, bare ID and echo rejected.                                                                           |
+| CC-06       | `decision`, `ordering`: denied and unresolved human grants cannot approve; unresolved earlier candidate blocks.                                                 |
+| CC-07       | `decision`: unsupported, quoted, malformed, ambiguous/prose command families do not resolve.                                                                    |
+| CC-08       | `decision`, `changes`: durable changes-requested, no implementation approval.                                                                                   |
+| CC-09       | `changes`, `target`: historical design cannot verify revised material or mismatched target.                                                                     |
+| CC-10       | `authority`: comment and discovery signals with/without independently current authority.                                                                        |
+| CC-11       | `concurrency`, `publication`: identical/different reservation races plus repeated/reentrant/recovered calls.                                                    |
+| CC-12       | `concurrency`, `ordering`: opposing resolution CAS and stable first-authorized event prefix.                                                                    |
+| CC-13       | `authority`, `publication`, `bounds`: wrong token, stale fence, inclusive expiry, late/cancelled acknowledgement.                                               |
+| CC-14       | `history`, `receipt`, `failure`, `bounds`: missing/malformed witnesses, malformed acknowledgements, real corrupt highest state and capacity stages fail closed. |
+| CC-15       | `target`, `target-race`: every descriptor dimension, missing/wrong challenge, stale/late/cancelled proof blocks handoff.                                        |
+| CC-16       | `decision`, `authority`, `changes`: development approval/provenance/old grants do not supply human product approval.                                            |
+
+| Invariant/control | Actual evidence                                                                                                                  |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| INV-001           | `publication`, `concurrency`, `recovery`, `bounds`: publisher invocation at most one per G.                                      |
+| INV-002           | `receipt`, `decision`, `failure`: no resolution before matching durable publication.                                             |
+| INV-003           | `history`, `changes`, `target`: exactly one immutable W/G/D binding.                                                             |
+| INV-004           | `decision`, `ordering`, `concurrency`: one shared durable resolution slot.                                                       |
+| INV-005           | `authority`, `decision`, `dependencies`: no watcher/development/execution authority substitution.                                |
+| INV-006           | `publication`, `failure`, `dependencies`: cursor ownership, same-state patches, public schema unchanged.                         |
+| INV-007           | `recovery`, `bounds`, `target-race`: uncertainty/cancellation only reduces action.                                               |
+| SC-001            | All CC rows above exercised in the 226 passing feature tests; independent W065 remains separate.                                 |
+| SC-002            | `publication`, `concurrency`, `recovery`: counted publisher invocations across races/crash/restart.                              |
+| SC-003            | `decision`, `receipt`, `changes`, `authority`, `target`: zero inappropriate effective approvals.                                 |
+| SC-004            | `recovery`, `failure`: actual portable ledger reopen/readback; corruption fails closed; no production Windows claim.             |
+| SC-005            | `publication`, `examples`, `recovery`, `target`: immutable proposal instructions and stable blocked reasons.                     |
+| SC-006            | `failure`, `dependencies`, `authority`: prohibited-field scans, offline graph, zero claim/execution transport capabilities.      |
+| SEC-001           | `history`, `publication`, `receipt`, `changes`, `bounds`: canonical full commitments and bounded immutable witnesses.            |
+| SEC-002           | `publication`, `concurrency`, `recovery`, `bounds`: original snapshots, fresh-only permission, expiry/late/replay safety.        |
+| SEC-003           | `receipt`, `decision`, `authority`, `dependencies`: separate publication/human/mutation/capability authorities.                  |
+| SEC-004           | `ordering`: certified immutable prefix and non-skippable unresolved authorization.                                               |
+| SEC-005           | `decision`, `examples`: exact grammar with no prose interpretation or development bypass.                                        |
+| SEC-006           | `bounds`, `failure`, `dependencies`: bounded processing/retention, fixed diagnostics, no prohibited persistence/runtime imports. |
+| SEC-007           | `target`, `target-race`: original commitment plus fresh independent request-bound target proof.                                  |
+
+Attainable byte ceilings are exercised at boundary/+1 for proposal, manifest, target, event body, normalized stream and public record; count/cursor/identifier limits are also covered. The combined selected package is explicitly tested with individually valid escaped fields that exceed its 16 KiB limit. Other ceilings are defensive upper bounds derived from the fixed entry graph and tighter component limits (for example, three normal reads plus the reserved recovery-read ceiling; the 150-call sum; aggregate records/bytes/visits and logical payload). They are not claims of measured peak JavaScript heap, forced reachability of every conservative ceiling, or hard termination of dishonest in-process dependencies. No coverage instrumentation percentage is claimed.
+
+### Preserved artifacts and final handoff
+
+Remeasured final authoritative SHA256 values:
+
+- `spec.md`: `A20B6AF76DDFE691905D2F53D63CDE5F2107D7CE1290E69CAA016715BFEC2D50`.
+- `plan.md`: `20607E6019746127293746FB28B71A385D4E75C51ADF065D8433A98B95A5EFBB`.
+- `docs/adr/0027-devsquad-ado-design-approval-gate.md`: `3B13033900291A180CCEE80148F869FFB3DC1EAC754C1AD447AE88BBAD1F5C1D`.
+
+All remain byte-unchanged and untracked, as at entry; `.memory/` remains untracked and untouched. ADR-0027 remains Proposed. Normal hooks ran on every commit; no force/amend/rebase/reset/history rewrite occurred. The invalid intermediate W061 GREEN claim and its failed boundary assertion were explicitly corrected in `ae929bd`, not concealed.
+
+W052–W064 are complete; W065 remains the parent's independent full-slice review against `e7e46dc..HEAD`. No independent review, live product approval, publication readiness, CI-policy enforcement or later-slice work is claimed here. No material spec drift was found. The exact same Copilot App trailer was verified on every continuation commit.
+
+Final evidence commit: `docs(design-gate): record integrated validation W064`.
+Trailer: `Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>`.
