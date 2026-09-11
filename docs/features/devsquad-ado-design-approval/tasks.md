@@ -1329,3 +1329,68 @@ No learning files were written under the standing N instruction. No further unde
 Completion commit subject: docs(design-gate): record independent slice review W065.
 
 Exact trailer: Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>.
+
+## Artifact inclusion and completed CI-policy preflight — 2026-09-11
+
+### Authorized inclusion and exact local provenance
+
+Turn-8 artifact-publication preparation explicitly authorizes including the three saved authoritative, previously untracked design artifacts in slice-15 Git history and appending this focused evidence. This is artifact management after local W048–W065 completion, not source implementation, renewed planning, or domain redesign. Earlier untracked/byte-identical and publication-policy-pending statements above describe their historical checkpoints; this appendix records the later inclusion and completed read-only policy preflight without rewriting those verdicts.
+
+- Worktree: C:\repos\copilot-worktrees\sandcastle\agent-team-slice15-loop.
+- Branch: users/davidsant/agent-team-slice15-loop; the verified integration/default branch is main, not this working branch.
+- Verified initial/final local implementation-completion HEAD: c6837c8578dc25ac262c4db62f00f5999c467676.
+- Exact independently reviewed HEAD: 4f7a9bb6ecdf1994b1aefd49b7d8a72f9d82bf45.
+- Exact final production/test source: e1cc5d898ba60276fd4205599383d8c43224eb75.
+- Full-slice baseline: e7e46dc76597d2e16782c779e8a8eaa4dd5accca.
+- Entry tracked/index state was clean. The only untracked entries were .memory/, spec.md, plan.md, and ADR-0027 at the exact paths below.
+- This commit is restricted to the three artifacts below plus docs/features/devsquad-ado-design-approval/tasks.md. Existing W065 verdicts and task evidence are retained; no source, manifest, lockfile, README, changeset, old draft, or local board edit is authorized.
+
+The three original SHA256 hashes were freshly measured and matched the approved saved originals before mutation. Installed repository Prettier required mechanical formatting for all three. The authorized change is **layout-only normalization, with no domain or literal-content amendment**; the included files are **not byte-identical** to those originals. Prettier's debug check passed on the originals, checking parsed-content preservation and formatting idempotence. No manual edits were made to spec.md, plan.md, or ADR-0027. Planning-era status/next-step wording is preserved as provenance, not a reopened checkpoint or a current implementation-status claim.
+
+| Included artifact                                  | Original saved SHA256                                            | Formatted inclusion SHA256                                       |
+| -------------------------------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------- |
+| docs/features/devsquad-ado-design-approval/spec.md | A20B6AF76DDFE691905D2F53D63CDE5F2107D7CE1290E69CAA016715BFEC2D50 | 354A79E7EF7F05CDA6CD3963206972025207CF17FE6823B2AAFACA167474545C |
+| docs/features/devsquad-ado-design-approval/plan.md | 20607E6019746127293746FB28B71A385D4E75C51ADF065D8433A98B95A5EFBB | E8EE9812343600AE7530741A34A5A4B37130DD526ABF869BE09B283E5AC4D8DE |
+| docs/adr/0027-devsquad-ado-design-approval-gate.md | 3B13033900291A180CCEE80148F869FFB3DC1EAC754C1AD447AE88BBAD1F5C1D | 2741F231C363F90931488B5357F2E83F4BD10BED96D5155E0FEE2911B0D02DE8 |
+
+The earlier independent reviews are **local prepublication evidence obtained before this external policy preflight**, not post-publication review, remote CI, or finalization. Including these documents does not change the reviewed production/test source or promote any ADR to Accepted. ADR-0025/0026/0027 remain Proposed. Old halted drafts in users-davidsant-turbo-parakeet remain entirely untouched. The sole .memory/board-config.md retains SHA256 F512088889E5374045B26F429CFCF22B519E408EDF028277FDFB57D6FE681057 and remains untracked/unpublished; no learning or local-board files are included.
+
+### Completed independent read-only CI-policy preflight
+
+Attribution: independent agent **slice15-ci-policy**, observed **2026-09-11 17:23:46–17:24:25 UTC**. The following is the completed preflight supplied by the conductor, not GitHub requests rerun by this artifact-inclusion worker. Authentication was child-scoped; no secret/token values are recorded and no authentication change is performed here. REST paths below are relative to /repos/davidsantf/sandcastle unless stated otherwise; base and source mean the exact branch names identified below.
+
+| Read-only observation                      | Actual response/evidence                                                                                                                                                                                         |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Child-scoped GitHub identity               | Verified gh account davidsantf; GET /user returned 200.                                                                                                                                                          |
+| Repository identity and permission         | GET /repos/davidsantf/sandcastle returned 200; owner type User; default branch main; permissions admin, maintain, push, and pull all true. GraphQL viewerPermission was ADMIN.                                   |
+| Planned remote base                        | users/davidsant/symmetrical-train; GET branch returned 200 at e7e46dc76597d2e16782c779e8a8eaa4dd5accca.                                                                                                          |
+| Predecessor PR 21                          | Open, non-draft, unmerged; head users/davidsant/symmetrical-train at the planned-base SHA above; its base users/davidsant/ubiquitous-train at 9ff6e8e9f74792e131e927bd9bf41358e36cea95.                          |
+| Planned remote source                      | users/davidsant/agent-team-slice15-loop; branch GET returned 404 Branch not found; exact git-ref GET also returned 404. All-state PR lookup returned 200 with []; no remote source SHA or new source PR existed. |
+| Base classic protection                    | Branch protected: false; protection disabled; check enforcement off; contexts and checks empty. GET /branches/{base}/protection returned 404 Branch not protected.                                               |
+| Applicable branch rules                    | GET /rules/branches/{base} returned 200 []; GET /rules/branches/{source} returned 200 [].                                                                                                                        |
+| Repository and inherited rulesets          | GET /rulesets?includes_parents=true&per_page=100 returned 200 [] with no continuation.                                                                                                                           |
+| GraphQL classic branch-protection patterns | branchProtectionRules(first:100): totalCount 0, nodes [], hasNextPage false.                                                                                                                                     |
+| Absent-source protection caveat            | GET /branches/{source}/protection returned 404 Branch not found. This response is not used alone as proof of an unprotected source branch.                                                                       |
+
+**Disposition: POLICY CLEAR at that snapshot, not CI PASS.** The inspected policy surfaces showed no required checks, required workflows, classic protection patterns, active applicable rules, or inherited rulesets. No bypass is inferred from administrator permission or absent checks. This does not claim that workflow files do not exist, that CI ran, or that any run succeeded on the current local or future remote HEAD. Policies and refs can change; publication/current-head run assessment remains separate.
+
+### Validation performed here and retained limitations
+
+Using installed dependencies and the repository configuration, the artifact worker executed the following over explicit paths only:
+
+| Command/check                                                        | Actual result                                                                                                                                     |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Initial Prettier --check on spec.md, plan.md, ADR-0027, and tasks.md | Exit 1: only the three saved untracked artifacts required formatting; tasks.md passed. This was a format check, not a failed test or commit hook. |
+| Prettier --debug-check on those four original documents              | Exit 0: parsed-content preservation and formatting idempotence checks passed.                                                                     |
+| Prettier --write on only spec.md, plan.md, and ADR-0027              | Exit 0; resulting SHA256 values are recorded above.                                                                                               |
+| Initial Git branch, HEAD, working-tree, and index checks             | Expected branch and c6837c8578dc25ac262c4db62f00f5999c467676 verified; tracked/index clean before edits.                                          |
+
+The final four-file formatting, whitespace, staged-scope, source-equality, commit-hook, and post-commit identity checks belong to this documentation-only commit handoff. Normal .husky/pre-commit runs npx lint-staged; its configured Markdown action is prettier --write. No hooks are disabled and only the four explicit documents may be staged. Commit subject: docs(design-gate): include approved design artifacts. Final trailer: Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>. The exact resulting commit SHA is returned in the handoff rather than invented or amended into this self-referential artifact.
+
+No code tests, typecheck, builds, or source-review reruns are claimed here. Prior attributed verification remains: affected 1028 passed / 2 existing platform skips; feature 296 passed in 18 files; typecheck, fresh ESM/DTS, public declaration guard, and 31-file formatting checks, as detailed in W065. The accepted global baseline remains **2077 passed / 171 failed / 8 skipped**, not global PASS. The canonical Windows rm/cp postbuild limitation remains separate from unsupported production ledger permissions/directory-sync; neither is fixed or certified by document inclusion.
+
+### Publication remains pending
+
+There is **no push or PR creation in this artifact-preparation step**. The conductor's mandatory new-PR tool is currently bound to the unrelated davidsant-work checkout/repository and exposes no repository/worktree selector. Never knowingly create a PR in the wrong repository. Do not substitute gh pr create unless a failure from the mandatory tool explicitly permits it. The conductor owns the post-policy final gate/publication workflow, or must report the concrete tool-binding blocker; this appendix does not claim that blocker is resolved.
+
+No current-head remote CI success, post-publication/external final review, live ADO action, merge, ADR acceptance, or human product-design decision is claimed. Local W048–W065 completion and development approval are not product human approval or external finalization. Preserve the existing baseline, platform, operational, and security-evidence limitations until separately verified within their actual scope.
