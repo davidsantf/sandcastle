@@ -552,6 +552,13 @@ persisted. Necessary public IDs and explicitly authorized initial workflow value
 remain public. Hosts should keep correlation labels nonsecret and bound upstream
 payloads as well as the library's recognized fields.
 
+Executable failures from supplied signal listener registration/removal are
+sanitized as observation/page failures. Earlier acknowledged cursor advances and
+signals remain available, and retained claims still receive final cleanup. Each
+attempt retires its child/timer and attempts listener removal once, including
+partially throwing registration; a throwing host adapter cannot be guaranteed to
+have actually removed its listener.
+
 ### Authorized no-comment admission and signal interpretation
 
 Only a matched item whose initial guarded record read reports missing can enter

@@ -38,8 +38,8 @@ const baseRecord = (): DevSquadAdoWorkflowRecord => ({
   activeClaim: null,
   fencingCounter: 1,
 });
-const fixture = () => {
-  let record = baseRecord();
+const fixture = (workItemId = "137") => {
+  let record = { ...baseRecord(), workItemId };
   const requests: { method: Method; input: unknown }[] = [];
   const success = <T>(outcome: T) => ({
     ok: true as const,
@@ -62,7 +62,7 @@ const fixture = () => {
     acquireClaim: vi.fn(async (input) => {
       requests.push({ method: "acquireClaim", input });
       const authority = {
-        workItemId: "137",
+        workItemId,
         ownerId: input.ownerId,
         claimToken: input.claimToken,
         fencingValue: record.fencingCounter + 1,
@@ -133,7 +133,7 @@ const fixture = () => {
     },
     passId: "recovery",
     ownerId: "watch-a",
-    candidates: [137],
+    candidates: [workItemId],
     intakeRules: { phases: ["implement"], statuses: ["ready"] },
     budgets: {
       maxPolls: 1,
@@ -292,6 +292,127 @@ describe("W046 SKEP1 initial missing-read provenance", () => {
           },
         });
       expect(f.ledger.acquireClaim).not.toHaveBeenCalled();
+    },
+  );
+});
+
+// SKEP2 / FR-001/005-007/051-053/057-060/069 / CC-012/025/027-028/037.
+describe("W046 SKEP2 executable signal listener failures", () => {
+  it.each(
+    ["supplied", "discovery"].flatMap((mode) =>
+      ["add", "remove"].map((method) => ({ mode, method })),
+    ),
+  )(
+    "contains $method throws in $mode while preserving prior acknowledgement and finalization",
+    async ({ mode, method }) => {
+      const first = discoveryFixture();
+      const second = fixture("138");
+      const ambiguous = {
+        ok: false as const,
+        error: { kind: "storage" as const, outcome: "indeterminate" as const },
+      };
+      const secondCheckpoint = vi.fn(async () => ambiguous);
+      const secondLedger = { ...second.ledger, checkpoint: secondCheckpoint };
+      const forItem = (id: unknown) =>
+        String(id) === "137" ? first.ledger : secondLedger;
+      const ledger: DevSquadAdoWorkflowLedger = {
+        ...first.ledger,
+        readRecord: (input) => forItem(input).readRecord(input),
+        acquireClaim: (input) => forItem(input.workItemId).acquireClaim(input),
+        renewClaim: (input) => forItem(input.workItemId).renewClaim(input),
+        checkpoint: (input) => forItem(input.workItemId).checkpoint(input),
+        releaseClaim: (input) => forItem(input.workItemId).releaseClaim(input),
+      };
+      // A listener method can throw after partially registering, or before removing.
+      // Only the removal attempt can be guaranteed for arbitrary host adapters.
+      const listeners = new Set<unknown>();
+      const faultAt = mode === "supplied" ? 2 : 4;
+      let adds = 0,
+        removes = 0;
+      const addEventListener = vi.fn((_type: string, listener: unknown) => {
+        listeners.add(listener);
+        if (++adds === faultAt && method === "add")
+          throw new Error("private-listener-error");
+      });
+      const removeEventListener = vi.fn((_type: string, listener: unknown) => {
+        if (++removes === faultAt && method === "remove")
+          throw new Error("private-listener-error");
+        listeners.delete(listener);
+      });
+      const signal = {
+        aborted: false,
+        addEventListener,
+        removeEventListener,
+      } as unknown as AbortSignal;
+      const page = vi.fn<
+        RunDevSquadAdoDiscoveryWatchPassOptions["seam"]["discoverWorkItemsPage"]
+      >(async (request) => ({
+        ...request,
+        items:
+          request.pageOrdinal === 1
+            ? [
+                { workItemId: 137, facts: {} },
+                { workItemId: 138, facts: {} },
+              ]
+            : [],
+        next:
+          request.pageOrdinal === 1
+            ? { kind: "continue", continuation: "private-page-token" }
+            : { kind: "terminal" },
+      }));
+      const result =
+        mode === "supplied"
+          ? await runDevSquadAdoWorkflowWatchPass({
+              ...first.options,
+              ledger,
+              candidates: [137, 138],
+              signal,
+            })
+          : await runDevSquadAdoWorkflowWatchPass({
+              ...first.input,
+              ledger,
+              signal,
+              seam: { ...first.input.seam, discoverWorkItemsPage: page },
+            });
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error("unexpected validation failure");
+      expect(result.value.signals).toHaveLength(1);
+      expect(result.value.signals[0]).toMatchObject({ workItemId: "137" });
+      expect(first.read().observations.workItemCommentId).toBe("481");
+      expect(result.value.outcomes[0]).toMatchObject({
+        kind: "acted",
+        cleanup: { status: "released" },
+      });
+      expect(first.ledger.releaseClaim).toHaveBeenCalledTimes(1);
+      expect(addEventListener).toHaveBeenCalledTimes(faultAt);
+      expect(removeEventListener).toHaveBeenCalledTimes(faultAt);
+      expect(listeners.size).toBe(method === "remove" ? 1 : 0);
+      if (mode === "discovery") {
+        expect(result.value).toMatchObject({
+          traversal: { status: "incomplete", reason: "page-failed" },
+          counts: { pageCalls: method === "add" ? 1 : 2, cleanupReleased: 2 },
+        });
+        expect(result.value.outcomes[1]).toMatchObject({
+          kind: "failed",
+          reason: "checkpoint-indeterminate",
+          cleanup: { status: "released" },
+        });
+        expect(secondCheckpoint).toHaveBeenCalledTimes(2);
+        expect(second.ledger.releaseClaim).toHaveBeenCalledTimes(1);
+        expect(secondCheckpoint.mock.calls[0]).toEqual(
+          secondCheckpoint.mock.calls[1],
+        );
+      } else {
+        expect(result.value.outcomes[1]).toMatchObject({
+          kind: "failed",
+          reason: "observation-failed",
+          cleanup: { status: "not-required" },
+        });
+        expect(second.ledger.acquireClaim).not.toHaveBeenCalled();
+      }
+      expect(JSON.stringify(result)).not.toMatch(
+        /private-listener-error|private-page-token|claimToken/,
+      );
     },
   );
 });

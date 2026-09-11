@@ -92,58 +92,50 @@ export const raceDevSquadAdoWatcherSeamCall = async <T>(
       resolve({ kind: "timeout" });
     };
   });
-  request.signal?.addEventListener("abort", cancel, { once: true });
-  if (request.signal?.aborted) {
-    cancel();
-    request.signal.removeEventListener("abort", cancel);
-    return { kind: "timeout" };
-  }
-  let work: Promise<T>;
+  // W046 SKEP2 / FR-051-053/059: captured listener methods still execute
+  // caller code. Contain both registration and removal, including partial adds.
+  let outcome: RaceOutcome<T> = { kind: "rejected" };
   try {
-    work = Promise.resolve(invoke(child.signal));
-  } catch {
-    child.abort();
-    timer.abort();
-    request.signal?.removeEventListener("abort", cancel);
-    return { kind: "rejected" };
-  }
-  const observed: Promise<RaceOutcome<T>> = work.then(
-    (value) => {
-      return { kind: "value", value } as const;
-    },
-    () => {
-      return { kind: "rejected" } as const;
-    },
-  );
-
-  // The timeout is armed on its own signal so a settled observation can retire
-  // it immediately instead of leaving the host's timer pending for the whole
-  // configured timeout.
-
-  // The delay is caller-supplied and no more trusted than the seam itself, so
-  // a synchronous throw is treated exactly like a rejected delay: the bound
-  // cannot be armed, so the observation is never allowed to run unbounded and
-  // no untyped error escapes the pass.
-  const armTimeout = (): Promise<RaceOutcome<T>> => {
-    try {
-      return Promise.resolve(
-        request.delay(request.observationTimeoutMs, timer.signal),
-      ).then(
-        () => ({ kind: "timeout" }) as const,
-        () => ({ kind: "timeout" }) as const,
+    request.signal?.addEventListener("abort", cancel, { once: true });
+    if (request.signal?.aborted) {
+      cancel();
+      outcome = { kind: "timeout" };
+    } else {
+      const work = Promise.resolve(invoke(child.signal));
+      const observed: Promise<RaceOutcome<T>> = work.then(
+        (value) => ({ kind: "value", value }) as const,
+        () => ({ kind: "rejected" }) as const,
       );
-    } catch {
-      return Promise.resolve({ kind: "timeout" } as const);
+      // A separate signal retires the host timer immediately after settlement.
+      // A throwing/rejecting delay still fails closed as a timeout.
+      const armTimeout = (): Promise<RaceOutcome<T>> => {
+        try {
+          return Promise.resolve(
+            request.delay(request.observationTimeoutMs, timer.signal),
+          ).then(
+            () => ({ kind: "timeout" }) as const,
+            () => ({ kind: "timeout" }) as const,
+          );
+        } catch {
+          return Promise.resolve({ kind: "timeout" } as const);
+        }
+      };
+      outcome = await Promise.race([observed, armTimeout(), cancelled]);
     }
-  };
-
-  try {
-    return await Promise.race([observed, armTimeout(), cancelled]);
+  } catch {
+    outcome = { kind: "rejected" };
   } finally {
     child.abort();
     timer.abort();
-    request.signal?.removeEventListener("abort", cancel);
+    try {
+      // Exactly one removal attempt, even when registration partially threw.
+      request.signal?.removeEventListener("abort", cancel);
+    } catch {
+      // We cannot guarantee that a throwing host adapter removed its listener.
+      outcome = { kind: "rejected" };
+    }
   }
+  return outcome;
 };
 
 const isIdentifier = (value: unknown): value is string =>
