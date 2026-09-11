@@ -433,9 +433,11 @@ export async function resolveGateDecision(
       selected.prefix,
     ]);
     const read = await lifecycle.call("read", () => c.read(W));
-    const before = read?.ok ? inspectDesignGateRecord(read.value, W) : null;
+    const before = read?.ok
+      ? inspectDesignGateRecord(read.value, W, lifecycle)
+      : null;
     if (!before) throw new GateFault("evidence-unavailable");
-    const history = reduceGateHistory(before, G);
+    const history = reduceGateHistory(before, G, lifecycle);
     if (!history.ok || !history.gate || history.gate.publication !== X)
       throw new GateFault("conflicting-gate-history");
     result = {
@@ -527,7 +529,13 @@ export async function resolveGateDecision(
     );
     const rejection = gateLedgerRejection(ack);
     if (rejection) return { ...result, reason: rejection };
-    const fresh = freshGateAcknowledgement(ack, original, before, check());
+    const fresh = freshGateAcknowledgement(
+      ack,
+      original,
+      before,
+      check(),
+      lifecycle,
+    );
     if (!fresh) return result;
     return {
       ...result,

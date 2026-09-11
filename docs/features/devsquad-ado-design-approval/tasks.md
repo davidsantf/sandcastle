@@ -327,7 +327,7 @@ Every task inherits the saved spec and plan, including:
 
 ### W056: Enforce aggregate budgets and retire late work
 
-- [ ] **W056** Complete cross-stage resource accounting and continuation retirement in `src/DevSquadAdoDesignApprovalLifecycle.ts`, `src/DevSquadAdoDesignApprovalValidation.ts`, and `src/DevSquadAdoDesignApproval.bounds.test.ts`.
+- [x] **W056** Complete cross-stage resource accounting and continuation retirement in `src/DevSquadAdoDesignApprovalLifecycle.ts`, `src/DevSquadAdoDesignApprovalValidation.ts`, and `src/DevSquadAdoDesignApproval.bounds.test.ts`.
   - Parent: US15-02; supports every scenario.
   - Dependency: W055.
   - Estimate: L, 1.5 to 2 engineer-days. Risk: High.
@@ -877,3 +877,14 @@ All execution CLI calls explicitly select the authorized worktree. No LSP tools 
 - Public crash/reopen schedules cover durable reservation/publication/resolution with lost acknowledgements, missing original capability/witnesses, and original receipt reconciliation after publisher response loss. Recover reports retained stage revisions separately from latest record revision and never creates permission. Start/reconcile preserve observed historical resolution under intervening reads.
 - Prettier and diff checks pass. Scope: API, history projection, stage result composition, attached tests, evidence. No global, packaging or production platform claim.
 - Commit: feat(design-gate): recover consumed attempt outcomes W055. Trailer: Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>.
+
+### W056 executed evidence
+
+- Baseline W055 82e5d20. FR-005–008/014/019/024–026 and SEC-002/006 liveness/bounds controls.
+- RED: npm test -- DevSquadAdoDesignApproval.bounds --reporter=dot exit 1: 2 failures / 14 passes. Late monotonic response was accepted before timer dispatch, and malformed scalar invoked dependency toJSON before rejection. Both are now guarded at root cause.
+- GREEN affected selector npm test -- DevSquadAdoDesignApproval DevSquadAdoWorkflowLedger --reporter=dot exit 0: 219 passed / 2 existing skips, 14 files. Bounds file expanded to 28 tests. Final feature-only regression after in-place acknowledgement comparison: 155 passed in 9 files; npm run typecheck exit 0.
+- Call ceilings sum exactly 150 (4+3+3+1+1+1+8+128+1); every failed call consumes budget. Integrated 8-page/128-human path passes; ninth-page path stops with dependency-limit and no resolution. Whole/per-call monotonic deadlines, timer expiry, cancellation across six seams, late page/human/publisher settlement and predecessor late reservation acknowledgement are exercised.
+- Incremental fixed-field projection now rejects nonprimitive scalars before serialization; aggregate record/byte/history-pass counters enforce 7 / 112 MiB / 210000 visits. Acknowledgement compares originals in place rather than constructing a third full record. Recovery shares the bounded lifecycle.
+- Boundary coverage includes reviewed multibyte bytes (prior tests), body 4096/4097, artifacts 64/65, identifier 256/257, cursor 1024/1025, events 16/17, checkpoints 10000/10001, oversized agent/session histories. Fixed schema/resource ceilings that cannot be reached by a supported entry path remain defensive limits, not claims of heap isolation.
+- Prettier/diff checks pass. No hard termination of noncooperating adapters, cancellation of unsettled ledger writes, global suite, or production platform success claimed.
+- Commit: feat(design-gate): enforce bounded dependency lifecycles W056. Trailer: Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>.

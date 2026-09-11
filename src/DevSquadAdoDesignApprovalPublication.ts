@@ -331,9 +331,9 @@ export async function startGatePublication(
     const response = await lifecycle.call("read", () => read(W));
     if (!response || response.ok !== true)
       throw new GateFault("evidence-unavailable");
-    const record = inspectDesignGateRecord(response.value, W);
+    const record = inspectDesignGateRecord(response.value, W, lifecycle);
     if (!record) throw new GateFault("evidence-unavailable");
-    const history = reduceGateHistory(record, G);
+    const history = reduceGateHistory(record, G, lifecycle);
     if (!history.ok) throw new GateFault("conflicting-gate-history");
     const binding = {
       workItemId: W,
@@ -485,6 +485,7 @@ export async function startGatePublication(
       original,
       record,
       checkAuthority(),
+      lifecycle,
     );
     if (!fresh) return result;
     result = {
@@ -674,9 +675,9 @@ async function confirmGatePublication(
     const response = await lifecycle.call("read", () => read(W));
     if (!response || response.ok !== true)
       throw new GateFault("evidence-unavailable");
-    const before = inspectDesignGateRecord(response.value, W);
+    const before = inspectDesignGateRecord(response.value, W, lifecycle);
     if (!before) throw new GateFault("evidence-unavailable");
-    const history = reduceGateHistory(before, G);
+    const history = reduceGateHistory(before, G, lifecycle);
     if (
       !history.ok ||
       !history.gate ||
@@ -785,6 +786,7 @@ async function confirmGatePublication(
       original,
       before,
       checkAuthority(),
+      lifecycle,
     );
     if (!fresh) return result;
     return resolveGateDecision(

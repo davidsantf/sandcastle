@@ -1,3 +1,7 @@
+import {
+  GateFault,
+  GateLifecycle,
+} from "./DevSquadAdoDesignApprovalLifecycle.js";
 import { gateRevisions } from "./DevSquadAdoDesignApprovalHistory.js";
 import { startGatePublication } from "./DevSquadAdoDesignApprovalPublication.js";
 import { reduceGateHistory } from "./DevSquadAdoDesignApprovalHistory.js";
@@ -22,6 +26,8 @@ export interface DevSquadAdoDesignRecoveryRequest {
 }
 /** Read-only host dependency boundary. */
 export interface DevSquadAdoDesignRecoveryDependencies {
+  /** Monotonic deadline clock; defaults to performance.now. */
+  readonly monotonicNow?: () => number;
   /** Public read only; no claim or checkpoint operations are needed. */
   readonly ledger: Pick<DevSquadAdoWorkflowLedger, "readRecord">;
 }
@@ -130,31 +136,14 @@ export async function recoverDevSquadAdoDesignApproval(
     )
       return failed("invalid-input");
     if (signal?.aborted) return failed("cancelled");
-    // W048: retire read continuation on timeout/abort, including late rejection.
-    const response = await new Promise<unknown>((resolve) => {
-      let active = true;
-      const finish = (value: unknown) => {
-        if (!active) return;
-        active = false;
-        clearTimeout(timer);
-        signal?.removeEventListener("abort", abort);
-        resolve(value);
-      };
-      const abort = () => finish("cancelled");
-      const timer = setTimeout(() => finish("dependency-timeout"), 5000);
-      signal?.addEventListener("abort", abort, { once: true });
-      if (signal?.aborted) {
-        abort();
-        return;
-      }
-      try {
-        Promise.resolve(readRecord.call(ledger, workItemId)).then(finish, () =>
-          finish(null),
-        );
-      } catch {
-        finish(null);
-      }
-    });
+    // W056: read-only recovery uses the same budgets and continuation retirement.
+    const lifecycle = new GateLifecycle(
+      signal,
+      dependencies.monotonicNow ?? (() => performance.now()),
+    );
+    const response: unknown = await lifecycle.call("read", () =>
+      readRecord.call(ledger, workItemId),
+    );
     if (signal?.aborted || response === "cancelled") return failed("cancelled");
     if (response === "dependency-timeout") return failed("dependency-timeout");
     if (
@@ -165,9 +154,13 @@ export async function recoverDevSquadAdoDesignApproval(
       !("value" in response)
     )
       return failed("evidence-unavailable");
-    const record = inspectDesignGateRecord(response.value, workItemId);
+    const record = inspectDesignGateRecord(
+      response.value,
+      workItemId,
+      lifecycle,
+    );
     if (!record) return failed("evidence-unavailable");
-    const history = reduceGateHistory(record, occurrence);
+    const history = reduceGateHistory(record, occurrence, lifecycle);
     if (!history.ok) return failed("conflicting-gate-history");
     const gate = history.gate;
     if (gate)
@@ -204,8 +197,8 @@ export async function recoverDevSquadAdoDesignApproval(
       binding: { workItemId, occurrence },
       knownRevision: record.revision,
     };
-  } catch {
-    return failed("invalid-input");
+  } catch (error) {
+    return failed(error instanceof GateFault ? error.reason : "invalid-input");
   }
 }
 

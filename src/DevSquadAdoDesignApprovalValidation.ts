@@ -1,3 +1,7 @@
+import {
+  GateFault,
+  type GateLifecycle,
+} from "./DevSquadAdoDesignApprovalLifecycle.js";
 import type {
   DevSquadAdoWorkflowRecord,
   DevSquadAdoWorkItemId,
@@ -172,9 +176,11 @@ const record = (v: unknown, id: string): v is ObjectValue => {
 export function inspectDesignGateRecord(
   value: unknown,
   workItemId: string,
+  lifecycle?: GateLifecycle,
 ): DevSquadAdoWorkflowRecord | null {
   try {
     let bytes = 0;
+    let visits = 0;
     const charge = (count: number) => {
       bytes += count;
       if (bytes > 16 * 1024 * 1024) throw new Error("evidence-unavailable");
@@ -183,7 +189,13 @@ export function inspectDesignGateRecord(
     const scalar: Projector = (value) => {
       if (typeof value === "string" && (value.length > 4096 || !unicode(value)))
         throw new Error("evidence-unavailable");
-      if (value === undefined) throw new Error("evidence-unavailable");
+      if (
+        value !== null &&
+        typeof value !== "string" &&
+        typeof value !== "number" &&
+        typeof value !== "boolean"
+      )
+        throw new Error("evidence-unavailable");
       const serialized = JSON.stringify(value);
       if (typeof serialized !== "string" || serialized.length > 24578)
         throw new Error("evidence-unavailable");
@@ -223,6 +235,7 @@ export function inspectDesignGateRecord(
         const length = value.length;
         if (!Number.isSafeInteger(length) || length < 0 || length > maximum)
           throw new Error("ledger-fault");
+        visits += length;
         charge(2 + Math.max(0, length - 1));
         const result: unknown[] = [];
         for (let index = 0; index < length; index++) {
@@ -287,9 +300,11 @@ export function inspectDesignGateRecord(
     });
 
     const projected = recordProjection(value);
+    lifecycle?.inspectRecord(bytes, visits * 2);
     if (!record(projected, workItemId)) return null;
     return projected as unknown as DevSquadAdoWorkflowRecord;
-  } catch {
+  } catch (error) {
+    if (error instanceof GateFault) throw error;
     return null;
   }
 }

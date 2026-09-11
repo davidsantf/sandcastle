@@ -11,6 +11,7 @@ export function freshGateAcknowledgement(
   original: CheckpointDevSquadAdoWorkflowInput,
   before: DevSquadAdoWorkflowRecord,
   now: number,
+  lifecycle?: import("./DevSquadAdoDesignApprovalLifecycle.js").GateLifecycle,
 ): DevSquadAdoWorkflowRecord | null {
   try {
     if (
@@ -43,7 +44,11 @@ export function freshGateAcknowledgement(
       Date.parse(v.acceptedAt) >= Date.parse(claim.expiresAt)
     )
       return null;
-    const after = inspectDesignGateRecord(v.record, before.workItemId);
+    const after = inspectDesignGateRecord(
+      v.record,
+      before.workItemId,
+      lifecycle,
+    );
     if (
       !after ||
       after.revision !== v.acceptedRevision ||
@@ -78,14 +83,33 @@ export function freshGateAcknowledgement(
       raw.resulting?.status !== entry.resulting.status
     )
       return null;
-    const expected = {
-      ...before,
-      revision: v.acceptedRevision,
-      updatedAt: v.acceptedAt,
-      checkpoints: [...before.checkpoints, entry],
-    };
-    if (JSON.stringify(after) !== JSON.stringify(expected)) return null;
-    if (!reduceGateHistory(after, original.operationId.split(".")[2]!).ok)
+    // W056: compare retained fields in place; do not construct a third full record.
+    if (after.checkpoints.length !== before.checkpoints.length + 1) return null;
+    lifecycle?.visitHistory(
+      before.checkpoints.length +
+        before.agent.history.length +
+        before.session.history.length,
+    );
+    for (const key of Object.keys(before) as Array<
+      keyof DevSquadAdoWorkflowRecord
+    >) {
+      if (key === "revision" || key === "updatedAt" || key === "checkpoints")
+        continue;
+      if (JSON.stringify(after[key]) !== JSON.stringify(before[key]))
+        return null;
+    }
+    for (let i = 0; i < before.checkpoints.length; i++)
+      if (
+        JSON.stringify(after.checkpoints[i]) !==
+        JSON.stringify(before.checkpoints[i])
+      )
+        return null;
+    if (JSON.stringify(after.checkpoints.at(-1)) !== JSON.stringify(entry))
+      return null;
+    if (
+      !reduceGateHistory(after, original.operationId.split(".")[2]!, lifecycle)
+        .ok
+    )
       return null;
     return after;
   } catch {

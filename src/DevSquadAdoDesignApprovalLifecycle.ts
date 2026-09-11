@@ -33,6 +33,26 @@ export class GateLifecycle {
   private readonly started: number;
   private latest: number;
   private retired = false;
+  private records = 0;
+  private ledgerBytes = 0;
+  private historyVisits = 0;
+  private totalCalls = 0;
+  /** W056: count every projection/validation/reduction pass, including failures. */
+  inspectRecord(bytes: number, visits: number): void {
+    this.records++;
+    this.ledgerBytes += bytes;
+    this.historyVisits += visits;
+    if (
+      this.records > 7 ||
+      this.ledgerBytes > 112 * 1024 * 1024 ||
+      this.historyVisits > 210000
+    )
+      throw new GateFault("dependency-limit");
+  }
+  visitHistory(visits: number): void {
+    this.historyVisits += visits;
+    if (this.historyVisits > 210000) throw new GateFault("dependency-limit");
+  }
   private readonly calls = new Map<Call, number>();
   constructor(
     private readonly signal: AbortSignal | undefined,
@@ -69,6 +89,8 @@ export class GateLifecycle {
     invoke: (signal: AbortSignal) => Promise<T>,
   ): Promise<T> {
     const remaining = this.check();
+    const callStarted = this.latest;
+    if (++this.totalCalls > 150) throw new GateFault("dependency-limit");
     const count = (this.calls.get(kind) ?? 0) + 1;
     if (count > limits[kind]) throw new GateFault("dependency-limit");
     this.calls.set(kind, count);
@@ -112,6 +134,11 @@ export class GateLifecycle {
       }
     });
     this.check();
+    if (this.latest - callStarted >= Math.min(remaining, deadlines[kind])) {
+      this.retired = true;
+      controller.abort();
+      throw new GateFault("dependency-timeout");
+    }
     return value;
   }
 }

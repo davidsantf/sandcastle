@@ -26,9 +26,11 @@ export interface GateHistory {
 export function reduceGateHistory(
   record: DevSquadAdoWorkflowRecord,
   occurrence: string,
+  lifecycle?: import("./DevSquadAdoDesignApprovalLifecycle.js").GateLifecycle,
 ):
   | { readonly ok: true; readonly gate: GateHistory | null }
   | { readonly ok: false } {
+  lifecycle?.visitHistory(record.checkpoints.length);
   const gates = new Map<string, GateHistory>();
   for (const checkpoint of record.checkpoints) {
     const id = checkpoint.operationId;
