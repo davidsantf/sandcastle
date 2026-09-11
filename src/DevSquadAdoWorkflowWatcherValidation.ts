@@ -699,3 +699,12 @@ export const computeDevSquadAdoWatcherBackoffDelayMs = (
   if (typeof jittered !== "number" || !Number.isFinite(jittered)) return 0;
   return Math.min(Math.max(Math.trunc(jittered), 0), input.maxIntervalMs);
 };
+
+/** W041 / FR-037a: initialization identity excludes pass, traversal and capability. */
+export const deriveDiscoveryInitializationId = (input: {
+  readonly workItemId: string;
+  readonly submissionId: string;
+  readonly phase: string;
+  readonly status: string;
+}): string =>
+  `dsw2.initialize.${sha256Hex(canonicalJson({ step: "initialize", workItemId: input.workItemId, submissionId: input.submissionId, phase: input.phase, status: input.status })).slice(0, 32)}`;

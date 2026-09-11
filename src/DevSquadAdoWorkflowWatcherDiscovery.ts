@@ -1,8 +1,21 @@
+import { randomBytes } from "node:crypto";
 import type {
   DevSquadAdoDiscoveryCandidateOutcome,
   DevSquadAdoDiscoveryIntakeSignal,
+  DevSquadAdoDiscoveryPageRequest,
+  DevSquadAdoDiscoveryPassOutcome,
+  DevSquadAdoDiscoveryTraversal,
+  RunDevSquadAdoDiscoveryWatchPassOptions,
 } from "./DevSquadAdoWorkflowWatcher.js";
-import { guardDevSquadAdoWatcherLedger } from "./DevSquadAdoWorkflowWatcherLedger.js";
+import {
+  prepareDevSquadAdoDiscovery,
+  prepareDiscoveryPage,
+  type PreparedDiscoveryItem,
+} from "./DevSquadAdoWorkflowWatcherDiscoveryValidation.js";
+import {
+  guardDevSquadAdoWatcherLedger,
+  guardDiscoveryInitializer,
+} from "./DevSquadAdoWorkflowWatcherLedger.js";
 import {
   createWatcherCandidateState,
   runCandidateStep,
@@ -10,31 +23,35 @@ import {
   type PassContext,
   type CandidateState,
 } from "./DevSquadAdoWorkflowWatcherPass.js";
-import { randomBytes } from "node:crypto";
-import type {
-  DevSquadAdoDiscoveryPageRequest,
-  DevSquadAdoDiscoveryPassOutcome,
-  DevSquadAdoDiscoveryTraversal,
-  RunDevSquadAdoDiscoveryWatchPassOptions,
-} from "./DevSquadAdoWorkflowWatcher.js";
 import {
-  prepareDiscoveryPage,
-  prepareDevSquadAdoDiscovery,
-} from "./DevSquadAdoWorkflowWatcherDiscoveryValidation.js";
+  createDiscoveryAdmission,
+  runDiscoveryAdmission,
+  type DiscoveryAdmissionState,
+} from "./DevSquadAdoWorkflowWatcherAdmission.js";
 import { raceDevSquadAdoWatcherSeamCall } from "./DevSquadAdoWorkflowWatcherObservation.js";
 import { computeDevSquadAdoWatcherBackoffDelayMs } from "./DevSquadAdoWorkflowWatcherValidation.js";
-
 const readClock = (clock: () => Date): Date | null => {
   try {
-    const value = clock();
-    const timestamp = Date.prototype.getTime.call(value);
-    return Number.isFinite(timestamp) ? new Date(timestamp) : null;
+    const stamp = Date.prototype.getTime.call(clock());
+    return Number.isFinite(stamp) ? new Date(stamp) : null;
   } catch {
     return null;
   }
 };
+interface DiscoveredState {
+  readonly item: PreparedDiscoveryItem;
+  observation: CandidateState | null;
+  admission: DiscoveryAdmissionState | null;
+  outcome: DevSquadAdoDiscoveryCandidateOutcome | null;
+}
+const noClaim = {
+  status: "not-required",
+  reason: "no-claim-acquired",
+  ledgerErrorKind: null,
+  acceptedRevision: null,
+} as const;
 
-/** W039 / FR-061–064: invocation-local empty-page tracer, never a durable cursor. */
+/** W040/W041: one bounded traversal and shared guarded item effects, no durable continuation. */
 export const runDevSquadAdoDiscoveryWatchPass = async (
   input: RunDevSquadAdoDiscoveryWatchPassOptions,
 ): Promise<DevSquadAdoDiscoveryPassOutcome> => {
@@ -61,19 +78,79 @@ export const runDevSquadAdoDiscoveryWatchPass = async (
     signals: [],
     cancelled: false,
   };
-  const states: CandidateState[] = [];
-  const outcomes: DevSquadAdoDiscoveryCandidateOutcome[] = [];
-  const seen = new Set<string>();
+  const initialize = guardDiscoveryInitializer(options.ledger);
+  const states: DiscoveredState[] = [],
+    signals: DevSquadAdoDiscoveryIntakeSignal[] = [];
+  const seen = new Set<string>(),
+    continuations = new Set<string>();
   const traversalId = randomBytes(32).toString("hex");
-  const continuations = new Set<string>();
   let continuation: string | null = null;
-  let lastReading = startedAt;
-  let polls = 0;
-  let pageCalls = 0;
-  let pagesValidated = 0;
-  let terminalPageSeen = false;
+  let lastReading = startedAt,
+    polls = 0,
+    pageCalls = 0,
+    pagesValidated = 0,
+    terminalPageSeen = false;
   let reason: DevSquadAdoDiscoveryTraversal["reason"] = "invalid-page";
-
+  const pending = () => states.some((s) => s.admission?.pending);
+  const step = async (state: DiscoveredState, now: Date): Promise<void> => {
+    if (options.signal?.aborted) return;
+    if (state.admission) {
+      const signal = await runDiscoveryAdmission(
+        state.admission,
+        initialize,
+        options.intakeRules,
+        options.signal,
+      );
+      if (signal) signals.push(signal);
+      state.outcome = state.admission.outcome;
+      return;
+    }
+    if (state.outcome) return;
+    const { item } = state;
+    if (item.matching.decision !== "matched") {
+      state.outcome = {
+        category: "matching",
+        workItemId: item.workItemId,
+        kind: "skipped",
+        reason:
+          item.matching.decision === "facts-missing"
+            ? "matching-facts-missing"
+            : "matching-paused",
+        matching: item.matching,
+        cleanup: noClaim,
+      };
+      return;
+    }
+    const observation =
+      state.observation ?? createWatcherCandidateState(item.workItemId);
+    state.observation = observation;
+    await runCandidateStep(context, observation, now);
+    const result = await finalizeWatcherCandidate(context, observation);
+    for (const signal of context.signals.splice(0))
+      signals.push({ ...signal, kind: "comment-observation" });
+    if (result.reason === "record-not-found") {
+      state.admission = createDiscoveryAdmission(
+        item.workItemId,
+        item.matching,
+        validated.discovery.authorizations?.find(
+          (a) => a.workItemId === item.workItemId,
+        ),
+      );
+      const signal = await runDiscoveryAdmission(
+        state.admission,
+        initialize,
+        options.intakeRules,
+        options.signal,
+      );
+      if (signal) signals.push(signal);
+      state.outcome = state.admission.outcome;
+    } else
+      state.outcome = {
+        ...result,
+        category: "observation",
+        matching: item.matching,
+      };
+  };
   for (;;) {
     if (options.signal?.aborted) {
       reason = "cancelled";
@@ -81,10 +158,6 @@ export const runDevSquadAdoDiscoveryWatchPass = async (
     }
     if (polls >= validated.maxPolls) {
       reason = "poll-budget-exhausted";
-      break;
-    }
-    if (pageCalls >= limits.maxPageCalls) {
-      reason = "page-budget-exhausted";
       break;
     }
     const now = readClock(options.clock);
@@ -101,133 +174,89 @@ export const runDevSquadAdoDiscoveryWatchPass = async (
       break;
     }
     polls++;
-    const identity: Omit<DevSquadAdoDiscoveryPageRequest, "signal"> =
-      Object.freeze({
-        binding: validated.binding,
-        traversalId,
-        pageOrdinal: pageCalls + 1,
-        continuation,
-      });
+    for (const state of states)
+      if (state.admission?.pending) await step(state, now);
     if (options.signal?.aborted) {
       reason = "cancelled";
       break;
     }
-    const response = await raceDevSquadAdoWatcherSeamCall(
-      (signal) => {
-        pageCalls++;
-        const request: DevSquadAdoDiscoveryPageRequest = Object.freeze({
-          ...identity,
-          signal,
+    if (!terminalPageSeen) {
+      if (pageCalls >= limits.maxPageCalls) {
+        reason = "page-budget-exhausted";
+        break;
+      }
+      const identity: Omit<DevSquadAdoDiscoveryPageRequest, "signal"> =
+        Object.freeze({
+          binding: validated.binding,
+          traversalId,
+          pageOrdinal: pageCalls + 1,
+          continuation,
         });
-        return seam.discoverWorkItemsPage(request);
-      },
-      {
-        signal: options.signal,
-        delay: options.delay,
-        observationTimeoutMs: validated.observationTimeoutMs,
-      },
-    );
-    if (options.signal?.aborted) {
-      reason = "cancelled";
-      break;
-    }
-    if (response.kind !== "value") {
-      reason = response.kind === "timeout" ? "page-timeout" : "page-failed";
-      break;
-    }
-    const page = prepareDiscoveryPage(
-      response.value,
-      identity,
-      validated.discovery,
-      seen,
-      continuations,
-    );
-    if (!page.ok) {
-      reason = page.reason;
-      break;
-    }
-    if (options.signal?.aborted) {
-      reason = "cancelled";
-      break;
-    }
-    pagesValidated++;
-    const next = page.next;
-    for (const item of page.items) {
-      seen.add(item.workItemId);
-      const cleanup = {
-        status: "not-required",
-        reason: "no-claim-acquired",
-        ledgerErrorKind: null,
-        acceptedRevision: null,
-      } as const;
-      if (item.matching.decision !== "matched") {
-        outcomes.push({
-          category: "matching",
-          workItemId: item.workItemId,
-          kind: "skipped",
-          reason:
-            item.matching.decision === "facts-missing"
-              ? "matching-facts-missing"
-              : "matching-paused",
-          matching: item.matching,
-          cleanup,
-        });
-        continue;
+      const response = await raceDevSquadAdoWatcherSeamCall(
+        (signal) => {
+          pageCalls++;
+          return seam.discoverWorkItemsPage(
+            Object.freeze({ ...identity, signal }),
+          );
+        },
+        {
+          signal: options.signal,
+          delay: options.delay,
+          observationTimeoutMs: validated.observationTimeoutMs,
+        },
+      );
+      if (options.signal?.aborted) {
+        reason = "cancelled";
+        break;
+      }
+      if (response.kind !== "value") {
+        reason = response.kind === "timeout" ? "page-timeout" : "page-failed";
+        break;
+      }
+      const page = prepareDiscoveryPage(
+        response.value,
+        identity,
+        validated.discovery,
+        seen,
+        continuations,
+      );
+      if (!page.ok) {
+        reason = page.reason;
+        break;
       }
       if (options.signal?.aborted) {
-        outcomes.push({
-          category: "unprocessed",
-          workItemId: item.workItemId,
-          kind: "skipped",
-          reason: "discovery-not-processed",
-          matching: item.matching,
-          cleanup,
-        });
-        continue;
+        reason = "cancelled";
+        break;
       }
-      const state = createWatcherCandidateState(item.workItemId);
-      states.push(state);
-      await runCandidateStep(context, state, now);
-      const result = await finalizeWatcherCandidate(context, state);
-      if (result.reason === "record-not-found") {
-        const authorization = validated.discovery.authorizations?.find(
-          (a) => a.workItemId === item.workItemId,
-        );
-        outcomes.push({
-          category: "admission",
-          workItemId: item.workItemId,
-          kind: "skipped",
-          reason:
-            authorization?.kind === "unavailable" &&
-            authorization.reason === "initial-state-missing"
-              ? "admission-initial-state-missing"
-              : "admission-not-authorized",
-          matching: item.matching,
-          cleanup,
-        });
-      } else
-        outcomes.push({
-          ...result,
-          category: "observation",
-          matching: item.matching,
-        });
+      pagesValidated++;
+      if (page.next.kind === "terminal") terminalPageSeen = true;
+      else {
+        continuation = page.next.continuation;
+        continuations.add(continuation);
+      }
+      const added: DiscoveredState[] = [];
+      for (const item of page.items) {
+        seen.add(item.workItemId);
+        const state: DiscoveredState = {
+          item,
+          observation: null,
+          admission: null,
+          outcome: null,
+        };
+        states.push(state);
+        added.push(state);
+      }
+      for (const state of added) await step(state, now);
     }
     if (options.signal?.aborted) {
       reason = "cancelled";
       break;
     }
-    if (next.kind === "terminal") {
-      terminalPageSeen = true;
+    if (terminalPageSeen && !pending()) {
       reason = "terminal-page";
       break;
     }
-    continuations.add(next.continuation);
-    continuation = next.continuation;
-    if (options.signal?.aborted) {
-      reason = "cancelled";
-      break;
-    }
-    if (pageCalls >= limits.maxPageCalls) {
+    if (!terminalPageSeen && pageCalls >= limits.maxPageCalls) {
       reason = "page-budget-exhausted";
       break;
     }
@@ -251,6 +280,17 @@ export const runDevSquadAdoDiscoveryWatchPass = async (
       break;
     }
   }
+  const outcomes: DevSquadAdoDiscoveryCandidateOutcome[] = states.map(
+    (s) =>
+      s.outcome ?? {
+        category: "unprocessed",
+        workItemId: s.item.workItemId,
+        kind: "skipped",
+        reason: "discovery-not-processed",
+        matching: s.item.matching,
+        cleanup: noClaim,
+      },
+  );
   if (options.signal?.aborted) reason = "cancelled";
   const traversal: DevSquadAdoDiscoveryTraversal =
     reason === "terminal-page"
@@ -275,20 +315,26 @@ export const runDevSquadAdoDiscoveryWatchPass = async (
       polls,
       stopReason,
       traversal,
+      outcomes,
+      signals,
       counts: {
         pageCalls,
         pagesValidated,
         discovered: seen.size,
         evaluated: seen.size,
-        admitted: 0,
+        admitted: states.filter(
+          (s) => s.admission?.outcome.acceptance.kind === "fresh",
+        ).length,
+        initializationReplayed: states.filter(
+          (s) => s.admission?.outcome.acceptance.kind === "replayed",
+        ).length,
         paused: outcomes.filter((o) => o.category === "matching").length,
         processed: outcomes.filter((o) => o.category !== "unprocessed").length,
-        initializationReplayed: 0,
-        examined: states.filter((s) => s.examined).length,
-        eligible: states.filter((s) => s.eligible).length,
-        acted: context.signals.length,
+        examined: states.filter((s) => s.observation?.examined).length,
+        eligible: states.filter((s) => s.observation?.eligible).length,
+        acted: signals.length,
         noChange: outcomes.filter((o) => o.kind === "no-change").length,
-        suppressed: states.filter((s) => s.suppressed).length,
+        suppressed: states.filter((s) => s.observation?.suppressed).length,
         skipped: outcomes.filter((o) => o.kind === "skipped").length,
         failed: outcomes.filter((o) => o.kind === "failed").length,
         cleanupReleased: outcomes.filter((o) => o.cleanup.status === "released")
@@ -302,13 +348,6 @@ export const runDevSquadAdoDiscoveryWatchPass = async (
           (o) => o.cleanup.status === "not-required",
         ).length,
       },
-      outcomes,
-      signals: context.signals.map(
-        (signal): DevSquadAdoDiscoveryIntakeSignal => ({
-          ...signal,
-          kind: "comment-observation",
-        }),
-      ),
     },
   };
 };

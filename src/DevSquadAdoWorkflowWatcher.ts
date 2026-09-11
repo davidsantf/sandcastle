@@ -802,25 +802,61 @@ export interface DevSquadAdoDiscoveryMatchingEvidence {
     readonly outcome: "matched" | "unmatched" | "missing";
   }[];
 }
-/** Discovery observation signals preserve the supplied signal fields unchanged. */
-export type DevSquadAdoDiscoveryIntakeSignal = DevSquadAdoWatchIntakeSignal & {
-  readonly kind: "comment-observation";
-};
-/** Policy pauses and unavailable admission have no claim or invented cursor. */
+/** Fresh-only claim-free admission; never carries synthetic comment metadata (W041). */
+export interface DevSquadAdoDiscoveryAdmissionSignal {
+  readonly kind: "discovery-admission";
+  readonly workItemId: string;
+  readonly acceptedInitializationRevision: 1;
+  readonly phase: string;
+  readonly status: string;
+  readonly matching: DevSquadAdoDiscoveryMatchingEvidence;
+  readonly authorization: "host-authorized";
+}
+/** Discovery signals do not widen the historical supplied signal type. */
+export type DevSquadAdoDiscoveryIntakeSignal =
+  | (DevSquadAdoWatchIntakeSignal & { readonly kind: "comment-observation" })
+  | DevSquadAdoDiscoveryAdmissionSignal;
+/** Original durable initialization acceptance, separate from latest record revision. */
+export type DevSquadAdoDiscoveryAdmissionAcceptance =
+  | {
+      readonly kind: "fresh" | "replayed";
+      readonly acceptedRevision: 1;
+      readonly acceptedAt: string;
+    }
+  | { readonly kind: "unconfirmed" | "none" };
+/** Admission-only disposition: no claim/release obligation, even after uncertainty. */
+export interface DevSquadAdoDiscoveryAdmissionOutcome {
+  readonly category: "admission";
+  readonly workItemId: string;
+  readonly kind: "acted" | "no-change" | "skipped" | "failed";
+  readonly reason:
+    | DevSquadAdoWatchReasonCode
+    | "admission-accepted"
+    | "admission-intake-rules-unmatched"
+    | "admission-replayed"
+    | "admission-already-recorded"
+    | "admission-not-authorized"
+    | "admission-initial-state-missing"
+    | "initialization-indeterminate";
+  readonly matching: DevSquadAdoDiscoveryMatchingEvidence;
+  readonly acceptance: DevSquadAdoDiscoveryAdmissionAcceptance;
+  readonly ledgerErrorKind: DevSquadAdoWatchLedgerErrorKind | null;
+  readonly cleanup: DevSquadAdoWatchCleanup;
+}
+/** Discovery outcomes retain minimized matching evidence and truthful cleanup. */
 export type DevSquadAdoDiscoveryCandidateOutcome =
   | (DevSquadAdoWatchCandidateOutcome & {
       readonly category: "observation";
       readonly matching: DevSquadAdoDiscoveryMatchingEvidence;
     })
+  | DevSquadAdoDiscoveryAdmissionOutcome
   | {
-      readonly category: "matching" | "admission" | "unprocessed";
+      readonly category: "matching" | "unprocessed";
       readonly workItemId: string;
       readonly kind: "skipped";
       readonly reason:
         | "matching-paused"
         | "matching-facts-missing"
-        | "admission-not-authorized"
-        | "admission-initial-state-missing"
         | "discovery-not-processed";
       readonly matching: DevSquadAdoDiscoveryMatchingEvidence;
       readonly cleanup: DevSquadAdoWatchCleanup;

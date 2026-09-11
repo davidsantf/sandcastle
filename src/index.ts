@@ -332,3 +332,9 @@ export type {
   DevSquadAdoDiscoveryIntakeSignal,
   DevSquadAdoDiscoveryCandidateOutcome,
 } from "./DevSquadAdoWorkflowWatcher.js";
+
+export type {
+  DevSquadAdoDiscoveryAdmissionSignal,
+  DevSquadAdoDiscoveryAdmissionAcceptance,
+  DevSquadAdoDiscoveryAdmissionOutcome,
+} from "./DevSquadAdoWorkflowWatcher.js";

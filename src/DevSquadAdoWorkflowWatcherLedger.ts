@@ -170,6 +170,7 @@ const errorProjection: Projector = (value) => {
   return projected;
 };
 const outcomeProjections = {
+  initializeRecord: { kind: "initialized", project: fields({}) },
   acquireClaim: {
     kind: "claim-acquired",
     project: fields({
@@ -407,6 +408,7 @@ const error = (v: unknown, id: string): boolean => {
 };
 
 type Method =
+  | "initializeRecord"
   | "readRecord"
   | "acquireClaim"
   | "renewClaim"
@@ -442,6 +444,40 @@ const valid = <T>(
   )
     return false;
   const latest = value.record;
+  // W041: initialization may acknowledge revision one with a valid later record.
+  // This exception must not relax nonreplayed checkpoint/claim/release guards.
+  if (method === "initializeRecord") {
+    if (
+      value.outcome.kind !== "initialized" ||
+      value.acceptedRevision !== 1 ||
+      value.acceptedAt !== latest.createdAt
+    )
+      return false;
+    const checkpoints = latest.checkpoints as ObjectValue[];
+    const initial = checkpoints.length ? checkpoints[0]!.previous : latest;
+    if (
+      !object(initial) ||
+      initial.phase !== request.phase ||
+      initial.status !== request.status
+    )
+      return false;
+    if (latest.revision !== 1) return true;
+    return (
+      latest.updatedAt === value.acceptedAt &&
+      latest.branch === null &&
+      latest.worktreePath === null &&
+      same(latest.agent, { current: null, history: [] }) &&
+      same(latest.session, { current: null, history: [] }) &&
+      same(latest.pullRequest, { id: null, url: null }) &&
+      same(latest.observations, {
+        workItemCommentId: null,
+        pullRequest: null,
+      }) &&
+      checkpoints.length === 0 &&
+      latest.activeClaim === null &&
+      latest.fencingCounter === 0
+    );
+  }
   const isLatestAcceptance = value.acceptedRevision === latest.revision;
   if (
     value.acceptedRevision > (latest.revision as number) ||
@@ -558,7 +594,7 @@ export const isDevSquadAdoWatcherCheckpointHistoryValid = (
 /** Guard all watcher-used ledger responses before trusting any payload. */
 export const guardDevSquadAdoWatcherLedger = (
   ledger: DevSquadAdoWorkflowLedger,
-): Pick<DevSquadAdoWorkflowLedger, Method> => {
+): Pick<DevSquadAdoWorkflowLedger, Exclude<Method, "initializeRecord">> => {
   const guarded =
     <I, T>(
       method: Method,
@@ -593,3 +629,43 @@ export const guardDevSquadAdoWatcherLedger = (
     ),
   };
 };
+
+/** W041 / SEC-A02: separate original, validation, request copy and bounded response. */
+export const guardDiscoveryInitializer =
+  (
+    ledger: DevSquadAdoWorkflowLedger,
+  ): DevSquadAdoWorkflowLedger["initializeRecord"] =>
+  async (input) => {
+    const expected = {
+      workItemId: input.workItemId,
+      operationId: input.operationId,
+      phase: input.phase,
+      status: input.status,
+    };
+    const supplied = { ...expected };
+    const response: unknown = await ledger.initializeRecord(supplied);
+    const result = responseProjection("initializeRecord", response);
+    for (const key of ["workItemId", "operationId", "phase", "status"] as const)
+      if (supplied[key] !== expected[key]) throw Error("ledger-fault");
+    for (const key of [
+      "branch",
+      "worktreePath",
+      "agentId",
+      "sessionId",
+      "pullRequest",
+      "observations",
+    ] as const)
+      if ((supplied as unknown as ObjectValue)[key] !== undefined)
+        throw Error("ledger-fault");
+    if (
+      !valid<
+        Awaited<
+          ReturnType<DevSquadAdoWorkflowLedger["initializeRecord"]>
+        > extends DevSquadAdoLedgerResult<infer T>
+          ? T
+          : never
+      >("initializeRecord", expected, result)
+    )
+      throw Error("ledger-fault");
+    return result;
+  };

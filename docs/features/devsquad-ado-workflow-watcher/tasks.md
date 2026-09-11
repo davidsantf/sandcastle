@@ -488,7 +488,7 @@ Every extension task inherits the global acceptance constraints and the followin
 
 ## Phase 15: Authorized No-Comment Admission
 
-- [ ] **W041** Implement fresh-only authorized initialization in `src/DevSquadAdoWorkflowWatcherAdmission.ts`, `src/DevSquadAdoWorkflowWatcherLedger.ts`, `src/DevSquadAdoWorkflowWatcherValidation.ts`, and `src/DevSquadAdoWorkflowWatcherDiscovery.ts`
+- [x] **W041** Implement fresh-only authorized initialization in `src/DevSquadAdoWorkflowWatcherAdmission.ts`, `src/DevSquadAdoWorkflowWatcherLedger.ts`, `src/DevSquadAdoWorkflowWatcherValidation.ts`, and `src/DevSquadAdoWorkflowWatcherDiscovery.ts`
   - **Parent:** Scenario 7. **Dependency:** W040. **Complexity/risk:** L / High.
   - Initialize only after whole-page matching, a method-valid `record-not-found`, exact canonical-item authorization with initial phase/status, and a fresh cancellation gate.
   - Submit only `{ workItemId, operationId, phase, status }`; leave cursors, PR/execution references, histories and claims absent. Missing authorization or explicit unavailable state performs zero initialization.
@@ -504,6 +504,8 @@ Every extension task inherits the global acceptance constraints and the followin
   - **RED→GREEN acceptance:** In `src/DevSquadAdoWorkflowWatcher.discovery.admission.test.ts`, use item `999` with no comments to cover authorized/unauthorized/state-unavailable paths; fresh/rules-unmatched/replay/already-exists/conflict outcomes; same/different submission publication races; unchanged operation identity across pass IDs; every guard success/error variant; request mutation; valid later records and contradictory acknowledgements. Assert zero observation/acquire/checkpoint/renew/release calls, pristine initialization, separately typed signals and at most one admission signal across overlapping passes.
   - **Traceability:** FR-020/022/025, FR-036–039, FR-040–046, FR-051/052, FR-054–060, FR-067–069; CC-009/024/029/031/037; TEST-015/033/039; SC-011; SEC-A01/02/05/07.
   - **Verify:** admission selector, combined watcher/ledger selector, focused history selector, `npm run typecheck`.
+
+- **W041 execution evidence (2026-09-10):** Integrated admission RED **32 failed / 23 passed**, then **61 admission tests passed** in the combined run. Combined watcher/ledger **554 passed / 2 existing Windows skips**; focused original-history selector **19 passed / 244 unselected**; typecheck passed. Fresh/rules-unmatched, authorization absence/state unavailable, same/different-submission races, stable cross-pass identity, bounded retained-request retries, all known error categories, malformed acknowledgements/request mutation and valid/contradictory later records exercised through the public pass. Initializer guard has a method-specific latest-record exception; checkpoint/claim/release rules remain unchanged. No observation or claim effects on initialization-only paths. This does not certify delivery after crash or accept W046.
 
 ## Phase 16: Explicit Retention Loss and Anchored Reentry
 
