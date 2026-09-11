@@ -931,7 +931,14 @@ All execution CLI calls explicitly select the authorized worktree. No LSP tools 
 
 - Baseline W060 641ecd3. FR-018/019/022–026, CC-09/15, SEC-006/007.
 - RED: npm test -- DevSquadAdoDesignApproval.target-race --reporter=dot exit 1: 2 failures / 4 passes. Cancellation/whole-deadline retirement inside final UTC-clock observation still returned verified-current.
-- GREEN affected selector npm test -- DevSquadAdoDesignApproval DevSquadAdoWorkflowLedger --reporter=dot exit 0: 263 passed / 2 existing skips, 19 files. Six new race cases. Typecheck exit 0; formatting/diff pass.
+- Initial affected verification: npm test -- DevSquadAdoDesignApproval DevSquadAdoWorkflowLedger --reporter=dot exit 1: 262 passed / 1 failed / 2 existing skips, 19 files. The exact-5000ms fixture mixed fixed UTC with real monotonic validation time. Typecheck passed. The command sequence incorrectly continued to commit da23426 with an invalid GREEN statement; this correction explicitly supersedes that statement, not the original observed failure.
 - Final handoff checks retirement after all host code and adds local monotonic validation time to reported observation age. Exactly 5000 ms accepted, 5001 blocked; late proof cannot change result. Independent current proof remains valid through ordinary host cursor advancement after durable approval. No execution instruction, lock or reauthorization promised.
 - Scope: target final-return guard, attached race tests, evidence. Historical approval and missing/changed target remain orthogonal.
 - Commit: fix(design-gate): preserve target proof freshness W061. Trailer: Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>.
+
+### W061 correction and verified completion
+
+- Commit da23426 was prematurely created after the above failed boundary assertion. No W062 work started on that state; no amend/reset/rebase was used.
+- Corrected exact-boundary fixture to use both deterministic UTC and monotonic clocks, consistent with the task's explicit schedule. Real elapsed validation time is still charged by production; the final cancellation/retirement guards are unchanged. One correction attempt, no learning file under the standing N disposition.
+- Actual GREEN rerun: npm test -- DevSquadAdoDesignApproval DevSquadAdoWorkflowLedger --reporter=dot exit 0, 263 passed / 2 existing skips across 19 files. npm run typecheck exit 0. Prettier/diff pass. W061 checkbox now reflects this verified completion.
+- Corrective commit scope: target-race fixture and truthful task evidence only. Subject test(design-gate): fix deterministic freshness boundary W061. Trailer: Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>.

@@ -69,6 +69,7 @@ it.each([5000, 5001])(
     const f = await fixture();
     const r = await start(request(f), {
       ...decisionAdapters(f),
+      monotonicNow: () => 0,
       verifyCurrentTarget: async (q: any) => proof(f, q, age),
     } as any);
     expect(r.durableState).toBe("approved");
