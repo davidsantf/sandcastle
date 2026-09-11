@@ -211,7 +211,7 @@ Every task inherits the saved spec and plan, including:
 
 ### W049: Recover canonical gate history
 
-- [ ] **W049** Implement canonical commitment decoding and complete gate-history recovery in `src/DevSquadAdoDesignApprovalValidation.ts`, `src/DevSquadAdoDesignApprovalHistory.ts`, and `src/DevSquadAdoDesignApproval.history.test.ts`.
+- [x] **W049** Implement canonical commitment decoding and complete gate-history recovery in `src/DevSquadAdoDesignApprovalValidation.ts`, `src/DevSquadAdoDesignApprovalHistory.ts`, and `src/DevSquadAdoDesignApproval.history.test.ts`.
   - Parent: US15-01.
   - Dependency: W048.
   - Estimate: M, 1 to 1.5 engineer-days. Risk: High.
@@ -802,3 +802,16 @@ All execution CLI calls explicitly select the authorized worktree. No LSP tools 
 - Reserved namespace histories fail closed until W049; no reserved-history support or publication is claimed. Portable test platform does not establish production Windows durability. Fresh build/declaration validation remains pending W064.
 - Commit scope: this evidence and four new W048 TypeScript files; Conventional subject feat(design-gate): add read-only recovery tracer W048. Commit identity is recorded in the next task evidence to avoid self-referential hashes.
 - Exact trailer: Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>
+
+### W049 executed evidence
+
+- Passing predecessor task commit W048: 3778a8d22a5f3dfbaf469c5061032789da9b1cb6 (required Copilot App trailer present).
+- Complete retained-history reducer, canonical full SHA-256 design derivation and exact dg15 grammar now recover all four stages without recreating publication permission. Gate state and unavailable external witness verification remain separate. FR-001/002/019-022/024/025, CC-09/14, INV-003/004/006/007, SC-004, SEC-001/002/006.
+- Setup evidence excluded from RED: first file-generation command had a quoting syntax error and no test file; the next runner found 25 fixture failures because full acquisition metadata was passed to the strict three-field checkpoint authority input. One fixture correction projected ownerId/claimToken/fencingValue, leaving production unchanged.
+- Genuine RED: npm test -- DevSquadAdoDesignApproval.history --reporter=dot, exit 1: 9 behavioral assertion failures, 16 passes. Valid durable histories remained unreadable under W048; no setup failure in this run.
+- GREEN: npm test -- DevSquadAdoDesignApproval --reporter=dot, exit 0: 38 passed across 2 files (25 W049 plus 13 W048). No exclusions/skips.
+- Regression: npm test -- DevSquadAdoDesignApproval DevSquadAdoWorkflowLedger --reporter=dot, exit 0: 7 files, 102 passed, 2 existing platform skips (104 total). Overlapping selectors are not additive.
+- npm run typecheck exit 0; changed source/test Prettier write exit 0; git diff --check exit 0.
+- Real public ledger checkpoint fixtures prove exact 226/182/226/226 bytes and same-state checkpoints. Malformed grammar, noncanonical encodings, mismatches, duplicate/conflicting stages, missing predecessors, state-changing entries, other occurrences, canonical work-item distinction, and irrelevant current references covered.
+- Limits: external witnesses are not reconstructed; history does not prove original capability equality; no publication or new mutation entry is enabled yet. No production platform or global-suite claim.
+- Commit scope: API, new history reducer, attached history tests, this evidence. Subject feat(design-gate): recover canonical gate history W049. Exact trailer: Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>.

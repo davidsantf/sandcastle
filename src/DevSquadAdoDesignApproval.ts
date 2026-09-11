@@ -1,3 +1,4 @@
+import { reduceGateHistory } from "./DevSquadAdoDesignApprovalHistory.js";
 import {
   canonicalWorkItem,
   isB32,
@@ -25,9 +26,18 @@ export interface DevSquadAdoDesignRecoveryDependencies {
 /** Minimized recovery result; no external evidence or execution permission. */
 export interface DevSquadAdoDesignApprovalResult {
   /** State established by bounded durable history inspection. */
-  readonly durableState: "unreserved" | "unreadable";
+  readonly durableState:
+    | "unreserved"
+    | "unreadable"
+    | "attempt-consumed"
+    | "publication-confirmed"
+    | "approved"
+    | "changes-requested";
   /** Whether the inspected evidence supports the reported state. */
-  readonly verificationStatus: "verified" | "evidence-unavailable";
+  readonly verificationStatus:
+    | "verified"
+    | "evidence-unavailable"
+    | "publication-unverified";
   /** Recovery does not infer an execution target. */
   readonly targetHandoff: "not-requested";
   /** Stable category, never dependency-controlled diagnostics. */
@@ -38,11 +48,20 @@ export interface DevSquadAdoDesignApprovalResult {
     | "cancelled"
     | "dependency-timeout"
     | "evidence-unavailable"
-    | "conflicting-gate-history";
+    | "conflicting-gate-history"
+    | "publication-evidence-unavailable";
   /** Canonical requested binding, only after validation. */
   readonly binding: {
     readonly workItemId: string;
     readonly occurrence: string;
+    /** Recovered immutable design commitment; not reconstructed content. */
+    readonly design?: string;
+    /** Reviewed content commitment. */
+    readonly proposal?: string;
+    /** Immutable artifact manifest commitment. */
+    readonly manifest?: string;
+    /** Explicit target commitment, independent of current ledger fields. */
+    readonly target?: string;
   } | null;
   /** Latest validated record revision, otherwise null. */
   readonly knownRevision: number | null;
@@ -116,11 +135,34 @@ export async function recoverDevSquadAdoDesignApproval(
       return failed("evidence-unavailable");
     const record = inspectDesignGateRecord(response.value, workItemId);
     if (!record) return failed("evidence-unavailable");
-    // Reserved histories intentionally remain blocked until W049's reducer.
-    if (
-      record.checkpoints.some((entry) => entry.operationId.startsWith("dg15"))
-    )
-      return failed("conflicting-gate-history");
+    const history = reduceGateHistory(record, occurrence);
+    if (!history.ok) return failed("conflicting-gate-history");
+    const gate = history.gate;
+    if (gate)
+      return {
+        durableState:
+          gate.action === "approve-design"
+            ? "approved"
+            : gate.action === "request-changes"
+              ? "changes-requested"
+              : gate.publication
+                ? "publication-confirmed"
+                : "attempt-consumed",
+        verificationStatus: gate.publication
+          ? "evidence-unavailable"
+          : "publication-unverified",
+        targetHandoff: "not-requested",
+        reason: "publication-evidence-unavailable",
+        binding: {
+          workItemId,
+          occurrence,
+          design: gate.design,
+          proposal: gate.proposal,
+          manifest: gate.manifest,
+          target: gate.target,
+        },
+        knownRevision: record.revision,
+      };
     return {
       durableState: "unreserved",
       verificationStatus: "verified",
