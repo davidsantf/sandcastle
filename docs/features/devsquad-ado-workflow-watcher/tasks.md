@@ -509,7 +509,7 @@ Every extension task inherits the global acceptance constraints and the followin
 
 ## Phase 16: Explicit Retention Loss and Anchored Reentry
 
-- [ ] **W042** Implement discovery observation retention evidence in `src/DevSquadAdoWorkflowWatcher.ts`, `src/DevSquadAdoWorkflowWatcherObservation.ts`, `src/DevSquadAdoWorkflowWatcherPass.ts`, and `src/index.ts`
+- [x] **W042** Implement discovery observation retention evidence in `src/DevSquadAdoWorkflowWatcher.ts`, `src/DevSquadAdoWorkflowWatcherObservation.ts`, `src/DevSquadAdoWorkflowWatcherPass.ts`, and `src/index.ts`
   - **Parent:** Scenario 8; supports Scenario 6. **Dependency:** W041. **Complexity/risk:** M / High.
   - Wire discovery-specific work-item and PR observation unions: bounded `window` or explicit `anchor-missing`. Retain existing durable `since` inputs and shared window validation.
   - Explicit retention loss with a supplied anchor yields `observation-anchor-missing`, including otherwise empty responses. Loss without a supplied anchor is invalid. Ordinary empty discovery windows mean known no-new-events; supplied empty behavior remains unchanged.
@@ -518,6 +518,9 @@ Every extension task inherits the global acceptance constraints and the followin
   - **RED→GREEN acceptance:** In `src/DevSquadAdoWorkflowWatcher.discovery.lifecycle.test.ts`, seed cursor `480`, exclude the item while `481` arrives, and assert unchanged revision/cursors and zero observation/mutation calls. Reenter and verify `since = 480`, durable advance to `481` and one comment signal. Cover explicit empty loss, nonempty absent anchor, PR loss blocking a valid WI advance, invalid loss without anchor, supplied empty-window control, optional PR method behavior, and suppression advancing cursors without intake.
   - **Traceability:** FR-014/015, FR-032–036a, FR-042, FR-051–053, FR-060, FR-066/069; CC-007/019/023/026/033/037; TEST-035/039; SC-012; SEC-A04/07.
   - **Verify:** lifecycle selector, watcher selector, `npm run typecheck`.
+
+- **W042 execution evidence (2026-09-10):** Fresh baseline after restoring missing development dependencies with `npm ci`: `npm test -- DevSquadAdoWorkflowWatcher DevSquadAdoWorkflowLedger` **554 passed / 2 Windows skips**, `npm run typecheck` passed. Integrated lifecycle RED **6 failed / 13 passed** (after one fixture correction), then GREEN **19 passed**. Combined watcher/ledger GREEN **573 passed / 2 Windows skips**. Separate `devsquad.implement.verify` reran lifecycle **19 passed**, combined **573 passed / 2 Windows skips**, focused `third independent history` **19 passed / 244 unselected**, typecheck, touched-file Prettier and `git diff --check`: scoped PASS. Tests prove persisted-anchor reentry, both-kind retention blocking, invalid unanchored loss, supplied compatibility and cursor-advancing suppression. Shared checkpoint/claim guards remain unchanged. `devsquad.implement.validate` found no spec drift; `devsquad.implement.execute` supplied RED/GREEN implementation, and the conductor records closure after verification. Existing root exports required no edit.
+- **W042 validation limitation:** An additional full `npm test` was interrupted after failures and has no final totals or comparable full-suite baseline. Missing `dist/main.js` and unavailable external `cp` were independently confirmed; AgentProvider session and other sandbox/worktree failures remain unclassified, not asserted preexisting or attributed to W042. Scoped verification passed; overall-suite success is not claimed. No packaging build or independent W046 review occurred. Dependency installation reported 49 audit findings; remediation is outside this task.
 
 ## Phase 17: Bounded Multi-Page Traversal
 

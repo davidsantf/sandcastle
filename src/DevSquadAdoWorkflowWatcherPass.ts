@@ -19,6 +19,7 @@ import type {
   DevSquadAdoWatchValidatedPass,
   DevSquadAdoWatcherObservationGeneration,
   DevSquadAdoWatcherObservationSeam,
+  DevSquadAdoWatcherDiscoverySeam,
   RunDevSquadAdoWorkflowWatchPassOptions,
 } from "./DevSquadAdoWorkflowWatcher.js";
 import { observeDevSquadAdoWatchCandidate } from "./DevSquadAdoWorkflowWatcherObservation.js";
@@ -88,7 +89,11 @@ export interface CandidateState {
 /** Shared guarded observation context for both intake modes (W040). */
 export interface PassContext {
   readonly ledger: ReturnType<typeof guardDevSquadAdoWatcherLedger>;
-  readonly seam: DevSquadAdoWatcherObservationSeam;
+  readonly seam:
+    | DevSquadAdoWatcherObservationSeam
+    | DevSquadAdoWatcherDiscoverySeam;
+  /** W042: preserve discovery retention evidence through the shared path. */
+  readonly mode: "supplied" | "discovery";
   readonly validated: DevSquadAdoWatchValidatedPass;
   readonly delay: (ms: number, signal?: AbortSignal) => Promise<void>;
   readonly signal: AbortSignal | undefined;
@@ -778,6 +783,7 @@ export const runCandidateStep = async (
 
   const observed = await observeDevSquadAdoWatchCandidate({
     seam: context.seam,
+    mode: context.mode,
     record,
     observationTimeoutMs: context.validated.observationTimeoutMs,
     delay: context.delay,
@@ -952,6 +958,7 @@ export const runDevSquadAdoWorkflowWatchPassImplementation = async (
   const context: PassContext = {
     ledger: guardDevSquadAdoWatcherLedger(options.ledger),
     seam: options.seam,
+    mode: "supplied",
     validated,
     delay: options.delay,
     signal: options.signal,

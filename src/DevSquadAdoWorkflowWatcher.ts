@@ -687,12 +687,19 @@ export interface DevSquadAdoDiscoveryPage {
     | { readonly kind: "continue"; readonly continuation: string };
 }
 
-/** Discovery distinguishes known retention loss from an ordinary empty window. */
+/**
+ * W042 / FR-066: discovery distinguishes known retention loss from an ordinary
+ * empty no-new-events window. Loss is valid only with a supplied durable anchor
+ * and prevents checkpointing either observation kind.
+ */
 export type DevSquadAdoDiscoveryWorkItemObservation =
   | ({ readonly kind: "window" } & DevSquadAdoWatcherWorkItemObservation)
   | { readonly kind: "anchor-missing" };
 
-/** Explicit PR retention-loss evidence; either kind's loss forbids checkpointing. */
+/**
+ * W042: PR retention loss requires a supplied cursor and forbids checkpointing
+ * either kind; an ordinary empty window preserves the existing cursor.
+ */
 export type DevSquadAdoDiscoveryPullRequestObservation =
   | ({ readonly kind: "window" } & DevSquadAdoWatcherPullRequestObservation)
   | { readonly kind: "anchor-missing" };

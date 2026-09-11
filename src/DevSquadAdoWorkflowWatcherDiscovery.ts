@@ -71,7 +71,9 @@ export const runDevSquadAdoDiscoveryWatchPass = async (
   const limits = validated.discovery.limits;
   const context: PassContext = {
     ledger: guardDevSquadAdoWatcherLedger(options.ledger),
-    seam: options.seam,
+    // W042: retain the captured discovery union, not the supplied-mode view.
+    seam,
+    mode: "discovery",
     validated: { ...validated, candidates: [] },
     delay: options.delay,
     signal: options.signal,

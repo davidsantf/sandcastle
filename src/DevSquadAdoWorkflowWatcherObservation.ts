@@ -5,8 +5,8 @@ import type {
 import type {
   DevSquadAdoWatchObservationKind,
   DevSquadAdoWatcherObservationSeam,
-  DevSquadAdoWatcherPullRequestObservation,
-  DevSquadAdoWatcherWorkItemObservation,
+  DevSquadAdoWatcherDiscoverySeam,
+  DevSquadAdoWatcherPullRequestObservationInput,
 } from "./DevSquadAdoWorkflowWatcher.js";
 import { MAX_OBSERVATION_IDENTIFIER_BYTES } from "./DevSquadAdoWorkflowWatcherValidation.js";
 
@@ -54,7 +54,11 @@ export type DevSquadAdoWatcherObservationOutcome =
 /** Everything one candidate observation needs from the pass. */
 export interface DevSquadAdoWatcherObservationRequest {
   /** Injected read-oriented observation seam. */
-  readonly seam: DevSquadAdoWatcherObservationSeam;
+  readonly seam:
+    | DevSquadAdoWatcherObservationSeam
+    | DevSquadAdoWatcherDiscoverySeam;
+  /** W042: only discovery requires explicit window/retention evidence. */
+  readonly mode?: "supplied" | "discovery";
   /** Durable record read at the start of this candidate step. */
   readonly record: DevSquadAdoWorkflowRecord;
   /** Per-observation timeout in milliseconds. */
@@ -161,7 +165,8 @@ type Projection<T> =
   | {
       readonly reason:
         | "invalid-observation-identifier"
-        | "invalid-observation-window";
+        | "invalid-observation-window"
+        | "observation-anchor-missing";
     };
 const invalidIdentifier = { reason: "invalid-observation-identifier" } as const;
 const invalidWindow = { reason: "invalid-observation-window" } as const;
@@ -176,11 +181,35 @@ const projectWindow = <T>(project: () => Projection<T>): Projection<T> => {
   }
 };
 
-const projectWorkItemComments = (
-  response: DevSquadAdoWatcherWorkItemObservation,
-): Projection<string> => {
+// W042 / FR-066 / CC-033: interpret retention evidence before reading the
+// window arm. Both modes then use the same bounded identifier projection.
+const projectObservation = <T>(
+  response: unknown,
+  mode: DevSquadAdoWatcherObservationRequest["mode"],
+  hasAnchor: boolean,
+  project: (response: unknown) => Projection<T>,
+): Projection<T> =>
+  projectWindow(() => {
+    if (mode === "discovery") {
+      if (
+        typeof response !== "object" ||
+        response === null ||
+        Array.isArray(response)
+      )
+        return invalidWindow;
+      const kind = (response as Record<string, unknown>).kind;
+      if (kind === "anchor-missing")
+        return hasAnchor
+          ? { reason: "observation-anchor-missing" }
+          : invalidWindow;
+      if (kind !== "window") return invalidWindow;
+    }
+    return project(response);
+  });
+
+const projectWorkItemComments = (response: unknown): Projection<string> => {
   if (typeof response !== "object" || response === null) return invalidWindow;
-  const ids: unknown = response.commentIds;
+  const ids: unknown = (response as Record<string, unknown>).commentIds;
   if (!Array.isArray(ids)) return invalidWindow;
   const length = ids.length;
   if (
@@ -207,10 +236,10 @@ const projectWorkItemComments = (
 };
 
 const projectPullRequestEntries = (
-  response: DevSquadAdoWatcherPullRequestObservation,
+  response: unknown,
 ): Projection<ProjectedPullRequestEntry> => {
   if (typeof response !== "object" || response === null) return invalidWindow;
-  const entries: unknown = response.entries;
+  const entries: unknown = (response as Record<string, unknown>).entries;
   if (!Array.isArray(entries)) return invalidWindow;
   const length = entries.length;
   if (
@@ -280,7 +309,7 @@ const selectNewEntries = <T>(
  * Invoke the seam for one candidate, project responses to opaque identifiers,
  * and select the entries newer than the persisted cursors.
  *
- * Only identifier fields are read from a seam response; every other property
+ * Only identifier fields and discovery's discriminator are read; every other property
  * is discarded at projection and can never reach durable state, results,
  * errors, or diagnostics.
  */
@@ -294,7 +323,7 @@ export const observeDevSquadAdoWatchCandidate = async (
   // transport problem that never happened.
   const aborted = (): boolean => request.signal?.aborted === true;
 
-  const workItemOutcome = await raceDevSquadAdoWatcherSeamCall(
+  const workItemOutcome = await raceDevSquadAdoWatcherSeamCall<unknown>(
     (signal) =>
       request.seam.observeWorkItemComments({
         workItemId: record.workItemId,
@@ -314,8 +343,11 @@ export const observeDevSquadAdoWatchCandidate = async (
       reason: aborted() ? "cancelled" : "observation-failed",
     };
   if (aborted()) return { ok: false, reason: "cancelled" };
-  const comments = projectWindow(() =>
-    projectWorkItemComments(workItemOutcome.value),
+  const comments = projectObservation(
+    workItemOutcome.value,
+    request.mode,
+    record.observations.workItemCommentId !== null,
+    projectWorkItemComments,
   );
   if ("reason" in comments) return { ok: false, reason: comments.reason };
   const commentIds = comments.value;
@@ -323,7 +355,11 @@ export const observeDevSquadAdoWatchCandidate = async (
   let pullRequestEntries: readonly ProjectedPullRequestEntry[] = [];
   const pullRequestId = record.pullRequest.id;
   if (pullRequestId !== null) {
-    let observePullRequestActivity;
+    let observePullRequestActivity:
+      | ((
+          input: DevSquadAdoWatcherPullRequestObservationInput,
+        ) => Promise<unknown>)
+      | undefined;
     try {
       observePullRequestActivity = request.seam.observePullRequestActivity;
     } catch {
@@ -351,8 +387,11 @@ export const observeDevSquadAdoWatchCandidate = async (
         ok: false,
         reason: aborted() ? "cancelled" : "observation-failed",
       };
-    const projected = projectWindow(() =>
-      projectPullRequestEntries(pullRequestOutcome.value),
+    const projected = projectObservation(
+      pullRequestOutcome.value,
+      request.mode,
+      record.observations.pullRequest !== null,
+      projectPullRequestEntries,
     );
     if (aborted()) return { ok: false, reason: "cancelled" };
     if ("reason" in projected) return { ok: false, reason: projected.reason };
