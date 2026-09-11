@@ -412,7 +412,7 @@ Every task inherits the saved spec and plan, including:
 
 ### W061: Preserve target freshness at return
 
-- [ ] **W061** Complete stale-target and approval-handoff race handling in `src/DevSquadAdoDesignApprovalTarget.ts`, `src/DevSquadAdoDesignApprovalLifecycle.ts`, and `src/DevSquadAdoDesignApproval.target-race.test.ts`.
+- [x] **W061** Complete stale-target and approval-handoff race handling in `src/DevSquadAdoDesignApprovalTarget.ts`, `src/DevSquadAdoDesignApprovalLifecycle.ts`, and `src/DevSquadAdoDesignApproval.target-race.test.ts`.
   - Parent: US15-05.
   - Dependency: W060.
   - Estimate: M, 0.5 to 1 engineer-day. Risk: High.
@@ -926,3 +926,12 @@ All execution CLI calls explicitly select the authorized worktree. No LSP tools 
 - Fixed descriptor/path/evidence bounds, UTC observation age <=5000ms, no current ledger reference inference, no executable instruction or lock. Target proof final-return hardening remains W061.
 - Changed TS formatting and diff checks pass. Scope: target module, API/composition, target tests/evidence. No filesystem/network/execution in target implementation.
 - Commit: feat(design-gate): verify current target evidence W060. Trailer: Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>.
+
+### W061 executed evidence
+
+- Baseline W060 641ecd3. FR-018/019/022–026, CC-09/15, SEC-006/007.
+- RED: npm test -- DevSquadAdoDesignApproval.target-race --reporter=dot exit 1: 2 failures / 4 passes. Cancellation/whole-deadline retirement inside final UTC-clock observation still returned verified-current.
+- GREEN affected selector npm test -- DevSquadAdoDesignApproval DevSquadAdoWorkflowLedger --reporter=dot exit 0: 263 passed / 2 existing skips, 19 files. Six new race cases. Typecheck exit 0; formatting/diff pass.
+- Final handoff checks retirement after all host code and adds local monotonic validation time to reported observation age. Exactly 5000 ms accepted, 5001 blocked; late proof cannot change result. Independent current proof remains valid through ordinary host cursor advancement after durable approval. No execution instruction, lock or reauthorization promised.
+- Scope: target final-return guard, attached race tests, evidence. Historical approval and missing/changed target remain orthogonal.
+- Commit: fix(design-gate): preserve target proof freshness W061. Trailer: Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>.

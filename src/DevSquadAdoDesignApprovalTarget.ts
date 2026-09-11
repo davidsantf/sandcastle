@@ -158,6 +158,7 @@ export async function verifyGateTarget(
           ? "target-mismatch"
           : "target-proof-unavailable",
       );
+    const receivedRemaining = lifecycle.check();
     const p = {
       workItemId: response.workItemId,
       occurrence: response.occurrence,
@@ -189,6 +190,10 @@ export async function verifyGateTarget(
       observed > now ||
       now - observed > 5000
     )
+      return blocked("target-proof-unavailable");
+    // W061: no awaited or host-supplied code after this final retirement check.
+    const remaining = lifecycle.check();
+    if (receivedRemaining - remaining + (now - observed) > 5000)
       return blocked("target-proof-unavailable");
     return { ...result, targetHandoff: "verified-current" };
   } catch (error) {
