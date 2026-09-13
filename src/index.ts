@@ -377,3 +377,21 @@ export type {
   DevSquadAdoDesignTargetRequest,
   DevSquadAdoDesignTargetVerifier,
 } from "./DevSquadAdoDesignApprovalTarget.js";
+
+// W070 / ADR-0028: one host-selected phase; no scheduler or live ADO adapter.
+export {
+  runDevSquadAdoPhase,
+  recoverDevSquadAdoPhase,
+} from "./DevSquadAdoPhaseRunner.js";
+export type {
+  DevSquadAdoPhaseInput,
+  RunDevSquadAdoPhaseRequest,
+  DevSquadAdoPhasePolicyRequest,
+  DevSquadAdoPhaseDesignRequest,
+  DevSquadAdoPhaseReceiptVerificationRequest,
+  DevSquadAdoPhaseTerminalReceiptVerifier,
+  DevSquadAdoPhasePreparationReceipt,
+  DevSquadAdoPhaseDependencies,
+  DevSquadAdoPhaseRecoveryDependencies,
+  DevSquadAdoPhaseResult,
+} from "./DevSquadAdoPhaseTypes.js";

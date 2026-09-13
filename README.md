@@ -2323,6 +2323,67 @@ slice 17 broader feedback routing; slice 18 human-confirmed finalization and
 pause/resume/cancel/status/audit; slice 19 real host-side ADO MCP transport.
 No later-slice execution, merge authority, or live integration is delivered here.
 
+## Host-selected DevSquad/ADO phase runner
+
+`runDevSquadAdoPhase()` executes **one phase occurrence selected by the host**.
+It does not choose phase names, advance a lifecycle, acquire or renew a claim, or
+contact ADO. A same-state schema-v1 checkpoint reserves the occurrence before any
+handler or Sandcastle invocation, and a second checkpoint records only a minimized
+terminal commitment after successful validation or a settled validation failure.
+
+```ts
+import {
+  runDevSquadAdoPhase,
+  recoverDevSquadAdoPhase,
+  type DevSquadAdoPhaseDependencies,
+  type RunDevSquadAdoPhaseRequest,
+} from "@ai-hero/sandcastle";
+
+async function runOneSelectedPhase(
+  request: RunDevSquadAdoPhaseRequest,
+  host: DevSquadAdoPhaseDependencies,
+) {
+  const result = await runDevSquadAdoPhase(request, host);
+  if (result.state === "pending") {
+    // Read only: never rotate occurrence IDs or retry an uncertain effect.
+    return recoverDevSquadAdoPhase(request, {
+      ledger: host.ledger,
+      utcNow: host.utcNow,
+      monotonicNow: host.monotonicNow,
+      verifyTerminalReceipt: host.verifyTerminalReceipt,
+    });
+  }
+  return result;
+}
+```
+
+The host must explicitly authorize the exact reservation, every dispatch, and the
+terminal mutation. Implementation also requires the retained slice-15 approval,
+a fresh trusted rehydration of its actual human/publication/material evidence, and
+a fresh exact target proof. The design verifier receives the captured execution
+mode and provider names; Sandcastle provider functions and configuration are
+snapshotted before the first await. Supplied execution seams remain supported.
+
+A terminal `dp16` operation ID is only a public integrity commitment. Another
+holder of generic workflow-ledger mutation authority can compute one, so recovery
+and repeat calls return a terminal state only when `verifyTerminalReceipt`
+rehydrates its exact policy/design/execution audit trail. Without that evidence
+the result is `blocked` with `receipt-unverified`.
+
+### Phase uncertainty runbook
+
+| Condition                                                                         | Safe host action                                                                                                 |
+| --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Reservation response missing, replayed, or malformed                              | Recover read-only. Do not dispatch or create another occurrence.                                                 |
+| Execution/validation timed out, was cancelled, or returned malformed evidence     | Treat the reservation as consumed. Investigate externally; do not retry automatically.                           |
+| Terminal response lost                                                            | Recover with the trusted terminal receipt verifier. The original effect is never repeated.                       |
+| Design, human, publication, provider, or target evidence missing/stale/mismatched | Restore authoritative evidence and invoke a new policy evaluation; never infer authority from historical labels. |
+| Ledger history malformed or overlapping                                           | Preserve the ledger and fail closed. Do not rewrite history.                                                     |
+
+Executable deterministic examples and threat cases are in
+`src/DevSquadAdoPhaseRunner*.test.ts`. This slice does not add feedback comments,
+finalization/adjudication, or a live ADO adapter.
+
 ## Development
 
 ```bash
