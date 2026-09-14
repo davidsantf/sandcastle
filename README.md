@@ -2434,6 +2434,38 @@ contains only fixed provenance commitments through the existing phase intent.
 Executable examples and threat cases are in
 `src/DevSquadAdoCommentFeedback*.test.ts`.
 
+## DevSquad/ADO human controls
+
+`runDevSquadAdoHumanControl()` exposes offline `status` and bounded `audit`
+queries plus explicitly human-authorized pause, resume, cancel, finalize, and
+uncertain-effect adjudication. It never interprets comments as decisions or
+calls ADO, GitHub, MCP, merge, or publication APIs.
+
+```ts
+import { runDevSquadAdoHumanControl } from "@ai-hero/sandcastle";
+
+const status = await runDevSquadAdoHumanControl(
+  { workItemId: 137, action: { kind: "status" } },
+  hostDependencies,
+);
+```
+
+Every mutation requires the exact current revision/state and claim capability,
+an immutable human-decision verifier, and a fresh exact policy grant. Ordinary
+controls cannot be inserted while a phase reservation is uncertain.
+`adjudicate` instead verifies the retained pending occurrence and records its
+canonical terminal checkpoint without redispatching the effect.
+
+| Result     | Safe host action                                                                        |
+| ---------- | --------------------------------------------------------------------------------------- |
+| `observed` | Display the minimized status/audit projection.                                          |
+| `recorded` | Rehydrate the accepted local decision before any separately authorized provider action. |
+| `blocked`  | Correct evidence, authority, policy, or expected-state input; do not infer approval.    |
+| `pending`  | Recover the exact operation; do not rotate its occurrence or repeat an external effect. |
+
+The human merge gate remains outside this API. Live ADO MCP transport is
+deferred to slice 19.
+
 ## Development
 
 ```bash

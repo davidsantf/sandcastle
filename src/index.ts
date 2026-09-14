@@ -416,3 +416,23 @@ export type {
   DevSquadAdoCommentFeedbackRecoveryDependencies,
   DevSquadAdoCommentFeedbackResult,
 } from "./DevSquadAdoCommentFeedbackTypes.js";
+
+// Slice 18: human decisions authorize bounded local control records, never provider actions.
+export { runDevSquadAdoHumanControl } from "./DevSquadAdoHumanControl.js";
+export type {
+  DevSquadAdoHumanDecision,
+  DevSquadAdoHumanControlReadAction,
+  DevSquadAdoHumanControlMutationKind,
+  DevSquadAdoHumanControlMutationAction,
+  DevSquadAdoHumanControlAdjudicationAction,
+  DevSquadAdoHumanControlAction,
+  DevSquadAdoHumanControlAuthorizedAction,
+  RunDevSquadAdoHumanControlRequest,
+  DevSquadAdoHumanControlVerificationRequest,
+  DevSquadAdoHumanControlPolicyRequest,
+  DevSquadAdoHumanControlRetainedVerificationRequest,
+  DevSquadAdoHumanControlDependencies,
+  DevSquadAdoHumanControlAuditEntry,
+  DevSquadAdoHumanControlSnapshot,
+  DevSquadAdoHumanControlResult,
+} from "./DevSquadAdoHumanControlTypes.js";

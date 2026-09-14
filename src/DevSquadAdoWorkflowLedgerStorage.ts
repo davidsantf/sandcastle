@@ -744,7 +744,19 @@ const publishRecord = async (
   },
   record: PersistedDevSquadAdoWorkflowRecordV1,
   digest: string,
+  notAfter?: string,
 ): Promise<void> => {
+  const authorizePublication = () => {
+    if (
+      notAfter !== undefined &&
+      timestampFromDate(context.runtime.now()) >= notAfter
+    )
+      throw new DomainFailure({
+        kind: "validation",
+        field: "notAfter",
+        reason: "expired before acceptance",
+      });
+  };
   const bytes = serializeRecord(record);
   if (Buffer.byteLength(bytes, "utf8") > MAX_GENERATION_BYTES) {
     throw new DomainFailure({
@@ -771,6 +783,7 @@ const publishRecord = async (
     join(loaded.directory, finalName),
     finalName,
     bytes,
+    authorizePublication,
   );
   if (result === "exists") throw new PublicationRace();
   if (loaded.record !== undefined) {
@@ -1365,7 +1378,6 @@ const checkpoint = async (
   if (!validated.ok) return validated;
   return safeOperation(async () => {
     const normalized: NormalizedCheckpointInput = validated.value;
-    const acceptedAt = timestampFromDate(context.runtime.now());
     const digest = requestDigest("checkpoint", normalized);
     const loaded = await loadRecord(context, normalized.workItemId);
     const replay = findReceipt(
@@ -1382,6 +1394,17 @@ const checkpoint = async (
         readonly kind: "checkpointed";
         readonly checkpoint: import("./DevSquadAdoWorkflowLedger.js").DevSquadAdoCheckpointEntry;
       }>;
+    const acceptedAt = timestampFromDate(context.runtime.now());
+    if (
+      normalized.notAfter !== undefined &&
+      acceptedAt >= normalized.notAfter
+    ) {
+      throw new DomainFailure({
+        kind: "validation",
+        field: "notAfter",
+        reason: "expired before acceptance",
+      });
+    }
     requireAuthority(loaded.record, normalized.authority, acceptedAt);
     if (normalized.expected.revision !== loaded.record.revision) {
       throw new DomainFailure({
@@ -1500,7 +1523,7 @@ const checkpoint = async (
       previousGenerationDigest: loaded.record.integrity.digest,
     });
     try {
-      await publishRecord(context, loaded, record, digest);
+      await publishRecord(context, loaded, record, digest, normalized.notAfter);
     } catch (error) {
       if (!(error instanceof PublicationRace)) throw error;
       const winner = await loadRecord(context, normalized.workItemId);

@@ -313,6 +313,8 @@ export interface CheckpointDevSquadAdoWorkflowInput {
     /** Exact expected status. */
     readonly status: string;
   };
+  /** Optional canonical UTC deadline enforced atomically at acceptance. */
+  readonly notAfter?: string;
   /** Structurally validated fields to record without lifecycle interpretation. */
   readonly patch: {
     /** Resulting caller-defined phase. */

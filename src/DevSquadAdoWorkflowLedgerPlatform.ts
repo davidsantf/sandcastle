@@ -121,6 +121,7 @@ export interface LedgerPlatformService {
     finalPath: string,
     finalArtifact: string,
     bytes: string,
+    authorizePublication?: () => void,
   ) => Promise<"published" | "exists">;
   readonly probeHardLinks: (directory: string) => Promise<void>;
   readonly persistencePoint: (
@@ -492,8 +493,10 @@ const makeNodeLedgerPlatform = (
     finalPath: string,
     finalArtifact: string,
     bytes: string,
+    authorizePublication?: () => void,
   ): Promise<"published" | "exists"> => {
     try {
+      authorizePublication?.();
       await link(candidate.path, finalPath);
     } catch (error) {
       if (errorCode(error) === "EEXIST") {
@@ -513,6 +516,7 @@ const makeNodeLedgerPlatform = (
           finalArtifact,
         );
       }
+      if (code === undefined) throw error;
       throw new LedgerPlatformFailure("storage", finalArtifact);
     }
 

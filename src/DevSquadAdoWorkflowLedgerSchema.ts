@@ -566,6 +566,7 @@ export interface NormalizedCheckpointInput {
     readonly phase: string;
     readonly status: string;
   };
+  readonly notAfter?: string;
   readonly patch: NormalizedCheckpointPatch;
 }
 
@@ -577,6 +578,7 @@ export const validateCheckpointInput = (
     "operationId",
     "authority",
     "expected",
+    "notAfter",
     "patch",
   ]);
   if (!object.ok) return object;
@@ -612,6 +614,16 @@ export const validateCheckpointInput = (
     "expected.status",
   );
   if (!expectedStatus.ok) return expectedStatus;
+  let notAfter: string | undefined;
+  if ("notAfter" in object.value) {
+    if (
+      typeof object.value.notAfter !== "string" ||
+      !UTC_MILLISECONDS.test(object.value.notAfter) ||
+      !Number.isFinite(Date.parse(object.value.notAfter))
+    )
+      return validation("notAfter", "must be canonical UTC milliseconds");
+    notAfter = object.value.notAfter;
+  }
   const patchObject = requireObject(object.value.patch, "patch", [
     "phase",
     "status",
@@ -749,6 +761,7 @@ export const validateCheckpointInput = (
         phase: expectedPhase.value,
         status: expectedStatus.value,
       },
+      ...(notAfter === undefined ? {} : { notAfter }),
       patch: patch as NormalizedCheckpointPatch,
     },
   };

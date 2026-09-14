@@ -10,7 +10,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { openDevSquadAdoWorkflowLedger as openSystemDevSquadAdoWorkflowLedger } from "./DevSquadAdoWorkflowLedger.js";
-import { openTestDevSquadAdoWorkflowLedger as openDevSquadAdoWorkflowLedger } from "./DevSquadAdoWorkflowLedgerTestSupport.js";
+import {
+  makeLedgerTestRuntime,
+  openTestDevSquadAdoWorkflowLedger as openDevSquadAdoWorkflowLedger,
+} from "./DevSquadAdoWorkflowLedgerTestSupport.js";
+import { openDevSquadAdoWorkflowLedgerWithRuntime } from "./DevSquadAdoWorkflowLedgerStorage.js";
 import type { InitializeDevSquadAdoWorkflowRecordInput } from "./DevSquadAdoWorkflowLedger.js";
 import {
   RECORD_KIND,
@@ -248,6 +252,123 @@ describe("DevSquadAdoWorkflowLedger", () => {
 });
 
 describe("DevSquadAdoWorkflowLedger checkpoints", () => {
+  it("atomically rejects a checkpoint accepted after its authorization deadline", async () => {
+    const repositoryRoot = await makeRepository();
+    const opened = await openDevSquadAdoWorkflowLedger({ repositoryRoot });
+    expect(opened.ok).toBe(true);
+    if (!opened.ok) return;
+    const ledger = opened.value;
+    await ledger.initializeRecord({
+      workItemId: "deadline",
+      operationId: "initialize-deadline",
+      phase: "review",
+      status: "ready",
+    });
+    const claimToken = Buffer.alloc(32, 30).toString("base64url");
+    const acquired = await ledger.acquireClaim({
+      workItemId: "deadline",
+      operationId: "claim-deadline",
+      ownerId: "host",
+      claimToken,
+      leaseDurationMs: 60_000,
+    });
+    expect(acquired.ok).toBe(true);
+    if (!acquired.ok) return;
+    expect(
+      await ledger.checkpoint({
+        workItemId: "deadline",
+        operationId: "expired-checkpoint",
+        authority: {
+          ownerId: "host",
+          claimToken,
+          fencingValue: acquired.value.outcome.authority.fencingValue,
+        },
+        expected: {
+          revision: acquired.value.record.revision,
+          phase: "review",
+          status: "ready",
+        },
+        notAfter: new Date(Date.now() - 1_000).toISOString(),
+        patch: { phase: "finalize", status: "complete" },
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: {
+        kind: "validation",
+        field: "notAfter",
+        reason: "expired before acceptance",
+      },
+    });
+    expect(await ledger.readRecord("deadline")).toMatchObject({
+      ok: true,
+      value: { revision: acquired.value.record.revision },
+    });
+  });
+
+  it("rechecks the authorization deadline at the publication boundary", async () => {
+    const repositoryRoot = await makeRepository();
+    let nowMs = Date.parse("2026-09-14T12:00:00.000Z");
+    let expireBeforePublish = false;
+    const opened = await openDevSquadAdoWorkflowLedgerWithRuntime(
+      { repositoryRoot },
+      makeLedgerTestRuntime(() => new Date(nowMs), {
+        hit(point) {
+          if (expireBeforePublish && point === "candidate-validated")
+            nowMs += 10_000;
+        },
+      }),
+    );
+    expect(opened.ok).toBe(true);
+    if (!opened.ok) return;
+    const ledger = opened.value;
+    await ledger.initializeRecord({
+      workItemId: "publication-deadline",
+      operationId: "initialize-publication-deadline",
+      phase: "review",
+      status: "ready",
+    });
+    const claimToken = Buffer.alloc(32, 31).toString("base64url");
+    const acquired = await ledger.acquireClaim({
+      workItemId: "publication-deadline",
+      operationId: "claim-publication-deadline",
+      ownerId: "host",
+      claimToken,
+      leaseDurationMs: 60_000,
+    });
+    expect(acquired.ok).toBe(true);
+    if (!acquired.ok) return;
+    expireBeforePublish = true;
+    expect(
+      await ledger.checkpoint({
+        workItemId: "publication-deadline",
+        operationId: "publication-deadline-checkpoint",
+        authority: {
+          ownerId: "host",
+          claimToken,
+          fencingValue: acquired.value.outcome.authority.fencingValue,
+        },
+        expected: {
+          revision: acquired.value.record.revision,
+          phase: "review",
+          status: "ready",
+        },
+        notAfter: new Date(nowMs + 5_000).toISOString(),
+        patch: { phase: "finalize", status: "complete" },
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: {
+        kind: "validation",
+        field: "notAfter",
+        reason: "expired before acceptance",
+      },
+    });
+    expect(await ledger.readRecord("publication-deadline")).toMatchObject({
+      ok: true,
+      value: { revision: acquired.value.record.revision },
+    });
+  });
+
   it("[CC-001] [CC-002] [CC-007] [CC-013] round-trips unknown workflow state, execution history, and opaque cursors", async () => {
     const repositoryRoot = await makeRepository();
     const opened = await openDevSquadAdoWorkflowLedger({ repositoryRoot });
