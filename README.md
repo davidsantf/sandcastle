@@ -63,6 +63,801 @@ await run({
 });
 ```
 
+## Persistent DevSquad/ADO workflow checkpoints
+
+Host coordinators can persist offline resume state and serialize local workflow
+updates with `openDevSquadAdoWorkflowLedger()`. The caller must provide the
+canonical **host repository root** explicitly; the ledger never invokes git,
+discovers a root, or contacts ADO, GitHub, MCP, a network, a sandbox, or an
+agent provider.
+
+```typescript
+import { randomBytes } from "node:crypto";
+import { openDevSquadAdoWorkflowLedger } from "@ai-hero/sandcastle";
+
+const opened = await openDevSquadAdoWorkflowLedger({
+  // Pass this same main-checkout root when calling from any worktree.
+  repositoryRoot: "/host/repos/example",
+});
+if (!opened.ok) throw new Error(opened.error.kind);
+
+const ledger = opened.value;
+const initialized = await ledger.initializeRecord({
+  workItemId: 137,
+  operationId: "initialize-137", // stable across an ambiguous retry
+  phase: "implement", // caller-defined; Sandcastle has no phase allowlist
+  status: "ready",
+  branch: "users/agent/137",
+  worktreePath: "/host/repos/example/.sandcastle/worktrees/137",
+});
+if (!initialized.ok) throw new Error(initialized.error.kind);
+
+// Supply a cryptographically random 32-byte, unpadded base64url token.
+const claimToken = randomBytes(32).toString("base64url");
+const acquired = await ledger.acquireClaim({
+  workItemId: 137,
+  operationId: "claim-137-loop-a",
+  ownerId: "loop-a",
+  claimToken,
+  leaseDurationMs: 60_000,
+});
+if (!acquired.ok) throw new Error(acquired.error.kind);
+
+const claim = acquired.value.outcome.authority;
+const checkpointed = await ledger.checkpoint({
+  workItemId: 137,
+  operationId: "checkpoint-137-running",
+  authority: {
+    ownerId: claim.ownerId,
+    claimToken: claim.claimToken,
+    fencingValue: claim.fencingValue,
+  },
+  expected: {
+    revision: acquired.value.record.revision,
+    phase: acquired.value.record.phase,
+    status: acquired.value.record.status,
+  },
+  patch: {
+    status: "running",
+    agentId: "implementer-a",
+    sessionId: "session-1",
+    observations: {
+      workItemCommentId: "481",
+      pullRequest: { threadId: "12", commentId: "29" },
+    },
+  },
+});
+```
+
+State is stored as strict, immutable schema-v1 generations beneath
+`.sandcastle/devsquad-ado/`. The generated `.sandcastle/.gitignore` excludes
+that directory to prevent accidental commits, but gitignore is **not access
+control**. Keep the repository writable only by its trusted owner.
+
+The production storage boundary currently supports POSIX local filesystems only
+when Node can verify owner-only ledger modes, use no-follow file opens, publish
+with exclusive same-filesystem hard links, flush files, and sync directory
+metadata. It probes the required hard-link and directory-sync capabilities
+before creating `ledger.json` and fails closed with `unsupported-permissions` or
+`unsupported-filesystem` when they cannot be established. Network shares and
+synchronized filesystems remain outside the supported boundary even if a probe
+appears to succeed.
+
+On Windows, the public opener currently returns `unsupported-permissions`
+before creating ledger state. Node's filesystem APIs do not provide the ACL
+inspection/establishment, reparse-safe open, and directory durability controls
+required by ADR-0025, and core deliberately does not fall back to shell or CLI
+ACL tools. Stored Windows and UNC _worktree reference strings_ remain valid
+opaque metadata; that does not imply Windows ledger-storage support.
+
+Claim tokens are capabilities: retain them only in the coordinator that owns
+the claim, do not log them, and reuse the original token plus operation ID when
+retrying an ambiguous acquisition. Sandcastle persists only a SHA-256 verifier;
+read, list, recovery, checkpoint, renew, and release projections are token-free.
+Expired claims can be taken over with a higher fencing value. A stale authority
+cannot checkpoint, renew, or release the later owner's state.
+
+All methods return a Promise of a discriminated `{ ok, value | error }` result.
+Handle categories such as `claim-conflict`, `stale-fencing`,
+`revision-conflict`, `state-conflict`, `idempotency-conflict`,
+`corrupt-artifact`, and `unsupported-schema-version` without parsing message
+text. A `storage` error with `outcome: "indeterminate"` means publication may
+have happened: retry the exact request with the same operation ID. Recovery
+fails closed, preserves corrupt evidence, and never promotes a temporary file
+or falls back from a corrupt highest generation. Use `inspectRecoveryErrors()`
+for a bounded, deterministic read-only scan.
+
+The ledger records structurally valid phase and status strings but defines no
+phase order, transition policy, terminal state, merge readiness, or resumability
+policy. DevSquad/the host remains responsible for lifecycle decisions and all
+external ADO or GitHub actions. `listResumableRecords()` therefore returns every
+valid initialized record; the host decides which ones should resume.
+
+## Bounded DevSquad/ADO workflow watch passes
+
+`runDevSquadAdoWorkflowWatchPass()` runs **one bounded offline pass** in either
+**supplied mode** (default, or `mode: "supplied"`) or explicit
+**discovery mode** (`mode: "discovery"`). Supplied mode takes a caller-supplied
+candidate set; discovery takes bounded pages from a host-injected read-only seam.
+The supplied overload and its signal/result shapes remain unchanged: supplied
+consumers need not narrow a discovery union or provide an initializer. For
+existing records in either mode, it reads ledger records, asks an injected seam
+what is new, advances opaque observation cursors through fenced ledger
+checkpoints, and returns token-free per-candidate outcomes plus at most one
+intake signal per candidate. It is not a daemon: poll scheduling is bounded, and
+composing passes into a loop is the host's job. Termination requires injected
+ledger operations and delays to settle; observation timeouts require a valid
+delay. Cancellation is cooperative and cannot forcibly stop dependencies.
+
+```typescript
+import {
+  runDevSquadAdoWorkflowWatchPass,
+  openDevSquadAdoWorkflowLedger,
+} from "@ai-hero/sandcastle";
+
+const opened = await openDevSquadAdoWorkflowLedger({
+  repositoryRoot: "/host/repos/example",
+});
+if (!opened.ok) throw new Error(opened.error.kind);
+
+const outcome = await runDevSquadAdoWorkflowWatchPass({
+  ledger: opened.value,
+  // The host owns transport, credentials, and ordering.
+  seam: {
+    observeWorkItemComments: async ({
+      workItemId,
+      sinceCommentId,
+      signal,
+    }) => ({
+      commentIds: await tracker.listCommentIds(
+        workItemId,
+        sinceCommentId,
+        signal,
+      ),
+    }),
+    observePullRequestActivity: async ({
+      pullRequestId,
+      sinceCursor,
+      signal,
+    }) => ({
+      entries: await tracker.listThreadActivity(
+        pullRequestId,
+        sinceCursor,
+        signal,
+      ),
+    }),
+  },
+  passId: "nightly-2026-01-01-01", // stable across an ambiguous retry
+  ownerId: "coordinator-a",
+  candidates: [137, 42],
+  // Exact-match sets. There is no wildcard and no Sandcastle phase table.
+  intakeRules: { phases: ["implement", "review"], statuses: ["ready"] },
+  budgets: {
+    maxPolls: 5,
+    maxPollStartElapsedMs: 120_000,
+    observationTimeoutMs: 5_000,
+  },
+  clock: () => new Date(),
+  delay: (ms, signal) =>
+    new Promise((resolve) => {
+      const timer = setTimeout(resolve, ms);
+      signal?.addEventListener(
+        "abort",
+        () => {
+          clearTimeout(timer);
+          resolve();
+        },
+        { once: true },
+      );
+    }),
+});
+
+if (!outcome.ok) throw new Error(outcome.error.kind);
+for (const signal of outcome.value.signals) {
+  // The host decides what a signal means and what runs next.
+  await devsquad.enqueue(signal.workItemId, signal.phase, signal.status);
+}
+```
+
+### Supplied mode and the shared observation seam
+
+The supplied seam exposes exactly two read methods. `observeWorkItemComments` is
+required. `observePullRequestActivity` is required only for candidates whose
+record carries a pull-request identifier; a candidate that needs it while the
+method is absent reports `pull-request-observation-unavailable`.
+
+The seam owns ordering. Entries must come back in the tracker's authoritative
+order, oldest first, and the window is **anchor-inclusive**: whenever you are
+given a `since` anchor and have a non-empty window to return, that anchor must
+appear in it. Return the anchor alone, or an empty window, when nothing is new.
+
+Each window permits at most **1,000 entries** and **1,048,576 aggregate UTF-8
+identifier bytes**, inclusive, with at most **1,024 bytes per identifier**.
+Work-item IDs within a window and PR `(threadId, commentId)` pairs must be
+unique. Only missing/undefined and null PR comment IDs are equivalent; blank
+strings are invalid identifiers. Malformed envelopes/collections, unreadable
+identifier-bearing accessors, and duplicate or oversized windows fail the entire
+candidate as `invalid-observation-window`, without deduplication or truncation.
+Individual invalid identifiers remain `invalid-observation-identifier`.
+Windows and candidate arrays use bounded indexed traversal, ignoring custom
+iterators. Observed growth or shrinkage during traversal rejects the input or
+whole window, including mutation by the final getter.
+
+The watcher never parses, sorts, or arithmetically compares identifier text; it
+locates the persisted cursor by exact comparison and treats everything after it
+as new. A non-empty window that omits the anchor is therefore undecidable — it
+looks identical to a window in which every entry is new — so rather than
+re-deliver the whole window the watcher fails that candidate closed with
+`failed` / `observation-anchor-missing`. Keeping an anchored entry retrievable
+for as long as it is a cursor is the seam's obligation; if the tracker really
+did drop it, the host must re-anchor the record deliberately.
+
+Only identifier fields are read. `commentIds`, `threadId`, and `commentId` are
+projected out and every other property of a returned entry is discarded before
+it can reach durable state, results, errors, or diagnostics. A pull-request
+entry with a missing/null `commentId` is never persisted as a cursor. In mixed
+windows, the newest complete pair is persisted, even if incomplete entries
+follow it. Only when no new complete pair exists is `pull-request-thread`
+included in `skippedCursorKinds`; it never overlaps `cursorChanges`. Without
+another persistable change the reason is `incomplete-pull-request-cursor`.
+The seam is never invoked to write.
+
+### Pass identity and replay parity
+
+`passId` is **required and caller-supplied**. Every ledger mutation the watcher
+performs derives its operation identifier deterministically:
+
+```text
+legacyOperationId = "dsw2." + step + "." + sha256hex(canonicalJson(identity)).slice(0, 32)
+prCheckpointOperationId = "dsw3.checkpoint." + sha256hex(canonicalJson(identity)).slice(0, 32)
+```
+
+The identity differs by step family, because the two families need opposite
+properties.
+
+A newly prepared **checkpoint** involving PR observation is scoped to the
+observed PR destination as well as the anchors it starts from and the cursors
+it makes durable. This includes a WI-only advance when the observed PR has no
+persistable new pair. The identity is exactly
+`{ v: 3, passId, workItemId, step: "checkpoint", ordinal, generation: { pullRequestId, fromWorkItemCommentId, fromPullRequest, toWorkItemCommentId, toPullRequest } }`.
+It uses the PR ID read **before acquisition**, subject to the unchanged
+acquisition staleness gate, never a later PR ID. Different PRs may reuse the
+same local thread/comment pair; their checkpoints must have different IDs.
+No-PR checkpoints retain the legacy v2 identity and bytes. Both forms use the
+same canonical serializer and 32-hex-character hash truncation, producing a
+48-byte checkpoint ID within the ledger's 256-byte bound.
+
+Recovery retains the pending operation ID and submitted request. It validates
+history against that submission before refreshing retry preconditions; it never
+mints another ID or switches versions to bypass an `idempotency-conflict`.
+
+A **claim-lifecycle** identifier (`claim`, `renew`, `release`) is scoped to a
+random claim epoch minted per acquisition. Capability tokens are freshly random
+on every acquisition and the ledger folds the token into its idempotency
+digest, so an identifier that ignored the acquisition would turn a second
+acquire under the same `passId` into a permanent `idempotency-conflict` that no
+retry could clear. Scoping by epoch keeps tokens cryptographically random and
+keeps the same `passId` retryable: a pass that acquired a claim and then failed
+before its checkpoint landed can simply be run again.
+
+Use `deriveDevSquadAdoWatcherOperationId()` to compute a **checkpoint or
+claim-lifecycle** identifier yourself; the epoch and generation arms are its
+unchanged public input types. The one-argument helper retains byte-for-byte v2
+output and **cannot isolate PR destinations**. For PR checkpoints, use the
+checkpoint-only overload
+`deriveDevSquadAdoWatcherOperationId(checkpointIdentity, { pullRequestId })`.
+Only newly prepared pass checkpoints involving PR observation intentionally
+switch to v3; existing receipts are not migrated, reinterpreted, or used as a
+fallback. Discovery initialization uses a separate private derivation
+from canonical `{ step: "initialize", workItemId, submissionId, phase, status }`.
+It stays stable across pass IDs and retries, excludes traversal/page/continuation
+and claim identities, and never mints a replacement to bypass a conflict.
+
+### Intake rules, budgets, leases, and backoff
+
+Intake rules are exact-match sets. Admitting every status means listing every
+status. Unknown phase names are accepted without objection when the caller lists
+them, and a record whose phase or status is not admitted still has its cursor
+advanced and reports `intake-suppressed` — suppression is an intake decision,
+not an observation decision.
+
+A supplied pass stops at the first of: all candidates resolved, `maxPolls` reached,
+`maxPollStartElapsedMs` reached, or cancellation, and reports which in
+`stopReason`.
+
+`maxPollStartElapsedMs` bounds **scheduling, not duration**. It is checked once
+per poll, before that poll begins, and the first poll always starts. Work
+already in flight — candidate steps, seam observations, ledger mutations —
+can overrun the value, and a single poll is not bounded by it at all. `maxPolls`
+bounds the number of polls, not physical runtime. Each observation receives its
+own child abort signal: timeout or parent abort cancels that signal and the
+timer, and late results are ignored. Ledger methods and delays must settle.
+Noncooperating dependencies may remain physically active after cancellation;
+an abort signal is not a hard wall-clock ceiling.
+
+The clock is read once per poll and that single reading drives every eligibility,
+lease, and timestamp decision in that poll. Between polls the watcher asks the
+injected `delay` for `min(baseIntervalMs * multiplier^(n-1), maxIntervalMs)`,
+truncated to an integer; defaults are 1,000 ms, 2, and 30,000 ms. There is no
+backoff randomness unless you inject `backoff.jitter`; claim epochs, capability
+tokens and discovery traversal IDs are separately random.
+
+Claims are acquired only for existing-record cursor mutations, never
+initialization. The default lease is
+60,000 ms (raise it up to the 24-hour ceiling with `lease.leaseDurationMs`), and
+the default renewal threshold is one third of the lease. Before mutating under a
+held claim the watcher renews when `now + renewalThresholdMs >= expiresAt`,
+preserving the fencing value. An unexpired claim owned by someone else is a
+`skipped` / `claim-conflict`, never a fault, and the watcher never force-releases,
+deletes, or resets another owner's claim.
+
+A record is read before its observation and again as part of the acquisition,
+and the two are compared. If another owner advanced a cursor in that window, the
+selection in hand was computed from anchors that are no longer durable, so the
+watcher attempts cleanup once without writing. Only an acknowledged release
+allows `no-change` / `stale-observation` and, if scheduling continues, a later
+poll to re-observe from the advanced anchor. Discovery finalizes this disposition
+when terminal enumeration leaves no pending mutation recovery. Unconfirmed
+cleanup instead finalizes a failed candidate with
+explicit cleanup evidence. The stale selection never moves a cursor backwards.
+
+Cancellation is observed before each seam call, before each non-cleanup ledger
+mutation, and at candidate completion and poll/budget exits. An aborted pass
+still attempts cleanup once for every validated
+claim authority and reports all acknowledged effects. A seam call that fails
+because its signal aborted is reported as `cancelled`, not as an observation
+fault.
+
+Required signal getters are inspected before injected side effects; unreadable
+ones return a sanitized validation error at `signal`. Listener methods are
+captured once while `aborted` remains live. If abort state becomes unreadable
+after preflight, the pass stops as cancelled and still performs mandatory cleanup.
+Ledger acknowledgements are likewise projected into fresh method-specific public
+fields before validation; unrelated response getters are never read.
+
+Every candidate has mandatory `cleanup` evidence:
+
+| Status          | Meaning                                                                    |
+| --------------- | -------------------------------------------------------------------------- |
+| `released`      | A validated release acknowledgement, with its original `acceptedRevision`. |
+| `failed`        | A known release rejection, including storage `unchanged`.                  |
+| `indeterminate` | Ambiguous/faulting release, or acquire without validated authority.        |
+| `not-required`  | No claim acquired and no acquisition uncertainty.                          |
+
+Cleanup includes a stable `reason` and `ledgerErrorKind`; it never includes a
+capability token. No release is attempted without validated authority, and
+cleanup is never retried or guessed. Inclusive lease expiry is the backstop.
+An acknowledged release replay describes the original release, not the absence
+of a later owner's claim.
+
+Failed/indeterminate cleanup promotes an otherwise nonfailed candidate to
+`claim-cleanup-unconfirmed` (or `ledger-unavailable` for `ledger-fault`), while
+preserving an existing primary failure. It **does not retract** acknowledged
+checkpoint revisions, cursor changes, or intake signals. `counts.acted` counts
+returned signals, `counts.suppressed` counts acknowledged suppressed advances,
+and either may overlap `counts.failed`. `cleanupReleased`, `cleanupFailed`,
+`cleanupIndeterminate`, and `cleanupNotRequired` partition all candidates.
+
+### Delivery model and the DevSquad boundary
+
+Intake signals are **returned in the pass result**. There is no callback, queue,
+retry, or transport: host code never runs inside a claimed step. A candidate's
+cursor checkpoint (or discovery initialization) is acknowledged as durable before
+its corresponding signal enters the result.
+A crash before return can therefore lose a signal whose cursor already advanced.
+
+Delivery is **at-most-once, and never duplicating** — it is not lossless. The
+guarantee is that no observed event is delivered twice: a cursor advance is
+durable before the signal derived from it is reported. The converse does not
+hold. If a checkpoint becomes durable but the pass cannot confirm it
+(the process dies, or storage reports an indeterminate outcome and the budget
+ends first), the cursor has moved while the signal was never returned, and a
+later pass sees nothing new for that window. Hosts that cannot tolerate a lost
+signal must reconcile from the record, not from the signal stream.
+
+At-most-once applies to **ledger-mediated intake delivery only**. It makes no
+claim about external side effects: fencing protects ledger mutations, not
+anything the host does after reading a signal.
+
+An injected ledger that throws, rejects, or answers with something that is not a
+valid method-specific result is never allowed to escape. Full public records,
+original mutation metadata, request identity/authority/checkpoint consistency,
+and known error variants are runtime-validated against an independent request
+snapshot, never the mutable request handed to the adapter. A replay at its
+accepted revision must agree with that record; an older acknowledgement can
+coexist with valid later mutations. Recovery from checkpoint history uses the
+same acknowledgement checks against the original submitted request, not a
+refreshed retry revision: acceptance must be at the submitted expected revision
+plus one, and a same-revision record must match the cursor, state, and authority.
+Unknown or malformed responses
+resolve as `failed` /
+`ledger-unavailable` with `ledgerErrorKind: "ledger-fault"`, the candidate's
+validated authority receives one cleanup attempt, and no message, stack, or
+arbitrary error category reaches the result. A malformed acquire establishes
+no authority; a malformed mutation acknowledgement never fabricates durability.
+
+The host keeps everything else. In supplied mode it chooses candidates and
+initializes records; missing records remain `skipped` / `record-not-found`.
+In discovery mode it supplies stable bounded pages, normalized facts and explicit
+item authorization/initial state; the watcher evaluates matching and can perform
+claim-free authorized initialization. In both modes the host defines phase/status
+meaning and transition legality, schedules execution, owns transport/credentials,
+and performs every external tracker write and pull-request action. Neither mode
+constructs live queries/clients, invokes agents, dispatches intake, approves or
+merges PRs, or implements lifecycle orchestration.
+
+Note that every ledger mutation advances the record revision, including claim
+acquisition, renewal, and release. A candidate outcome therefore reports
+`sourceRevision` (the revision the decision was derived from) alongside
+`revision` (the revision the cursor checkpoint was accepted at) and
+`cleanup.acceptedRevision` (the acknowledged release revision). For example,
+read 4 -> acquire 5 -> checkpoint 6 -> release 7 yields source 4, checkpoint 6,
+cleanup 7. An unchanged repeat leaves revision 7 unchanged with no cleanup
+required. A replay may acknowledge an older revision than its latest record.
+Candidate outcomes and ledger errors are reduced to stable categories —
+`ledgerErrorKind` carries the ledger's own category and never raw JSON, artifact
+contents, or an operating-system message.
+
+### Discovery matching and host responsibilities
+
+<!-- W045 / FR-061–069 / CC-031–037 -->
+
+Discovery requests supply `mode: "discovery"`, no `candidates`, and a complete
+`discovery` configuration. Its seam adds `discoverWorkItemsPage` to required WI
+and optional PR observation methods. Discovery observations return
+`{ kind: "window", commentIds }` / `{ kind: "window", entries }`, or explicit
+`{ kind: "anchor-missing" }`. Supplied observation shapes do not change.
+
+The host declares `scopeId`, `partitionId`, `stabilityId`,
+`stableForInvocation: true`, and a policy `version`. Every page must echo the
+request's exact binding, traversal ID and one-based ordinal. The watcher snapshots
+configuration once; the host must provide a stable enumeration/fact view and
+change policy version when meaning changes. These labels detect declaration drift;
+they do **not** prove adapter honesty, integrity or authorization. Adapters are
+trusted in-process dependencies, not sandboxed or cryptographically verified.
+
+The watcher evaluates the complete policy itself, not an upstream `eligible`
+boolean or query filter:
+
+| Dimension           | Operator             | Meaning                                                               |
+| ------------------- | -------------------- | --------------------------------------------------------------------- |
+| `state`             | `one-of`             | Match any allowed opaque state.                                       |
+| `team`              | `one-of`             | Match any allowed **host-resolved** team membership.                  |
+| `tags`              | `all`, `any`, `none` | Require all, any, or none of the configured tags.                     |
+| `area`, `iteration` | `exact`, `subtree`   | Equal segment paths, or a complete segment prefix including its root. |
+
+- AND every configured predicate, including separate tag predicates. State/team
+  set members are OR alternatives. At most seven predicate slots: one each of
+  state, team, area, iteration, tags-all, tags-any, tags-none. Unknown operators
+  and duplicate slots fail configuration before injected effects.
+- Empty `filters` is unrestricted. Configured state/team/tag sets must be
+  nonempty and duplicate-free; no silent deduplication or truncation.
+- Values compare exactly and case-sensitively: no trimming, case folding, Unicode
+  normalization, synonyms, separator splitting or `assignedTo` team inference.
+  Only work-item IDs retain the ledger's canonicalization rules.
+- Paths are host-normalized segment arrays, not textual prefixes. `[]` is root;
+  root subtree matches every known path, exact root only root. `['A']` includes
+  itself and `['A', 'B']` as a subtree, but not the sibling `['AB']`.
+- Facts use optional `state`, `teams`, `tags`, `area`, `iteration` fields with
+  `{ kind: "known", value }` or `{ kind: "missing" }`. Omission means missing.
+  Known empty tags satisfy `none`, but not nonempty `all`/`any`; known empty teams
+  fail a configured team predicate. Empty paths are known roots, not missing.
+- Unconfigured fact getters and unrelated properties are not read. Required
+  malformed facts invalidate the **whole page**, even in its last entry; valid
+  missing facts pause just that candidate. Missing facts take precedence over
+  an unmatched predicate. Validation uses bounded indexed reads, not custom
+  iterators, and rejects changing arrays.
+
+Matching precedes authorization use, ledger reads, observations and mutations.
+An excluded item reports `matching-paused`; missing required facts report
+`matching-facts-missing`. Both perform **zero item effects** and persist no pause
+marker. Reentry uses the unchanged durable `since` anchors. It never resets to a
+synthetic baseline or infers a latest event. An ordinary empty discovery window
+means known no-new-events; explicit `anchor-missing` requires a supplied durable
+anchor and fails even an otherwise empty response. Nonempty windows missing the
+anchor also fail. Loss in either WI or PR blocks checkpointing **both** kinds;
+the host must deliberately reconcile retention loss. Intake-rule suppression is
+different: matched existing records still advance cursors without returning intake.
+
+`validateDevSquadAdoWorkflowWatchPassOptions` returns a minimized discovery
+summary: normalized common pass settings, `mode` and the public `binding`
+(scope/partition/stability/policy version). It invokes no injected dependency and
+does not return the prepared discovery configuration, policy operands or
+authorization submission IDs. The running pass retains that context privately
+for matching and admission. Supplied validation types and result shapes are unchanged.
+
+Public matching evidence contains only the exact `policyVersion`, decision
+`matched | excluded | facts-missing`, and fixed predicate/outcome categories in
+state/team/tags-all/tags-any/tags-none/area/iteration order. Raw policy operands,
+facts, authorization submission IDs, continuations, traversal IDs, capability
+tokens, sensitive hashes and dependency bodies/messages are not exposed or
+persisted. Necessary public IDs and explicitly authorized initial workflow values
+remain public. Hosts should keep correlation labels nonsecret and bound upstream
+payloads as well as the library's recognized fields.
+
+Executable failures from supplied signal listener registration/removal are
+sanitized as observation/page failures. Earlier acknowledged cursor advances and
+signals remain available, and retained claims still receive final cleanup. Each
+attempt retires its child/timer and attempts listener removal once, including
+partially throwing registration; a throwing host adapter cannot be guaranteed to
+have actually removed its listener.
+
+### Authorized no-comment admission and signal interpretation
+
+Only a matched item whose initial guarded record read reports missing can enter
+admission. A later claim/checkpoint rejection is not admission evidence: its
+existing-record failure and any failed or indeterminate cleanup remain visible.
+
+A matched, method-valid missing record is initialized only with explicit
+canonical-item authorization:
+`{ workItemId, kind: "authorized", submissionId, initial: { phase, status } }`.
+Omitted authorization or `{ kind: "unavailable", reason: "not-authorized" |
+"initial-state-missing" }` never initializes. Matching, external state, team
+membership and ledger claims are **not** authorization. The host alone defines
+initial phase/status and intake rules.
+
+Initialization submits only `workItemId`, `operationId`, `phase`, `status` to the
+existing ledger. It seeds no cursors, PR/execution references, histories or claims.
+No comments are needed. Requests and method-specific acknowledgements are
+validated independently, including original state/acceptance when a later latest
+record is returned. A fresh publisher can produce exactly one
+`kind: "discovery-admission"` signal if its initial phase/status matches intake
+rules. This signal carries `acceptedInitializationRevision: 1`, initial state,
+minimized matching evidence and `authorization: "host-authorized"`, **not** source
+revision, changed-comment kinds, checkpoint or claim metadata.
+
+Existing-record discovery intake instead has `kind: "comment-observation"` plus
+the historical comment fields. Narrow this discovery-only signal union by `kind`.
+Supplied signals remain unchanged without a new discriminator. Runtime-selected
+request unions return a supplied/discovery result union; validation has matching
+overloads. Neither mode dispatches signals.
+
+Initialization replay reports original acceptance (`acceptance.kind: "replayed"`)
+**without redelivery**. Already-recorded initialization infers no acceptance for
+this request; identity conflict is terminal. Bounded contention/indeterminate
+retries retain the exact original submission. Once initialization starts there is
+no same-invocation comment fallback, including replay/already-exists; genuine
+comments may be observed in a later invocation. Fresh-only admission rules do not
+replace existing comment checkpoint direct/replay/history recovery.
+
+All initialization-only outcomes have `cleanup.status: "not-required"`,
+`reason: "no-claim-acquired"`, and null `ledgerErrorKind`/`acceptedRevision`, even
+when initialization is uncertain. This proves **no acquisition**, not successful
+initialization or rollback. No release is invented. A durable initialization with
+lost/malformed acknowledgement, or a crash before consumption, can **permanently
+lose the admission signal**. Restart/replay/reconciliation cannot reconstruct it.
+The host must reconcile durable workflow state separately; this is at-most-once
+reporting, not lossless delivery or exactly-once execution. There is no outbox.
+
+### Discovery limits, traversal and accounting
+
+Supply the full `limits` object, usually `DEFAULT_DEVSQUAD_ADO_DISCOVERY_LIMITS`.
+All configured limits are positive safe integers; actual collections may be empty
+where allowed. All limits apply conjunctively and exact boundaries are inclusive.
+
+| Limit                   |   Default |   Ceiling |
+| ----------------------- | --------: | --------: |
+| `maxPageCalls`          |        32 |     1,000 |
+| `maxItems`              |     1,000 |     1,000 |
+| `maxEntriesPerPage`     |       128 |     1,000 |
+| `maxCollectionValues`   |       128 |     1,024 |
+| `maxPathSegments`       |        32 |       128 |
+| `maxOpaqueValueBytes`   |     1,024 |     4,096 |
+| `maxContinuationBytes`  |     4,096 |    16,384 |
+| `maxPolicyBytes`        |    65,536 |   262,144 |
+| `maxPageBytes`          | 1,048,576 | 4,194,304 |
+| `maxAuthorizationBytes` |   262,144 | 1,048,576 |
+
+Additional limits: seven predicates, 1,000 canonical-unique authorizations,
+256 UTF-8 bytes per scope/partition/stability/policy-version/submission identifier,
+120-byte canonical work-item IDs, and 256-byte phase/status values. Existing
+observation-window and ledger bounds also apply. New discovery strings reject
+ill-formed Unicode; opaque comparisons never normalize it.
+
+Individual lengths count actual UTF-8 bytes. Aggregate limits count canonical
+JSON of recognized fields, including keys, punctuation, escaping, discriminators
+and metadata: policy `{ version, filters }`, authorization array, and page
+`{ binding, traversalId, pageOrdinal, items, next }`. Page items contain canonical
+`workItemId` and configured `facts`; required omitted facts count as explicit
+`{ kind: "missing" }`. Binding contains scope/partition/stability/policy version;
+`next` includes continuation when present. Unconfigured facts/unrelated properties
+are neither read nor counted. Accounting is incremental, rejecting overflow before
+retention rather than serializing an oversized object. These are library
+processing/retention limits, not limits on allocations an adapter already made.
+
+Each invocation starts at **page ordinal 1 with null continuation** and a fresh
+private traversal ID. Tokens are nonempty bounded opaque strings, forwarded
+verbatim and compared only for repetition, never parsed/sorted or persisted.
+There is no durable continuation, pause/admission marker, cursor repurposing,
+sidecar or schema change. Repeated bounded **prefix rescans have no eventual tail
+progress guarantee**; the host must choose stable partitions and budgets that fit.
+
+Each poll processes pending candidates in first-discovery order, then initiates
+**at most one new page** when scheduling permits. Accepted page items run
+sequentially in canonical UTF-8 order; no candidate runs twice in one poll. This
+is page-local ordering, not a global sort independent of partitioning. Candidate
+retries never reset page/item/poll counters. `pageCalls` counts actual invocations,
+including empty, failed and timed-out calls; no hidden page retry loop exists.
+Empty continued pages consume a call and continue. At the item limit, only empty
+pages can establish terminal evidence; another item overflows. A terminal final
+permitted call can complete; a continued final call cannot.
+
+`traversal.status: "complete"` requires both explicit terminal evidence and
+finalized accepted-item dispositions. Completion does not mean every item
+succeeded. `terminalPageSeen: true` alone does not erase pending mutation retries,
+cancellation or exhausted budgets. Ordinary no-new-events finalize after their
+observation attempt once terminal is known; genuine retries may need more polls.
+Rejected/duplicate/unstable/oversized later pages preserve earlier outcomes and
+acknowledged writes, but contribute no accepted item identities.
+
+Incomplete reasons are `page-budget-exhausted`, `item-budget-exhausted`,
+`poll-budget-exhausted`, `poll-start-budget-exhausted`, `page-failed`,
+`page-timeout`, `invalid-page`, `duplicate-item`, `repeated-continuation`,
+`unstable-scope`, or `cancelled`. Pass `stopReason` is separately `completed`,
+`discovery-incomplete`, `cancelled`, `poll-budget-exhausted`, or
+`poll-start-budget-exhausted`. Inspect traversal and individual dispositions, not
+just `ok: true` or the stop reason.
+
+Counts remain independent: `pagesValidated`, `discovered`, `evaluated`, `admitted`
+(fresh accepted initializations, with or without intake), `paused`, `processed`
+(finalized dispositions including matching, excluding unprocessed items),
+and `initializationReplayed` are not aliases for `pageCalls` or `acted`.
+`acted` counts both signal kinds; `eligible` keeps its observation-only meaning;
+`suppressed` counts only acknowledged suppressed cursor advances, not pauses or
+unmatched/replayed admission. Paused counts include validated but unscheduled
+items, whose outcome is explicitly `unprocessed`. Outcomes use first-discovery
+order; signals use acknowledgement order. Final failures may overlap actions;
+the four cleanup counts partition all returned candidates.
+
+Fresh abort gates precede pages, candidate effects, observations and non-cleanup
+mutations. In-flight ledger writes are **awaited** and their acknowledgements
+validated; permitted fresh admission or comment signals survive abort and cleanup
+failure. Page/observation child controllers and timers retire late results without
+late effects. Validated existing-record authority still gets exactly one cleanup
+attempt. Ledger/delay dependencies must settle; page/observation timeouts use the
+injected delay and are not a hard runtime guarantee. Poll-start elapsed limits
+bound scheduling, not duration; the clock is read at pass start and once per poll.
+Both modes snapshot each native Date timestamp; later caller mutation of a shared
+Date cannot move the start baseline, poll decision or reported timestamps.
+
+### Typed offline discovery examples
+
+The following fixture is compiled and executed by
+`src/DevSquadAdoWorkflowWatcher.discovery.test.ts`; it performs no live query,
+network operation or dispatch. Supply an opened repository-local ledger, a UTC
+clock and a cooperative delay (as in the supplied example). Preconditions: item
+999 is absent, while item 137 is already initialized at phase `ready`, status
+`open`, WI cursor `480`, with no PR. Those are fixture prerequisites, not automatic
+seeding by the watcher. The calls demonstrate terminal empty discovery, authorized
+no-comment admission, exclusion without observation, anchored reentry to `481`,
+and a repeat with no redelivery.
+
+```typescript
+import {
+  DEFAULT_DEVSQUAD_ADO_DISCOVERY_LIMITS,
+  runDevSquadAdoWorkflowWatchPass,
+  type DevSquadAdoWorkflowLedger,
+  type DevSquadAdoDiscoveryPage,
+  type DevSquadAdoWatcherDiscoverySeam,
+  type RunDevSquadAdoDiscoveryWatchPassOptions,
+} from "@ai-hero/sandcastle";
+
+async function offlineDiscoveryExamples(
+  ledger: DevSquadAdoWorkflowLedger,
+  clock: () => Date,
+  delay: RunDevSquadAdoDiscoveryWatchPassOptions["delay"],
+) {
+  const emptySeam: DevSquadAdoWatcherDiscoverySeam = {
+    discoverWorkItemsPage: async (request) => ({
+      binding: request.binding,
+      traversalId: request.traversalId,
+      pageOrdinal: request.pageOrdinal,
+      items: [],
+      next: { kind: "terminal" },
+    }),
+    observeWorkItemComments: async () => ({ kind: "window", commentIds: [] }),
+  };
+  const options: RunDevSquadAdoDiscoveryWatchPassOptions = {
+    mode: "discovery",
+    ledger,
+    seam: emptySeam,
+    passId: "offline-example",
+    ownerId: "host",
+    clock,
+    delay,
+    intakeRules: { phases: ["ready"], statuses: ["open"] },
+    budgets: {
+      maxPolls: 2,
+      maxPollStartElapsedMs: 1000,
+      observationTimeoutMs: 10,
+    },
+    discovery: {
+      scope: {
+        scopeId: "example",
+        partitionId: "small-partition",
+        stabilityId: "snapshot-1",
+        stableForInvocation: true,
+      },
+      policy: { version: "policy-v1", filters: [] },
+      limits: DEFAULT_DEVSQUAD_ADO_DISCOVERY_LIMITS,
+    },
+  };
+  const empty = await runDevSquadAdoWorkflowWatchPass(options);
+  const pageFor =
+    (
+      items: DevSquadAdoDiscoveryPage["items"],
+    ): DevSquadAdoWatcherDiscoverySeam["discoverWorkItemsPage"] =>
+    async (request) => ({
+      binding: request.binding,
+      traversalId: request.traversalId,
+      pageOrdinal: request.pageOrdinal,
+      items,
+      next: { kind: "terminal" },
+    });
+
+  // Precondition: 999 is absent. Admission never calls the comment method.
+  const admission = await runDevSquadAdoWorkflowWatchPass({
+    ...options,
+    seam: {
+      discoverWorkItemsPage: pageFor([{ workItemId: 999, facts: {} }]),
+      observeWorkItemComments: async () => {
+        throw new Error("admission must not observe comments");
+      },
+    },
+    discovery: {
+      ...options.discovery,
+      authorizations: [
+        {
+          workItemId: 999,
+          kind: "authorized",
+          submissionId: "host-submission-999",
+          initial: { phase: "ready", status: "open" },
+        },
+      ],
+    },
+  });
+
+  // Precondition: 137 already has phase ready/status open, WI cursor 480, no PR.
+  const reentryOptions: RunDevSquadAdoDiscoveryWatchPassOptions = {
+    ...options,
+    seam: {
+      discoverWorkItemsPage: pageFor([
+        {
+          workItemId: 137,
+          facts: { state: { kind: "known", value: "included" } },
+        },
+      ]),
+      observeWorkItemComments: async ({ sinceCommentId }) => {
+        if (sinceCommentId !== "480" && sinceCommentId !== "481")
+          throw new Error("expected the durable anchor");
+        return { kind: "window", commentIds: ["480", "481"] };
+      },
+    },
+  };
+  const paused = await runDevSquadAdoWorkflowWatchPass({
+    ...reentryOptions,
+    discovery: {
+      ...options.discovery,
+      policy: {
+        version: "policy-excluded",
+        filters: [
+          { dimension: "state", operator: "one-of", values: ["other"] },
+        ],
+      },
+    },
+  });
+  const reentry = await runDevSquadAdoWorkflowWatchPass(reentryOptions);
+  const repeat = await runDevSquadAdoWorkflowWatchPass(reentryOptions);
+  return { empty, admission, paused, reentry, repeat };
+}
+```
+
+The discovery implementation and documentation are locally implemented through
+W045. W046 remains **pending independent full integration-base review** owned by
+the parent. Historical W038 supplied-candidate approval is not discovery approval;
+ADR-0025/0026 remain Proposed. No overall extension approval, publication or ADR
+acceptance is implied by these local examples or scoped validation.
+
 ## Sandbox Providers
 
 Sandcastle uses a `SandboxProvider` to create isolated environments. The `sandbox` option on `run()`, `interactive()`, and `createSandbox()` accepts any provider, including `noSandbox()` — opt in to running the agent directly on the host when container isolation is undesired. Built-in providers:
@@ -1384,6 +2179,324 @@ hooks: {
 - Within each hook point, sandbox hooks run in parallel; host hooks within `onSandboxReady` also run in parallel with sandbox hooks. `host.onWorktreeReady` hooks run sequentially in declared order.
 - If any hook exits non-zero, setup fails fast.
 - When a `signal` is passed to `run()`, it is threaded to all hooks — aborting the signal cancels any in-flight hook commands.
+
+## Offline immutable design approval
+
+The slice-15 design gate is a **host-composed offline primitive**, not a daemon,
+phase runner, live ADO client, or operational end-to-end workflow. It binds one
+canonical work item, an explicitly host-authorized occurrence `G`, and immutable
+design `D` (the exact proposal plus exact referenced artifact versions).
+
+```ts
+import {
+  startDevSquadAdoDesignApproval,
+  reconcileDevSquadAdoDesignApproval,
+  recoverDevSquadAdoDesignApproval,
+  type DevSquadAdoDesignStartRequest,
+  type DevSquadAdoDesignStartDependencies,
+} from "@ai-hero/sandcastle";
+
+// The host supplies trusted offline adapters, a current ledger capability,
+// exact material, and an explicitly authorized occurrence. No fake live adapter.
+async function reviewOnce(
+  request: DevSquadAdoDesignStartRequest,
+  host: DevSquadAdoDesignStartDependencies,
+) {
+  const result = await startDevSquadAdoDesignApproval(request, host);
+  // Inspect durableState, verificationStatus, targetHandoff, reason, binding,
+  // knownRevision and checkpointRevisions separately. Do not execute a phase.
+  return result;
+}
+```
+
+Executable offline examples are in
+[`src/DevSquadAdoDesignApproval.examples.test.ts`](src/DevSquadAdoDesignApproval.examples.test.ts).
+
+### Effects and independent authorities
+
+| Entry                                | Maximum checkpoints | Publisher calls | Purpose                                                                             |
+| ------------------------------------ | ------------------: | --------------: | ----------------------------------------------------------------------------------- |
+| `startDevSquadAdoDesignApproval`     |                   3 |               1 | Reserve one attempt, confirm publication, resolve a human decision                  |
+| `reconcileDevSquadAdoDesignApproval` |                   2 |               0 | Advance missing stages of an existing reservation; no publisher dependency required |
+| `recoverDevSquadAdoDesignApproval`   |                   0 |               0 | Inspect durable history and optionally verify the current target                    |
+
+All coordinators must inject the same explicit host ledger root and namespace on
+a supported trusted-owner local filesystem. A watcher comment signal or
+claim-free discovery admission is **historical provenance only**. Its revision,
+phase/status, owner/fence metadata, and cleanup result are not a current capability
+or product approval. The gate never acquires, renews, transfers, or releases claims.
+
+The host separately supplies: current ledger capability; exact same-state mutation
+authorization; immutable design verification; independent publication verification;
+immutable event-time human permission; and, when requested, current target proof.
+A publisher locator/success echo is not a receipt. Existing control-plane comment
+results do not supply these guarantees. Trusted adapters must not hide retries.
+
+The published envelope shows `G`, `D`, proposal/manifest/target commitments, exact
+artifact versions, and both commands. Submit exactly one of these as the **entire
+comment**, substituting canonical 43-character unpadded base64url operands:
+
+```text
+/devsquad approve-design <G> <D>
+/devsquad request-changes <G> <D>
+```
+
+Exactly one ASCII space separates tokens; command lengths are 112 and 113 UTF-8
+bytes. No whitespace trimming, trailing newline, quotes, prose, aliases, substring
+matching, `lgtm`, development checkpoint approval, or automatic approval is accepted.
+Approval applies only to that occurrence and immutable design. Changes requested
+never authorizes implementation. Revised material requires an independently
+authorized new occurrence and fresh human review, not approval transfer.
+
+The decision adapter must supply a certified contiguous **immutable event-version
+prefix** after the verified proposal anchor: fixed snapshot/cursor, complete
+coverage, event actors, bodies and version chains, including unrelated events,
+edits and deletes. Current visible comments alone are insufficient. A command
+introduced by an edit is evaluated at that edit's ordinal; deletion does not erase
+an earlier decision. Opaque IDs are equality-only, never chronology. First eligible
+explicit human grant wins; an earlier unresolved authorization blocks later
+commands, while explicit denial may be skipped. Durable resolution has one shared
+approval/change-request slot. In-memory selection is not effective approval.
+
+### Uncertainty runbook
+
+**Permanent publication loss is an accepted tradeoff.** Only the timely direct
+fresh reservation acknowledgement permits the original invocation's single
+`publishOnce` call. The attempt remains consumed even if the process stops before
+that call. History, replay, readback, restart, timeout and late acknowledgements
+never recreate permission. The guarantee is at most one gate-mediated application
+invocation, **not exactly-once tracker storage** or downstream delivery.
+
+| Condition                                        | Safe operator/host action                                                                                                                                                                                        |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Reservation/write outcome unknown                | Use read-only recovery to inspect durable state. Do not repeat publication or manufacture another occurrence.                                                                                                    |
+| Consumed attempt or lost publisher response      | Investigate existing host evidence. Reconcile only a verified receipt attributable to the original attempt, using current mutation authority. Permanently missing evidence may block permanently.                |
+| Missing/ambiguous publication or decision prefix | Restore authoritative immutable witnesses if available; do not infer success, skip unresolved candidates, or bypass approval.                                                                                    |
+| Capacity exceeded after reservation              | Keep the occurrence blocked. No reserved future capacity, sidecar, outbox, eviction, migration or automatic rollover is provided.                                                                                |
+| Corrupt/unsupported ledger                       | Fail closed; preserve evidence. Do not fall back from corrupt highest state to an older apparent approval.                                                                                                       |
+| Unsupported production Windows platform          | The ledger cannot currently establish required permissions/directory-sync guarantees. Portable offline test fixtures do not make production Windows durable.                                                     |
+| Target missing/mismatched/stale                  | Preserve historical design approval separately, but block target-specific handoff. Restore original witnesses and independently observe current state; never infer historical target from current ledger fields. |
+
+Optional `targetVerification` supplies the original descriptor and a host-issued
+nonsecret request challenge. The target verifier checks exact repository, immutable
+source/content, branch, absolute worktree path/identity and bound agent/session
+references. Proof age is at most five seconds at return. `verified-current` is
+**descriptive only**, not a lock, executable resume instruction or present-day human
+reauthorization. The host must revalidate at any later execution boundary.
+
+Recovered durable approval may coexist with `evidence-unavailable` or blocked target
+handoff. Never treat `durableState: "approved"` alone as verification of newly
+supplied material. Results and durable gate checkpoints exclude bodies, reviewer
+prose, tokens, credentials, session contents and dependency diagnostics. Hashes
+are commitments, not encryption or secret detection; publish only host-approved
+nonsecret material.
+
+### Bounds and liveness
+
+Fixed ceilings (UTF-8 / canonical serialized bytes, never silent truncation):
+proposal 32 KiB; manifest 16 KiB/64 artifacts; target 8 KiB; rendering 64 KiB;
+evidence identifier 256 bytes; cursor 1 KiB; 8 pages/16 events each/128 total;
+event body 4 KiB; normalized decision stream 256 KiB; individual publication or
+selection/authorization package 16 KiB; retained non-ledger logical payload 1 MiB.
+Public ledger records are at most 16 MiB, with 10,000 entries per checkpoint,
+agent or session history; invocation inspection is capped at 7 records, 112 MiB,
+210,000 history-entry visits and two simultaneous full projected records. These
+are logical processing limits, not JavaScript heap isolation guarantees.
+
+A start permits at most **150 dependency calls**: 4 reads, 3 checkpoints, 3 mutation
+grants, 1 design verifier, 1 publisher, 1 publication verifier, 8 pages, 128 human
+grants and 1 current-target verifier. Failures count; there are zero automatic
+retries. Whole invocation deadline is 180,000 ms; ledger/design/publication/page/
+current-target calls get at most 5,000 ms, mutation/human grants 1,000 ms and
+publisher 10,000 ms, further limited by remaining invocation time. Cancellation and
+timeout retire continuations and request cooperative cancellation. They cannot
+cancel an unsettled ledger write or hard-terminate a noncooperating in-process
+adapter; late settlement cannot launch more effects or upgrade a completed result.
+
+Canonical Windows `npm run build` also has a **separate packaging limitation**:
+POSIX `rm`/`cp` postbuild commands may fail even after ESM and DTS generation
+succeeds. Successful compilation/declaration checks do not establish packaging,
+global-suite or production Windows durability success.
+
+Slice 16 still owns the plugin resumable phase runner and Sandcastle delegation;
+slice 17 broader feedback routing; slice 18 human-confirmed finalization and
+pause/resume/cancel/status/audit; slice 19 real host-side ADO MCP transport.
+No later-slice execution, merge authority, or live integration is delivered here.
+
+## Host-selected DevSquad/ADO phase runner
+
+`runDevSquadAdoPhase()` executes **one phase occurrence selected by the host**.
+It does not choose phase names, advance a lifecycle, acquire or renew a claim, or
+contact ADO. A same-state schema-v1 checkpoint reserves the occurrence before any
+handler or Sandcastle invocation, and a second checkpoint records only a minimized
+terminal commitment after successful validation or a settled validation failure.
+
+```ts
+import {
+  runDevSquadAdoPhase,
+  recoverDevSquadAdoPhase,
+  type DevSquadAdoPhaseDependencies,
+  type RunDevSquadAdoPhaseRequest,
+} from "@ai-hero/sandcastle";
+
+async function runOneSelectedPhase(
+  request: RunDevSquadAdoPhaseRequest,
+  host: DevSquadAdoPhaseDependencies,
+) {
+  const result = await runDevSquadAdoPhase(request, host);
+  if (result.state === "pending") {
+    // Read only: never rotate occurrence IDs or retry an uncertain effect.
+    return recoverDevSquadAdoPhase(request, {
+      ledger: host.ledger,
+      utcNow: host.utcNow,
+      monotonicNow: host.monotonicNow,
+      verifyTerminalReceipt: host.verifyTerminalReceipt,
+    });
+  }
+  return result;
+}
+```
+
+The host must explicitly authorize the exact reservation, every dispatch, and the
+terminal mutation. Implementation also requires the retained slice-15 approval,
+a fresh trusted rehydration of its actual human/publication/material evidence, and
+a fresh exact target proof. The design verifier receives the captured execution
+mode and provider names; Sandcastle provider functions and configuration are
+snapshotted before the first await. Supplied execution seams remain supported.
+
+A terminal `dp16` operation ID is only a public integrity commitment. Another
+holder of generic workflow-ledger mutation authority can compute one, so recovery
+and repeat calls return a terminal state only when `verifyTerminalReceipt`
+rehydrates its exact policy/design/execution audit trail. Without that evidence
+the result is `blocked` with `receipt-unverified`.
+
+### Phase uncertainty runbook
+
+| Condition                                                                         | Safe host action                                                                                                 |
+| --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Reservation response missing, replayed, or malformed                              | Recover read-only. Do not dispatch or create another occurrence.                                                 |
+| Execution/validation timed out, was cancelled, or returned malformed evidence     | Treat the reservation as consumed. Investigate externally; do not retry automatically.                           |
+| Terminal response lost                                                            | Recover with the trusted terminal receipt verifier. The original effect is never repeated.                       |
+| Design, human, publication, provider, or target evidence missing/stale/mismatched | Restore authoritative evidence and invoke a new policy evaluation; never infer authority from historical labels. |
+| Ledger history malformed or overlapping                                           | Preserve the ledger and fail closed. Do not rewrite history.                                                     |
+
+Executable deterministic examples and threat cases are in
+`src/DevSquadAdoPhaseRunner*.test.ts`. This slice does not add feedback comments,
+finalization/adjudication, or a live ADO adapter.
+
+## DevSquad/ADO comment feedback routing
+
+`runDevSquadAdoCommentFeedback()` consumes one verified terminal phase receipt
+and bounded host-observed comment/review evidence, then delegates one explicitly
+selected new occurrence to `runDevSquadAdoPhase()`. It never contacts a provider,
+parses comments as authorization, chooses phase vocabulary, resolves comments, or
+advances a lifecycle automatically.
+
+```ts
+import {
+  runDevSquadAdoCommentFeedback,
+  type DevSquadAdoCommentFeedbackDependencies,
+  type RunDevSquadAdoCommentFeedbackRequest,
+} from "@ai-hero/sandcastle";
+
+async function routeFeedback(
+  request: RunDevSquadAdoCommentFeedbackRequest,
+  host: DevSquadAdoCommentFeedbackDependencies,
+) {
+  const result = await runDevSquadAdoCommentFeedback(request, host);
+  if (result.state !== "delegated") return result;
+
+  // The nested result is authoritative for the selected slice-16 occurrence.
+  // "pending" is consumed uncertainty, never permission to rotate an ID/retry.
+  return result.phase;
+}
+```
+
+The host supplies immutable provider provenance, exact source-receipt
+verification, content normalization, and a fresh exact route grant. Command-like
+text, reactions, watcher notifications, and normalizer output are evidence only.
+The selected phase still requires all slice-16 policy, claim/fence/lease,
+design/target, execution, validation, and terminal receipt checks.
+
+### Comment feedback runbook
+
+| Condition                                                         | Safe host action                                                                                                    |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Source receipt cannot be rehydrated exactly                       | Restore immutable host evidence; do not normalize or route.                                                         |
+| Evidence order/version is missing or ambiguous                    | Obtain a complete authoritative prefix; do not infer chronology from IDs.                                           |
+| Normalizer or route grant is malformed, changed, denied, or stale | Stop before reservation; do not treat comment text as a fallback grant.                                             |
+| Selected phase is pending/uncertain                               | Recover read-only with the exact host-retained selected input; do not rotate the occurrence or retry automatically. |
+| Exact selected occurrence is terminal                             | Rehydrate the trusted slice-16 terminal receipt; recovery never repeats normalization or execution.                 |
+| Comment should be resolved, PR finalized, or effect adjudicated   | Defer to slice 18. Live provider transport remains slice 19.                                                        |
+
+Raw comments and normalized artifacts stay in host-owned storage. The ledger
+contains only fixed provenance commitments through the existing phase intent.
+Executable examples and threat cases are in
+`src/DevSquadAdoCommentFeedback*.test.ts`.
+
+## DevSquad/ADO human controls
+
+`runDevSquadAdoHumanControl()` exposes offline `status` and bounded `audit`
+queries plus explicitly human-authorized pause, resume, cancel, finalize, and
+uncertain-effect adjudication. It never interprets comments as decisions or
+calls ADO, GitHub, MCP, merge, or publication APIs.
+
+```ts
+import { runDevSquadAdoHumanControl } from "@ai-hero/sandcastle";
+
+const status = await runDevSquadAdoHumanControl(
+  { workItemId: 137, action: { kind: "status" } },
+  hostDependencies,
+);
+```
+
+Every mutation requires the exact current revision/state and claim capability,
+an immutable human-decision verifier, and a fresh exact policy grant. Ordinary
+controls cannot be inserted while a phase reservation is uncertain.
+`adjudicate` instead verifies the retained pending occurrence and records its
+canonical terminal checkpoint without redispatching the effect.
+
+| Result     | Safe host action                                                                        |
+| ---------- | --------------------------------------------------------------------------------------- |
+| `observed` | Display the minimized status/audit projection.                                          |
+| `recorded` | Rehydrate the accepted local decision before any separately authorized provider action. |
+| `blocked`  | Correct evidence, authority, policy, or expected-state input; do not infer approval.    |
+| `pending`  | Recover the exact operation; do not rotate its occurrence or repeat an external effect. |
+
+The human merge gate remains outside this API. Live ADO MCP transport is
+deferred to slice 19.
+
+## Host-side ADO MCP adapter
+
+`createAdoMcpControlPlaneAdapter()` bridges an explicitly injected host MCP
+transport to the existing `AdoControlPlane` interface. Sandcastle does not
+import an MCP runtime, discover tools, read credentials, or invoke provider
+operations globally.
+
+```ts
+import { createAdoMcpControlPlaneAdapter } from "@ai-hero/sandcastle";
+
+const ado = createAdoMcpControlPlaneAdapter({
+  access: "read-only",
+  orgName: "example-org",
+  project: "example-project",
+  repositoryId: "repo-id",
+  transport: hostMcpTransport,
+  decoders: hostResponseDecoders,
+  queries: hostCiAndReviewQueries,
+});
+```
+
+The bridge allowlists ADO work-item, comment, pull-request, review-thread, and
+pipeline tools; snapshots bounded plain data; validates decoded results; races
+every invocation against a timeout; and never retries an uncertain call.
+Read-only adapters expose no mutation methods. Creating a write adapter does not
+grant workflow, human, publication, approval, completion, or merge authority.
+
+CI and review request builders remain host-owned because build definitions and
+policy layouts vary by installation. Their output is still restricted to the
+same tool allowlist. Tests use only an injected fake transport; this repository
+does not perform a live MCP call.
 
 ## Development
 

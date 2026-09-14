@@ -149,6 +149,17 @@ export type {
   AdoReadOnlyControlPlane,
 } from "./AdoControlPlaneFactory.js";
 
+export { createAdoMcpControlPlaneAdapter } from "./AdoMcpControlPlaneAdapter.js";
+export type {
+  AdoMcpToolName,
+  AdoMcpToolRequest,
+  AdoMcpTransport,
+  AdoMcpDecodedComment,
+  AdoMcpResponseDecoders,
+  AdoMcpQueryBuilders,
+  AdoMcpControlPlaneConfig,
+} from "./AdoMcpControlPlaneAdapter.js";
+
 export { publishAdoPullRequest } from "./AdoPullRequestPublisher.js";
 export type {
   AdoPullRequestPublisherControlPlaneLike,
@@ -190,3 +201,249 @@ export type {
   AdoTeamRunnerValidationResult,
   RunAdoTeamOptions,
 } from "./AdoTeamRunner.js";
+
+export {
+  buildDevSquadSandcastleImplementationPrompt,
+  defaultDevSquadSandcastleExecutionSeam,
+  runDevSquadSandcastleExecution,
+  validateDevSquadSandcastleExecutionRequest,
+} from "./DevSquadSandcastleExecutionAdapter.js";
+export type {
+  DevSquadBranchContext,
+  DevSquadCommitMetadata,
+  DevSquadExecutionBounds,
+  DevSquadRepoContext,
+  DevSquadSandcastleAgentRole,
+  DevSquadSandcastleExecutionRequest,
+  DevSquadSandcastleExecutionResult,
+  DevSquadSandcastleExecutionSeam,
+  DevSquadSandcastleExecutionSeamInput,
+  DevSquadSandcastleExecutionSeamResult,
+  DevSquadSandcastleExecutionStatus,
+  DevSquadSandcastleFailureCategory,
+  DevSquadSandcastleFailureDetails,
+  DevSquadSandcastleLogSessionMetadata,
+  DevSquadSandcastleRequestValidationResult,
+  DevSquadSandcastleRunConfig,
+  DevSquadSandcastleValidationError,
+  DevSquadSandcastleValidationErrorCode,
+  DevSquadValidationCommand,
+  DevSquadValidationCommandRunner,
+  DevSquadValidationCommandRunnerInput,
+  DevSquadValidationCommandRunnerResult,
+  DevSquadValidationCommandStatus,
+  DevSquadValidationCommandSummary,
+  DevSquadValidationOverallStatus,
+  DevSquadValidationSummary,
+  DevSquadWorkItemContext,
+  RunDevSquadSandcastleExecutionOptions,
+} from "./DevSquadSandcastleExecutionAdapter.js";
+
+export { openDevSquadAdoWorkflowLedger } from "./DevSquadAdoWorkflowLedger.js";
+export type {
+  AcquireDevSquadAdoWorkflowClaimInput,
+  CheckpointDevSquadAdoWorkflowInput,
+  DevSquadAdoCheckpointEntry,
+  DevSquadAdoCheckpointedOutcome,
+  DevSquadAdoClaimAcquiredOutcome,
+  DevSquadAdoClaimAuthority,
+  DevSquadAdoClaimAuthorityInput,
+  DevSquadAdoClaimMetadata,
+  DevSquadAdoClaimReleasedOutcome,
+  DevSquadAdoClaimRenewedOutcome,
+  DevSquadAdoInitializedOutcome,
+  DevSquadAdoLedgerError,
+  DevSquadAdoLedgerResult,
+  DevSquadAdoMutationSuccess,
+  DevSquadAdoObservationCursors,
+  DevSquadAdoPullRequestCursor,
+  DevSquadAdoPullRequestReference,
+  DevSquadAdoRecoveryError,
+  DevSquadAdoReferenceActivation,
+  DevSquadAdoReleasedClaimMetadata,
+  DevSquadAdoResumableRecordList,
+  DevSquadAdoReferenceHistory,
+  DevSquadAdoWorkflowLedger,
+  DevSquadAdoWorkflowRecord,
+  DevSquadAdoWorkflowState,
+  DevSquadAdoWorkItemId,
+  InitializeDevSquadAdoWorkflowRecordInput,
+  OpenDevSquadAdoWorkflowLedgerInput,
+  ReleaseDevSquadAdoWorkflowClaimInput,
+  RenewDevSquadAdoWorkflowClaimInput,
+} from "./DevSquadAdoWorkflowLedger.js";
+
+export {
+  deriveDevSquadAdoWatcherOperationId,
+  runDevSquadAdoWorkflowWatchPass,
+  validateDevSquadAdoWorkflowWatchPassOptions,
+} from "./DevSquadAdoWorkflowWatcher.js";
+export type {
+  DevSquadAdoWatchBackoffConfig,
+  DevSquadAdoWatchBudgets,
+  DevSquadAdoWatchCandidateOutcome,
+  DevSquadAdoWatchCandidateOutcomeKind,
+  DevSquadAdoWatchClaimMetadata,
+  DevSquadAdoWatchCleanup,
+  DevSquadAdoWatchLedgerErrorKind,
+  DevSquadAdoWatchError,
+  DevSquadAdoWatchIntakeRules,
+  DevSquadAdoWatchIntakeSignal,
+  DevSquadAdoWatchLeaseConfig,
+  DevSquadAdoWatchObservationKind,
+  DevSquadAdoWatchPassCounts,
+  DevSquadAdoWatchPassOutcome,
+  DevSquadAdoWatchPassResult,
+  DevSquadAdoWatchReasonCode,
+  DevSquadAdoWatchStopReason,
+  DevSquadAdoWatchValidatedPass,
+  DevSquadAdoWatchValidationResult,
+  DevSquadAdoWatcherClaimStep,
+  DevSquadAdoWatcherObservationGeneration,
+  DevSquadAdoWatcherObservationSeam,
+  DevSquadAdoWatcherOperationIdentity,
+  DevSquadAdoWatcherOperationStep,
+  DevSquadAdoWatcherPullRequestObservation,
+  DevSquadAdoWatcherPullRequestObservationEntry,
+  DevSquadAdoWatcherPullRequestObservationInput,
+  DevSquadAdoWatcherSeamMethodName,
+  DevSquadAdoWatcherWorkItemObservation,
+  DevSquadAdoWatcherWorkItemObservationInput,
+  RunDevSquadAdoWorkflowWatchPassOptions,
+} from "./DevSquadAdoWorkflowWatcher.js";
+
+// W045 / FR-008/061: discovery contracts are additive; supplied overloads and
+// signal unions stay unchanged. Internal traversal/admission helpers stay private.
+export { DEFAULT_DEVSQUAD_ADO_DISCOVERY_LIMITS } from "./DevSquadAdoWorkflowWatcher.js";
+export type {
+  DevSquadAdoDiscoveryFilter,
+  DevSquadAdoDiscoveryMatchingPolicy,
+  DevSquadAdoDiscoveryLimits,
+  DevSquadAdoDiscoveryAuthorization,
+  DevSquadAdoWatchDiscoveryConfiguration,
+  DevSquadAdoDiscoveryBinding,
+  DevSquadAdoDiscoveryFact,
+  DevSquadAdoDiscoveryFacts,
+  DevSquadAdoDiscoveryPageRequest,
+  DevSquadAdoDiscoveryPage,
+  DevSquadAdoDiscoveryWorkItemObservation,
+  DevSquadAdoDiscoveryPullRequestObservation,
+  DevSquadAdoWatcherDiscoverySeam,
+  RunDevSquadAdoDiscoveryWatchPassOptions,
+  DevSquadAdoWorkflowWatchPassRequest,
+  DevSquadAdoDiscoveryError,
+  DevSquadAdoDiscoveryValidatedPass,
+  DevSquadAdoDiscoveryValidationResult,
+  DevSquadAdoDiscoveryTraversal,
+  DevSquadAdoDiscoveryPassCounts,
+  DevSquadAdoDiscoveryPassResult,
+  DevSquadAdoDiscoveryPassOutcome,
+} from "./DevSquadAdoWorkflowWatcher.js";
+
+export type {
+  DevSquadAdoDiscoveryMatchingEvidence,
+  DevSquadAdoDiscoveryIntakeSignal,
+  DevSquadAdoDiscoveryCandidateOutcome,
+} from "./DevSquadAdoWorkflowWatcher.js";
+
+export type {
+  DevSquadAdoDiscoveryAdmissionSignal,
+  DevSquadAdoDiscoveryAdmissionAcceptance,
+  DevSquadAdoDiscoveryAdmissionOutcome,
+} from "./DevSquadAdoWorkflowWatcher.js";
+
+// W062 / FR-026: host-composed offline gate; no internal permission/runtime exports.
+export {
+  startDevSquadAdoDesignApproval,
+  reconcileDevSquadAdoDesignApproval,
+  recoverDevSquadAdoDesignApproval,
+} from "./DevSquadAdoDesignApproval.js";
+export type {
+  DevSquadAdoDesignRecoveryRequest,
+  DevSquadAdoDesignRecoveryDependencies,
+  DevSquadAdoDesignApprovalResult,
+  DevSquadAdoDesignProvenance,
+} from "./DevSquadAdoDesignApproval.js";
+export type {
+  DevSquadAdoDesignScope,
+  DevSquadAdoDesignArtifact,
+  DevSquadAdoDesignInput,
+  DevSquadAdoDesignStartRequest,
+  DevSquadAdoDesignEnvelope,
+  DevSquadAdoDesignMutationRequest,
+  DevSquadAdoDesignStartDependencies,
+  DevSquadAdoDesignReconcileDependencies,
+  DevSquadAdoDesignPublicationWitness,
+  DevSquadAdoDesignPublicationVerifier,
+} from "./DevSquadAdoDesignApprovalPublication.js";
+export type {
+  DevSquadAdoDesignProposalAnchor,
+  DevSquadAdoDesignDecisionEvent,
+  DevSquadAdoDesignDecisionPage,
+  DevSquadAdoDesignHumanWitness,
+  DevSquadAdoDesignDecisionDependencies,
+} from "./DevSquadAdoDesignApprovalDecision.js";
+export type {
+  DevSquadAdoDesignTarget,
+  DevSquadAdoDesignTargetRequest,
+  DevSquadAdoDesignTargetVerifier,
+} from "./DevSquadAdoDesignApprovalTarget.js";
+
+// W070 / ADR-0028: one host-selected phase; no scheduler or live ADO adapter.
+export {
+  runDevSquadAdoPhase,
+  recoverDevSquadAdoPhase,
+} from "./DevSquadAdoPhaseRunner.js";
+export type {
+  DevSquadAdoPhaseFeedbackBinding,
+  DevSquadAdoPhaseInput,
+  RunDevSquadAdoPhaseRequest,
+  DevSquadAdoPhasePolicyRequest,
+  DevSquadAdoPhaseDesignRequest,
+  DevSquadAdoPhaseReceiptVerificationRequest,
+  DevSquadAdoPhaseTerminalReceiptVerifier,
+  DevSquadAdoPhasePreparationReceipt,
+  DevSquadAdoPhaseDependencies,
+  DevSquadAdoPhaseRecoveryDependencies,
+  DevSquadAdoPhaseResult,
+} from "./DevSquadAdoPhaseTypes.js";
+
+// W077 / ADR-0029: comments are provenance only; slice 16 remains the executor.
+export {
+  runDevSquadAdoCommentFeedback,
+  recoverDevSquadAdoCommentFeedback,
+} from "./DevSquadAdoCommentFeedback.js";
+export type {
+  DevSquadAdoCommentFeedbackEvidence,
+  DevSquadAdoCommentFeedbackSource,
+  DevSquadAdoCommentFeedbackSelectionPhase,
+  DevSquadAdoCommentFeedbackSelection,
+  RunDevSquadAdoCommentFeedbackRequest,
+  DevSquadAdoCommentFeedbackNormalizationRequest,
+  DevSquadAdoCommentFeedbackRouteAuthorizationRequest,
+  DevSquadAdoCommentFeedbackBinding,
+  DevSquadAdoCommentFeedbackDependencies,
+  DevSquadAdoCommentFeedbackRecoveryRequest,
+  DevSquadAdoCommentFeedbackRecoveryDependencies,
+  DevSquadAdoCommentFeedbackResult,
+} from "./DevSquadAdoCommentFeedbackTypes.js";
+
+// Slice 18: human decisions authorize bounded local control records, never provider actions.
+export { runDevSquadAdoHumanControl } from "./DevSquadAdoHumanControl.js";
+export type {
+  DevSquadAdoHumanDecision,
+  DevSquadAdoHumanControlReadAction,
+  DevSquadAdoHumanControlMutationKind,
+  DevSquadAdoHumanControlMutationAction,
+  DevSquadAdoHumanControlAdjudicationAction,
+  DevSquadAdoHumanControlAction,
+  DevSquadAdoHumanControlAuthorizedAction,
+  RunDevSquadAdoHumanControlRequest,
+  DevSquadAdoHumanControlVerificationRequest,
+  DevSquadAdoHumanControlPolicyRequest,
+  DevSquadAdoHumanControlRetainedVerificationRequest,
+  DevSquadAdoHumanControlDependencies,
+  DevSquadAdoHumanControlAuditEntry,
+  DevSquadAdoHumanControlSnapshot,
+  DevSquadAdoHumanControlResult,
+} from "./DevSquadAdoHumanControlTypes.js";

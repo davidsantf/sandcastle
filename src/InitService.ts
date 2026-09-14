@@ -4,9 +4,11 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SANDBOX_REPO_DIR } from "./SandboxFactory.js";
 
-const GITIGNORE = `.env
+const GITIGNORE = `# Prevent accidental commits of local runtime data; this is not access control.
+.env
 logs/
 worktrees/
+devsquad-ado/
 `;
 
 /**

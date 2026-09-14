@@ -252,7 +252,7 @@ describe("InitService scaffold", () => {
     );
   });
 
-  it("includes .env, logs/, and worktrees/ in .gitignore but not patches/", async () => {
+  it("includes runtime state including devsquad-ado in .gitignore but not patches/", async () => {
     const dir = await makeDir();
     await runScaffold(dir);
 
@@ -263,6 +263,8 @@ describe("InitService scaffold", () => {
     expect(gitignore).toContain(".env");
     expect(gitignore).toContain("logs/");
     expect(gitignore).toContain("worktrees/");
+    expect(gitignore).toContain("devsquad-ado/");
+    expect(gitignore).toContain("not access control");
     expect(gitignore).not.toContain("patches/");
   });
 

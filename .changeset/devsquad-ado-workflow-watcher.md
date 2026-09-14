@@ -1,0 +1,15 @@
+---
+"@ai-hero/sandcastle": minor
+---
+
+Add a bounded offline DevSquad/ADO workflow watch pass that turns injected read-only observations into durably checkpointed intake signals. Candidate ordering is deterministic; checkpoint operation identifiers are scoped to the cursor advance they publish so a retry replays instead of duplicating, while claim-lifecycle identifiers are scoped to a random per-acquisition epoch so the same `passId` always stays retryable and capability tokens stay independently random. An observation invalidated between its record read and its claim is abandoned rather than written, so a cursor never moves backwards. Injected ledger faults resolve as typed, redacted candidate failures with truthful cleanup evidence. Delivery is at-most-once and may lose signals after durable unacknowledged writes or host crashes. Budgets cover poll count, poll-start elapsed time, per-observation timeouts, and cooperative cancellation; ledger recovery categories stay fail-closed and every result projection is token-free.
+
+Add explicit host-injected discovery while preserving supplied-mode inference and runtime shapes. Evaluate complete exact matching over bounded normalized facts and resolved teams; pause excluded/missing-fact items without effects and resume from durable anchors, failing closed on explicit retention loss. Admit authorized missing records without comments or claims only after fresh acknowledged initialization; replay reconciles acceptance without redelivery and uncertainty or crashes can permanently lose admission intake. Traverse bounded stable pages at most once per poll, with invocation-local continuation, truthful terminal-versus-retry accounting, acknowledgement-preserving cancellation and no eventual tail-progress guarantee from prefix rescans. Publish typed offline examples, documented inclusive defaults/byte ceilings and host responsibilities, minimized policy-versioned evidence, and guardians for all watcher production modules. No live transport, lifecycle authority, durable continuation, outbox or ledger schema change is added; liveness still requires cooperating, settling dependencies.
+
+Fix discovery admission routing to require initial validated missing-read evidence, preserving existing-record checkpoint failures and failed or indeterminate claim cleanup.
+
+Contain executable signal-listener failures in both modes without losing earlier acknowledgements or bypassing retained claim finalization.
+
+Snapshot supplied-mode clock timestamps so mutable caller Dates cannot bypass elapsed poll-start limits or rewrite pass metadata.
+
+Restore the approved minimized discovery validation summary by keeping prepared policy and authorization context private, without changing supplied validation types or adding preflight effects. These are bugfixes within the unreleased discovery feature; its existing minor release entry is retained.
