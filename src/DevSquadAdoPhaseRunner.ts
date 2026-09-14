@@ -87,9 +87,18 @@ export async function recoverDevSquadAdoPhase(
     const n = phaseInput(request);
     intent = n.intent;
     const read = dependencies.ledger.readRecord.bind(dependencies.ledger);
+    const timeout = dependencies.timeoutMs ?? 10000;
+    if (
+      !Number.isSafeInteger(timeout) ||
+      timeout < 1 ||
+      timeout > 300000 ||
+      (dependencies.signal !== undefined &&
+        !(dependencies.signal instanceof AbortSignal))
+    )
+      throw new PhaseFault("invalid-input");
     life = new PhaseLifecycle(
-      10000,
-      undefined,
+      timeout,
+      dependencies.signal,
       dependencies.utcNow ?? Date.now,
       dependencies.monotonicNow ?? (() => performance.now()),
     );
@@ -156,6 +165,7 @@ export async function runDevSquadAdoPhase(
       "expected",
       "success",
       "failure",
+      "feedback",
       "phase",
       "authority",
       "signal",
@@ -242,7 +252,7 @@ export async function runDevSquadAdoPhase(
     }
     const capturedSandcastle =
       input.phase.kind === "implement" && sandcastle
-        ? snapshotSandcastleConfig(sandcastle)
+        ? snapshotDevSquadSandcastleRunConfig(sandcastle)
         : undefined;
     const executionIdentity =
       input.phase.kind === "implement" && capturedSandcastle
@@ -372,9 +382,13 @@ export async function runDevSquadAdoPhase(
       if (response.kind !== "granted" || !phaseEqual(response.request, q))
         throw new PhaseFault("policy-denied");
       const expiry = freshExpiry(response.expiresAt, utc, "policy-denied");
-      return () => {
+      return (acceptedAt?: string) => {
         const elapsed = received - lifecycle.check();
-        if (lifecycle.now() >= expiry || utc + elapsed >= expiry)
+        if (
+          lifecycle.now() >= expiry ||
+          utc + elapsed >= expiry ||
+          (acceptedAt !== undefined && Date.parse(acceptedAt) >= expiry)
+        )
           throw new PhaseFault("policy-denied");
       };
     };
@@ -434,6 +448,7 @@ export async function runDevSquadAdoPhase(
       current = accepted;
       knownRevision = accepted.revision;
       if (action === "reserve") reservationRevision = accepted.revision;
+      checkGrant(accepted.updatedAt);
     };
     await checkpointPhase("reserve", reserveId, reservePatch);
     const dispatchGuard = async () => {
@@ -789,7 +804,7 @@ async function verifyRetainedReceipt(
   freshExpiry(response.expiresAt, now, "receipt-unverified");
 }
 
-function snapshotSandcastleConfig(
+export function snapshotDevSquadSandcastleRunConfig(
   value: NonNullable<DevSquadAdoPhaseDependencies["sandcastle"]>,
 ): NonNullable<DevSquadAdoPhaseDependencies["sandcastle"]> {
   const agent = value.agent;

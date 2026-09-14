@@ -14,6 +14,7 @@ import type {
   DevSquadAdoWorkflowRecord,
 } from "./DevSquadAdoWorkflowLedger.js";
 import type {
+  DevSquadAdoPhaseFeedbackBinding,
   DevSquadAdoPhaseInput,
   DevSquadAdoPhaseResult,
 } from "./DevSquadAdoPhaseTypes.js";
@@ -113,15 +114,19 @@ function state(value: { readonly phase: string; readonly status: string }) {
 
 export function phaseInput(value: unknown) {
   const input = phaseCopy(value) as DevSquadAdoPhaseInput;
-  keys(input, [
-    "workItemId",
-    "occurrence",
-    "plugin",
-    "expected",
-    "success",
-    "failure",
-    "phase",
-  ]);
+  keys(
+    input,
+    [
+      "workItemId",
+      "occurrence",
+      "plugin",
+      "expected",
+      "success",
+      "failure",
+      "phase",
+    ],
+    ["feedback"],
+  );
   const workItemId = canonicalWorkItem(input.workItemId);
   if (workItemId === null || !isB32(input.occurrence))
     throw new PhaseFault("invalid-input");
@@ -139,6 +144,7 @@ export function phaseInput(value: unknown) {
     input.expected.revision < 1
   )
     throw new PhaseFault("invalid-input");
+  if (input.feedback !== undefined) feedbackBinding(input.feedback);
   if (input.phase.kind === "prepare") {
     keys(input.phase, ["kind", "content"]);
     if (typeof input.phase.content !== "string" || !input.phase.content.trim())
@@ -204,8 +210,7 @@ export function phaseInput(value: unknown) {
   } else throw new PhaseFault("invalid-input");
   const canonical: DevSquadAdoPhaseInput = { ...input, workItemId };
   // Explicit field order makes insertion-order differences irrelevant.
-  const intent = gateHash([
-    "dp16.intent.v1",
+  const intentFields = [
     canonical.workItemId,
     canonical.occurrence,
     canonical.plugin.id,
@@ -217,9 +222,47 @@ export function phaseInput(value: unknown) {
     canonical.success.status,
     canonical.failure.phase,
     canonical.failure.status,
-    sortedData(canonical.phase),
-  ]);
+  ];
+  const intent =
+    canonical.feedback === undefined
+      ? gateHash([
+          "dp16.intent.v1",
+          ...intentFields,
+          sortedData(canonical.phase),
+        ])
+      : gateHash([
+          "dp16.intent.v2",
+          ...intentFields,
+          sortedData(canonical.feedback),
+          sortedData(canonical.phase),
+        ]);
   return { input: canonical, workItemId, intent };
+}
+
+function feedbackBinding(value: DevSquadAdoPhaseFeedbackBinding) {
+  keys(value, [
+    "sourceOccurrence",
+    "sourceIntent",
+    "sourceState",
+    "sourceReservationRevision",
+    "sourceTerminalRevision",
+    "sourceReceiptDigest",
+    "evidenceDigest",
+    "normalizedDigest",
+  ]);
+  if (
+    !isB32(value.sourceOccurrence) ||
+    !isB32(value.sourceIntent) ||
+    !isB32(value.sourceReceiptDigest) ||
+    !isB32(value.evidenceDigest) ||
+    !isB32(value.normalizedDigest) ||
+    !["completed", "failed"].includes(value.sourceState) ||
+    !Number.isSafeInteger(value.sourceReservationRevision) ||
+    value.sourceReservationRevision < 1 ||
+    !Number.isSafeInteger(value.sourceTerminalRevision) ||
+    value.sourceTerminalRevision !== value.sourceReservationRevision + 1
+  )
+    throw new PhaseFault("invalid-input");
 }
 
 function sortedData(value: unknown): unknown {

@@ -168,6 +168,7 @@ export async function makePhaseFixture(
     prepare,
     execution: { execute, runValidationCommand },
     utcNow: () => nowMs,
+    monotonicNow: () => 0,
   };
   return {
     ...base,
@@ -185,6 +186,9 @@ export async function makePhaseFixture(
     prepare,
     execute,
     runValidationCommand,
+    phaseNow() {
+      return new Date(nowMs);
+    },
     setNow(value: number) {
       nowMs = value;
     },

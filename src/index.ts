@@ -384,6 +384,7 @@ export {
   recoverDevSquadAdoPhase,
 } from "./DevSquadAdoPhaseRunner.js";
 export type {
+  DevSquadAdoPhaseFeedbackBinding,
   DevSquadAdoPhaseInput,
   RunDevSquadAdoPhaseRequest,
   DevSquadAdoPhasePolicyRequest,
@@ -395,3 +396,23 @@ export type {
   DevSquadAdoPhaseRecoveryDependencies,
   DevSquadAdoPhaseResult,
 } from "./DevSquadAdoPhaseTypes.js";
+
+// W077 / ADR-0029: comments are provenance only; slice 16 remains the executor.
+export {
+  runDevSquadAdoCommentFeedback,
+  recoverDevSquadAdoCommentFeedback,
+} from "./DevSquadAdoCommentFeedback.js";
+export type {
+  DevSquadAdoCommentFeedbackEvidence,
+  DevSquadAdoCommentFeedbackSource,
+  DevSquadAdoCommentFeedbackSelectionPhase,
+  DevSquadAdoCommentFeedbackSelection,
+  RunDevSquadAdoCommentFeedbackRequest,
+  DevSquadAdoCommentFeedbackNormalizationRequest,
+  DevSquadAdoCommentFeedbackRouteAuthorizationRequest,
+  DevSquadAdoCommentFeedbackBinding,
+  DevSquadAdoCommentFeedbackDependencies,
+  DevSquadAdoCommentFeedbackRecoveryRequest,
+  DevSquadAdoCommentFeedbackRecoveryDependencies,
+  DevSquadAdoCommentFeedbackResult,
+} from "./DevSquadAdoCommentFeedbackTypes.js";

@@ -2384,6 +2384,56 @@ Executable deterministic examples and threat cases are in
 `src/DevSquadAdoPhaseRunner*.test.ts`. This slice does not add feedback comments,
 finalization/adjudication, or a live ADO adapter.
 
+## DevSquad/ADO comment feedback routing
+
+`runDevSquadAdoCommentFeedback()` consumes one verified terminal phase receipt
+and bounded host-observed comment/review evidence, then delegates one explicitly
+selected new occurrence to `runDevSquadAdoPhase()`. It never contacts a provider,
+parses comments as authorization, chooses phase vocabulary, resolves comments, or
+advances a lifecycle automatically.
+
+```ts
+import {
+  runDevSquadAdoCommentFeedback,
+  type DevSquadAdoCommentFeedbackDependencies,
+  type RunDevSquadAdoCommentFeedbackRequest,
+} from "@ai-hero/sandcastle";
+
+async function routeFeedback(
+  request: RunDevSquadAdoCommentFeedbackRequest,
+  host: DevSquadAdoCommentFeedbackDependencies,
+) {
+  const result = await runDevSquadAdoCommentFeedback(request, host);
+  if (result.state !== "delegated") return result;
+
+  // The nested result is authoritative for the selected slice-16 occurrence.
+  // "pending" is consumed uncertainty, never permission to rotate an ID/retry.
+  return result.phase;
+}
+```
+
+The host supplies immutable provider provenance, exact source-receipt
+verification, content normalization, and a fresh exact route grant. Command-like
+text, reactions, watcher notifications, and normalizer output are evidence only.
+The selected phase still requires all slice-16 policy, claim/fence/lease,
+design/target, execution, validation, and terminal receipt checks.
+
+### Comment feedback runbook
+
+| Condition                                                         | Safe host action                                                                                                    |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Source receipt cannot be rehydrated exactly                       | Restore immutable host evidence; do not normalize or route.                                                         |
+| Evidence order/version is missing or ambiguous                    | Obtain a complete authoritative prefix; do not infer chronology from IDs.                                           |
+| Normalizer or route grant is malformed, changed, denied, or stale | Stop before reservation; do not treat comment text as a fallback grant.                                             |
+| Selected phase is pending/uncertain                               | Recover read-only with the exact host-retained selected input; do not rotate the occurrence or retry automatically. |
+| Exact selected occurrence is terminal                             | Rehydrate the trusted slice-16 terminal receipt; recovery never repeats normalization or execution.                 |
+| Comment should be resolved, PR finalized, or effect adjudicated   | Defer to slice 18. Live provider transport remains slice 19.                                                        |
+
+Raw comments and normalized artifacts stay in host-owned storage. The ledger
+contains only fixed provenance commitments through the existing phase intent.
+Executable examples and threat cases are in
+`src/DevSquadAdoCommentFeedback*.test.ts`.
+
 ## Development
 
 ```bash

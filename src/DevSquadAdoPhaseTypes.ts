@@ -14,6 +14,18 @@ import type {
   DevSquadAdoDesignTargetVerifier,
 } from "./DevSquadAdoDesignApprovalTarget.js";
 
+/** Optional provenance binding supplied by a higher-level host coordinator. */
+export interface DevSquadAdoPhaseFeedbackBinding {
+  readonly sourceOccurrence: string;
+  readonly sourceIntent: string;
+  readonly sourceState: "completed" | "failed";
+  readonly sourceReservationRevision: number;
+  readonly sourceTerminalRevision: number;
+  readonly sourceReceiptDigest: string;
+  readonly evidenceDigest: string;
+  readonly normalizedDigest: string;
+}
+
 /** The host chooses phase vocabulary, ordering, plugin version, and transitions. */
 export interface DevSquadAdoPhaseInput {
   readonly workItemId: DevSquadAdoWorkItemId;
@@ -23,6 +35,8 @@ export interface DevSquadAdoPhaseInput {
   readonly expected: DevSquadAdoWorkflowState & { readonly revision: number };
   readonly success: DevSquadAdoWorkflowState;
   readonly failure: DevSquadAdoWorkflowState;
+  /** Integrity provenance only. It is never execution or lifecycle authority. */
+  readonly feedback?: DevSquadAdoPhaseFeedbackBinding;
   readonly phase:
     | {
         readonly kind: "prepare";
@@ -182,6 +196,9 @@ export interface DevSquadAdoPhaseDependencies {
 export interface DevSquadAdoPhaseRecoveryDependencies {
   readonly ledger: Pick<DevSquadAdoWorkflowLedger, "readRecord">;
   readonly verifyTerminalReceipt?: DevSquadAdoPhaseTerminalReceiptVerifier;
+  /** 1..300000 milliseconds; default 10000. */
+  readonly timeoutMs?: number;
+  readonly signal?: AbortSignal;
   readonly utcNow?: () => number;
   readonly monotonicNow?: () => number;
 }

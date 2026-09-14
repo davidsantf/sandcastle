@@ -160,6 +160,29 @@ describe("DevSquad ADO phase runner authority", () => {
     expect(f.authorizePhase).not.toHaveBeenCalled();
   });
 
+  it("does not dispatch when reservation is accepted after policy expiry", async () => {
+    const f = await fixture();
+    const checkpoint = f.ledger.checkpoint;
+    const result = await runDevSquadAdoPhase(f.request, {
+      ...f.dependencies,
+      ledger: {
+        readRecord: f.ledger.readRecord,
+        checkpoint: async (request) => {
+          f.setNow(f.now().getTime() + 5_000);
+          return checkpoint(request);
+        },
+      },
+    });
+    expect(result).toMatchObject({
+      state: "pending",
+      reason: "policy-denied",
+      reservationRevision: 6,
+    });
+    expect(f.execute).not.toHaveBeenCalled();
+    const read = await f.ledger.readRecord("137");
+    expect(read.ok && read.value.revision).toBe(6);
+  });
+
   it("rejects work-item, branch, and worktree mismatches against the target", async () => {
     for (const field of ["workItem", "branch", "worktree"] as const) {
       const f = await fixture();

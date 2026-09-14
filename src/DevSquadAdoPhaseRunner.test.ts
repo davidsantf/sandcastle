@@ -3,6 +3,8 @@ import {
   recoverDevSquadAdoPhase,
   runDevSquadAdoPhase,
 } from "./DevSquadAdoPhaseRunner.js";
+import { gateHash } from "./DevSquadAdoDesignApprovalHistory.js";
+import { phaseInput } from "./DevSquadAdoPhaseProtocol.js";
 import { makePhaseFixture } from "./DevSquadAdoPhaseTestSupport.js";
 
 const clean: Array<() => Promise<void>> = [];
@@ -16,6 +18,32 @@ async function fixture(kind: "prepare" | "implement" = "implement") {
 }
 
 describe("DevSquad ADO phase runner success and settled failure", () => {
+  it("preserves the exact slice-16 intent for inputs without feedback", async () => {
+    const f = await fixture("prepare");
+    const input = f.input;
+    expect(phaseInput(input).intent).toBe(
+      gateHash([
+        "dp16.intent.v1",
+        String(input.workItemId),
+        input.occurrence,
+        input.plugin.id,
+        input.plugin.version,
+        input.expected.revision,
+        input.expected.phase,
+        input.expected.status,
+        input.success.phase,
+        input.success.status,
+        input.failure.phase,
+        input.failure.status,
+        Object.fromEntries(
+          Object.entries(input.phase).sort(([left], [right]) =>
+            left < right ? -1 : left > right ? 1 : 0,
+          ),
+        ),
+      ]),
+    );
+  });
+
   it("records one preparation reservation and terminal success", async () => {
     const f = await fixture("prepare");
     expect(await runDevSquadAdoPhase(f.request, f.dependencies)).toMatchObject({
