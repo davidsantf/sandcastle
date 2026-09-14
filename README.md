@@ -2466,6 +2466,38 @@ canonical terminal checkpoint without redispatching the effect.
 The human merge gate remains outside this API. Live ADO MCP transport is
 deferred to slice 19.
 
+## Host-side ADO MCP adapter
+
+`createAdoMcpControlPlaneAdapter()` bridges an explicitly injected host MCP
+transport to the existing `AdoControlPlane` interface. Sandcastle does not
+import an MCP runtime, discover tools, read credentials, or invoke provider
+operations globally.
+
+```ts
+import { createAdoMcpControlPlaneAdapter } from "@ai-hero/sandcastle";
+
+const ado = createAdoMcpControlPlaneAdapter({
+  access: "read-only",
+  orgName: "example-org",
+  project: "example-project",
+  repositoryId: "repo-id",
+  transport: hostMcpTransport,
+  decoders: hostResponseDecoders,
+  queries: hostCiAndReviewQueries,
+});
+```
+
+The bridge allowlists ADO work-item, comment, pull-request, review-thread, and
+pipeline tools; snapshots bounded plain data; validates decoded results; races
+every invocation against a timeout; and never retries an uncertain call.
+Read-only adapters expose no mutation methods. Creating a write adapter does not
+grant workflow, human, publication, approval, completion, or merge authority.
+
+CI and review request builders remain host-owned because build definitions and
+policy layouts vary by installation. Their output is still restricted to the
+same tool allowlist. Tests use only an injected fake transport; this repository
+does not perform a live MCP call.
+
 ## Development
 
 ```bash

@@ -149,6 +149,17 @@ export type {
   AdoReadOnlyControlPlane,
 } from "./AdoControlPlaneFactory.js";
 
+export { createAdoMcpControlPlaneAdapter } from "./AdoMcpControlPlaneAdapter.js";
+export type {
+  AdoMcpToolName,
+  AdoMcpToolRequest,
+  AdoMcpTransport,
+  AdoMcpDecodedComment,
+  AdoMcpResponseDecoders,
+  AdoMcpQueryBuilders,
+  AdoMcpControlPlaneConfig,
+} from "./AdoMcpControlPlaneAdapter.js";
+
 export { publishAdoPullRequest } from "./AdoPullRequestPublisher.js";
 export type {
   AdoPullRequestPublisherControlPlaneLike,
