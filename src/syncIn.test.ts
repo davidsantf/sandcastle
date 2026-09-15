@@ -11,9 +11,10 @@ import { syncIn } from "./syncIn.js";
 const execAsync = promisify(exec);
 
 const initRepo = async (dir: string) => {
-  await execAsync("git init -b main", { cwd: dir });
-  await execAsync('git config user.email "test@test.com"', { cwd: dir });
-  await execAsync('git config user.name "Test"', { cwd: dir });
+  await execAsync(
+    'git init -b main && git config user.email "test@test.com" && git config user.name "Test"',
+    { cwd: dir },
+  );
 };
 
 const commitFile = async (
@@ -23,8 +24,9 @@ const commitFile = async (
   message: string,
 ) => {
   await writeFile(join(dir, name), content);
-  await execAsync(`git add "${name}"`, { cwd: dir });
-  await execAsync(`git commit -m "${message}"`, { cwd: dir });
+  await execAsync(`git add "${name}" && git commit -m "${message}"`, {
+    cwd: dir,
+  });
 };
 
 const getHead = async (dir: string) => {

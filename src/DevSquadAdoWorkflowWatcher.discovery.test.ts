@@ -689,7 +689,9 @@ describe("public offline examples and inference [W045]", () => {
 
   it("publishes the exact compiled and executed fixture in README", async () => {
     const read = (name: string) =>
-      readFile(new URL(name, import.meta.url), "utf8");
+      readFile(new URL(name, import.meta.url), "utf8").then((text) =>
+        text.replace(/\r\n/g, "\n"),
+      );
     const source = await read("DevSquadAdoWorkflowWatcher.discovery.test.ts");
     const example = source
       .split("// BEGIN W045 README EXAMPLE\n")[1]

@@ -1,6 +1,7 @@
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, posix } from "node:path";
+import { sandboxPathToNative, nativePathToSandbox } from "./test-shared.js";
 import { describe, expect, it } from "vitest";
 import { testBindMount } from "./test-bind-mount.js";
 
@@ -59,7 +60,7 @@ describe("testBindMount()", () => {
       writeFileSync(hostFile, "hello from host");
 
       // Copy it into the sandbox
-      const sandboxFile = join(handle.worktreePath, "input.txt");
+      const sandboxFile = posix.join(handle.worktreePath, "input.txt");
       await handle.copyFileIn(hostFile, sandboxFile);
 
       // Verify it exists inside the sandbox
@@ -85,7 +86,7 @@ describe("testBindMount()", () => {
       // Copy it out to the host
       const hostDir = mkdtempSync(join(tmpdir(), "test-host-"));
       const hostFile = join(hostDir, "output.txt");
-      const sandboxFile = join(handle.worktreePath, "output.txt");
+      const sandboxFile = posix.join(handle.worktreePath, "output.txt");
       await handle.copyFileOut(sandboxFile, hostFile);
 
       // Verify it exists on the host
@@ -110,7 +111,12 @@ describe("testBindMount()", () => {
       writeFileSync(hostFile, "nested file");
 
       // Copy to a nested path that doesn't exist yet
-      const sandboxFile = join(handle.worktreePath, "sub", "dir", "data.txt");
+      const sandboxFile = posix.join(
+        handle.worktreePath,
+        "sub",
+        "dir",
+        "data.txt",
+      );
       await handle.copyFileIn(hostFile, sandboxFile);
 
       const result = await handle.exec("cat sub/dir/data.txt");
@@ -133,7 +139,7 @@ describe("testBindMount()", () => {
 
       const hostDir = mkdtempSync(join(tmpdir(), "test-host-"));
       const hostFile = join(hostDir, "nested", "dir", "file.txt");
-      const sandboxFile = join(handle.worktreePath, "file.txt");
+      const sandboxFile = posix.join(handle.worktreePath, "file.txt");
       await handle.copyFileOut(sandboxFile, hostFile);
 
       expect(readFileSync(hostFile, "utf-8").trim()).toBe("data");
@@ -181,7 +187,7 @@ describe("testBindMount()", () => {
       mounts: [],
       env: {},
     });
-    const worktreePath = handle.worktreePath;
+    const worktreePath = await sandboxPathToNative(handle.worktreePath);
     expect(existsSync(worktreePath)).toBe(true);
 
     await handle.close();

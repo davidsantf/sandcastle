@@ -32,17 +32,18 @@ export const testIsolated = (): IsolatedSandboxProvider =>
         worktreePath: temp.worktreePath,
         exec: temp.exec,
         copyIn: async (hostPath, sandboxPath) => {
+          const nativePath = await temp.toNativePath(sandboxPath);
           const info = await stat(hostPath);
           if (info.isDirectory()) {
-            await cp(hostPath, sandboxPath, { recursive: true });
+            await cp(hostPath, nativePath, { recursive: true });
           } else {
-            await mkdir(dirname(sandboxPath), { recursive: true });
-            await copyFile(hostPath, sandboxPath);
+            await mkdir(dirname(nativePath), { recursive: true });
+            await copyFile(hostPath, nativePath);
           }
         },
         copyFileOut: async (sandboxPath, hostPath) => {
           await mkdir(dirname(hostPath), { recursive: true });
-          await copyFile(sandboxPath, hostPath);
+          await copyFile(await temp.toNativePath(sandboxPath), hostPath);
         },
         close: temp.close,
       };

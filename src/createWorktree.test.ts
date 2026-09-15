@@ -61,7 +61,7 @@ describe("createWorktree", () => {
     });
 
     try {
-      expect(ws.worktreePath).toContain(".sandcastle/worktrees");
+      expect(ws.worktreePath).toContain(join(".sandcastle", "worktrees"));
       expect(ws.branch).toBe("test-branch");
       expect(existsSync(ws.worktreePath)).toBe(true);
     } finally {
@@ -81,7 +81,7 @@ describe("createWorktree", () => {
     });
 
     try {
-      expect(ws.worktreePath).toContain(".sandcastle/worktrees");
+      expect(ws.worktreePath).toContain(join(".sandcastle", "worktrees"));
       expect(ws.branch).toMatch(/^sandcastle\//);
       expect(existsSync(ws.worktreePath)).toBe(true);
     } finally {

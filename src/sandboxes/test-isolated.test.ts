@@ -6,7 +6,8 @@ import {
   readFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, posix } from "node:path";
+import { sandboxPathToNative, nativePathToSandbox } from "./test-shared.js";
 import { describe, expect, it } from "vitest";
 import { testIsolated } from "./test-isolated.js";
 
@@ -45,7 +46,9 @@ describe("testIsolated()", () => {
     const handle = await provider.create({ env: {} });
     try {
       const result = await handle.exec("pwd", { cwd: "/tmp" });
-      expect(result.stdout.trim()).toBe("/tmp");
+      expect(result.stdout.trim()).toBe(
+        await nativePathToSandbox(await sandboxPathToNative("/tmp")),
+      );
     } finally {
       await handle.close();
     }
@@ -72,7 +75,7 @@ describe("testIsolated()", () => {
       writeFileSync(hostFile, "hello from host");
 
       // Copy it into the sandbox
-      const sandboxFile = join(handle.worktreePath, "input.txt");
+      const sandboxFile = posix.join(handle.worktreePath, "input.txt");
       await handle.copyIn(hostFile, sandboxFile);
 
       // Verify it exists inside the sandbox
@@ -93,7 +96,7 @@ describe("testIsolated()", () => {
       // Copy it out to the host
       const hostDir = mkdtempSync(join(tmpdir(), "test-host-"));
       const hostFile = join(hostDir, "output.txt");
-      const sandboxFile = join(handle.worktreePath, "output.txt");
+      const sandboxFile = posix.join(handle.worktreePath, "output.txt");
       await handle.copyFileOut(sandboxFile, hostFile);
 
       // Verify it exists on the host
@@ -116,7 +119,7 @@ describe("testIsolated()", () => {
       writeFileSync(join(srcDir, "sub", "b.txt"), "file-b");
 
       // Copy directory into sandbox
-      const sandboxDir = join(handle.worktreePath, "mydir");
+      const sandboxDir = posix.join(handle.worktreePath, "mydir");
       await handle.copyIn(srcDir, sandboxDir);
 
       // Verify both files exist
@@ -132,7 +135,7 @@ describe("testIsolated()", () => {
   it("close cleans up the temp directory", async () => {
     const provider = testIsolated();
     const handle = await provider.create({ env: {} });
-    const worktreePath = handle.worktreePath;
+    const worktreePath = await sandboxPathToNative(handle.worktreePath);
 
     // Worktree should exist before close
     expect(existsSync(worktreePath)).toBe(true);

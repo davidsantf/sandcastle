@@ -1,3 +1,8 @@
+import {
+  createSandboxExec,
+  sandboxPathToNative,
+  nativePathToSandbox,
+} from "./sandboxes/test-shared.js";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, posix } from "node:path";
@@ -2114,25 +2119,14 @@ describe("sessionStorage", () => {
   /** Bind-mount handle backed by the host filesystem (sandbox path == host path). */
   const fsBindMountHandle = (): BindMountSandboxHandle => ({
     worktreePath: "/workspace",
-    exec: async (command) => {
-      const { exec } = await import("node:child_process");
-      return new Promise((resolve) => {
-        exec(command, (err, stdout, stderr) => {
-          resolve({
-            stdout: stdout.toString(),
-            stderr: stderr.toString(),
-            exitCode: err && typeof err.code === "number" ? err.code : 0,
-          });
-        });
-      });
-    },
+    exec: createSandboxExec(process.cwd()),
     copyFileIn: async (hostPath, sandboxPath) => {
       const { copyFile } = await import("node:fs/promises");
-      await copyFile(hostPath, sandboxPath);
+      await copyFile(hostPath, await sandboxPathToNative(sandboxPath));
     },
     copyFileOut: async (sandboxPath, hostPath) => {
       const { copyFile } = await import("node:fs/promises");
-      await copyFile(sandboxPath, hostPath);
+      await copyFile(await sandboxPathToNative(sandboxPath), hostPath);
     },
     close: async () => {},
   });
@@ -2185,7 +2179,7 @@ describe("sessionStorage", () => {
       const provider = pi("claude-sonnet-4-6", {
         sessionStorage: {
           hostSessionsDir: hostDir,
-          sandboxSessionsDir: sandboxDir,
+          sandboxSessionsDir: await nativePathToSandbox(sandboxDir),
         },
       });
 
@@ -2248,7 +2242,7 @@ describe("sessionStorage", () => {
       const provider = pi("claude-sonnet-4-6", {
         sessionStorage: {
           hostSessionsDir: hostDir,
-          sandboxSessionsDir: sandboxDir,
+          sandboxSessionsDir: await nativePathToSandbox(sandboxDir),
         },
       });
 
@@ -2259,7 +2253,7 @@ describe("sessionStorage", () => {
         handle: fsBindMountHandle(),
       });
 
-      const expectedSandboxPath = posix.join(
+      const expectedSandboxPath = join(
         sandboxDir,
         "--sandbox-repo--",
         filename,
@@ -2282,7 +2276,7 @@ describe("sessionStorage", () => {
       "/some/cwd",
       "abc-123",
     );
-    expect(path).toBe("/tmp/sessions/--some-cwd--");
+    expect(path).toBe(join("/tmp/sessions", "--some-cwd--"));
   });
 
   it("pi existsOnHost returns false when no matching session lives under the host root", async () => {
@@ -2324,7 +2318,7 @@ describe("sessionStorage", () => {
       const provider = codex("gpt-5.4-mini", {
         sessionStorage: {
           hostSessionsDir: hostDir,
-          sandboxSessionsDir: sandboxDir,
+          sandboxSessionsDir: await nativePathToSandbox(sandboxDir),
         },
       });
 
@@ -2376,7 +2370,7 @@ describe("sessionStorage", () => {
       const provider = claudeCode("claude-opus-4-8", {
         sessionStorage: {
           hostProjectsDir: hostDir,
-          sandboxProjectsDir: sandboxDir,
+          sandboxProjectsDir: await nativePathToSandbox(sandboxDir),
         },
       });
 
@@ -2438,7 +2432,7 @@ describe("sessionStorage", () => {
       const provider = claudeCode("claude-opus-4-8", {
         sessionStorage: {
           hostProjectsDir: hostDir,
-          sandboxProjectsDir: sandboxDir,
+          sandboxProjectsDir: await nativePathToSandbox(sandboxDir),
         },
       });
 
@@ -2543,7 +2537,7 @@ describe("sessionStorage", () => {
         const provider = claudeCode("claude-opus-4-8", {
           sessionStorage: {
             hostProjectsDir: hostDir,
-            sandboxProjectsDir: sandboxDir,
+            sandboxProjectsDir: await nativePathToSandbox(sandboxDir),
           },
         });
         await provider.sessionStorage!.captureToHost({

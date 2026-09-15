@@ -41,7 +41,7 @@ describe("resolveCwd", () => {
       ),
     );
     expect(result).toBeInstanceOf(CwdError);
-    expect(result.cwd).toBe("/tmp/does-not-exist-12345");
+    expect(result.cwd).toBe(resolve("/tmp/does-not-exist-12345"));
     expect(result.message).toMatch(/does not exist/i);
   });
 

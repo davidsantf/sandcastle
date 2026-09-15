@@ -32,12 +32,13 @@ export const testBindMount = (): BindMountSandboxProvider =>
         worktreePath: temp.worktreePath,
         exec: temp.exec,
         copyFileIn: async (hostPath, sandboxPath) => {
-          await mkdir(dirname(sandboxPath), { recursive: true });
-          await copyFile(hostPath, sandboxPath);
+          const nativePath = await temp.toNativePath(sandboxPath);
+          await mkdir(dirname(nativePath), { recursive: true });
+          await copyFile(hostPath, nativePath);
         },
         copyFileOut: async (sandboxPath, hostPath) => {
           await mkdir(dirname(hostPath), { recursive: true });
-          await copyFile(sandboxPath, hostPath);
+          await copyFile(await temp.toNativePath(sandboxPath), hostPath);
         },
         close: temp.close,
       };

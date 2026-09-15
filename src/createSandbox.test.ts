@@ -1,5 +1,11 @@
-import { exec } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
+import { exec, execFile } from "node:child_process";
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  realpathSync,
+  writeFileSync,
+} from "node:fs";
 import {
   copyFile,
   mkdir,
@@ -23,6 +29,7 @@ import {
 } from "./SandboxProvider.js";
 import { encodeProjectPath } from "./SessionStore.js";
 import { testIsolated } from "./sandboxes/test-isolated.js";
+import { sandboxPathToNative } from "./sandboxes/test-shared.js";
 import { makeLocalSandbox } from "./testSandbox.js";
 
 /** Dummy sandbox provider used to satisfy the required `sandbox` field in test mode. */
@@ -38,11 +45,11 @@ const testSandbox = createBindMountSandboxProvider({
 });
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 const initRepo = async (dir: string) => {
-  await execAsync("git init -b main", { cwd: dir });
-  await execAsync('git config user.email "test@test.com"', { cwd: dir });
-  await execAsync('git config user.name "Test"', { cwd: dir });
+  // testSetup supplies an isolated host identity; sandbox propagation stays real.
+  await execFileAsync("git", ["init", "-b", "main"], { cwd: dir });
 };
 
 const commitFile = async (
@@ -52,8 +59,8 @@ const commitFile = async (
   message: string,
 ) => {
   await writeFile(join(dir, name), content);
-  await execAsync(`git add "${name}"`, { cwd: dir });
-  await execAsync(`git commit -m "${message}"`, { cwd: dir });
+  await execFileAsync("git", ["add", "--", name], { cwd: dir });
+  await execFileAsync("git", ["commit", "-m", message], { cwd: dir });
 };
 
 /** Format a mock agent result as stream-json lines (mimicking Claude's output) */
@@ -226,7 +233,9 @@ const makeMockIsolatedProvider = (
           );
           if (agent && options?.onLine) {
             const cwd = options?.cwd ?? handle.worktreePath;
-            const output = await mockAgentBehavior(cwd);
+            const output = await mockAgentBehavior(
+              await sandboxPathToNative(cwd),
+            );
             const streamOutput = agent.toStream(output);
             for (const line of streamOutput.split("\n")) {
               options.onLine(line);
@@ -235,7 +244,9 @@ const makeMockIsolatedProvider = (
           }
           if (agent) {
             const cwd = options?.cwd ?? handle.worktreePath;
-            const output = await mockAgentBehavior(cwd);
+            const output = await mockAgentBehavior(
+              await sandboxPathToNative(cwd),
+            );
             return { stdout: output, stderr: "", exitCode: 0 };
           }
           return handle.exec(command, options);
@@ -262,7 +273,7 @@ describe("createSandbox", () => {
 
     try {
       expect(sandbox.branch).toBe("test-branch");
-      expect(sandbox.worktreePath).toContain(".sandcastle/worktrees");
+      expect(sandbox.worktreePath).toContain(join(".sandcastle", "worktrees"));
       expect(existsSync(sandbox.worktreePath)).toBe(true);
     } finally {
       await sandbox.close();
@@ -842,9 +853,11 @@ describe("createSandbox", () => {
     });
 
     try {
-      const result = await sandbox.exec("pwd");
+      const result = await sandbox.exec('node -p "process.cwd()"');
       // In test mode, sandboxRepoDir === worktreePath.
-      expect(result.stdout.trim()).toBe(sandbox.worktreePath);
+      expect(realpathSync.native(result.stdout.trim())).toBe(
+        realpathSync.native(sandbox.worktreePath),
+      );
     } finally {
       await sandbox.close();
       await rm(hostDir, { recursive: true, force: true });
@@ -889,8 +902,12 @@ describe("createSandbox", () => {
     });
 
     try {
-      const result = await sandbox.exec("pwd", { cwd: hostDir });
-      expect(result.stdout.trim()).toBe(hostDir);
+      const result = await sandbox.exec('node -p "process.cwd()"', {
+        cwd: hostDir,
+      });
+      expect(realpathSync.native(result.stdout.trim())).toBe(
+        realpathSync.native(hostDir),
+      );
     } finally {
       await sandbox.close();
       await rm(hostDir, { recursive: true, force: true });
@@ -954,7 +971,11 @@ describe("createSandbox", () => {
       expect(result.stdout).toBe("hello-from-provider\n");
       expect(userExecCmd).toBe("echo hello-from-provider");
       // cwd should default to the provider's worktreePath.
-      expect(userExecCwd).toBe(sandbox.worktreePath);
+      expect(userExecCwd).toBe(
+        process.platform === "win32"
+          ? sandbox.worktreePath.replace(/\\/g, "/")
+          : sandbox.worktreePath,
+      );
     } finally {
       await sandbox.close();
       await rm(hostDir, { recursive: true, force: true });
@@ -1505,7 +1526,7 @@ describe("createSandbox", () => {
 
     try {
       expect(sandbox.branch).toBe("test-isolated-branch");
-      expect(sandbox.worktreePath).toContain(".sandcastle/worktrees");
+      expect(sandbox.worktreePath).toContain(join(".sandcastle", "worktrees"));
       expect(existsSync(sandbox.worktreePath)).toBe(true);
     } finally {
       await sandbox.close();
@@ -1613,7 +1634,8 @@ describe("createSandbox", () => {
       await sandbox.close();
       await rm(hostDir, { recursive: true, force: true });
     }
-  });
+    // Two real bundle/sync cycles measured 9.6-18s in serial Windows runs.
+  }, 20_000);
 
   it("sandbox.interactive() invokes interactiveExec and returns result", async () => {
     const hostDir = await mkdtemp(join(tmpdir(), "sandbox-test-"));
@@ -2179,6 +2201,7 @@ describe("createSandbox", () => {
       expect(leftover).toHaveLength(0);
 
       const { stdout } = await execAsync("git worktree list", { cwd: hostDir });
+      // Git emits forward-slash paths on every host.
       expect(stdout).not.toContain(".sandcastle/worktrees");
     } finally {
       await rm(hostDir, { recursive: true, force: true });

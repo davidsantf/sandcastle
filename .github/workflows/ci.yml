@@ -1,18 +1,23 @@
 name: CI
 
 on:
+  pull_request:
   push:
     branches:
       - main
 
 jobs:
   ci:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm ci
-      - run: npm run build
+      # pretest builds compiled entries and templates once before the full suite.
       - run: npm test

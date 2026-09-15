@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
+import { cp } from "node:fs/promises";
 import { join } from "node:path";
 import { Effect } from "effect";
 import {
@@ -38,6 +39,23 @@ export const copyToWorktree = (
         continue;
       }
       const dest = join(worktreePath, relativePath);
+      // T2/AC2: native Windows hosts do not ship cp. Keep Unix CoW below.
+      if (process.platform === "win32") {
+        yield* Effect.tryPromise({
+          try: () => cp(src, dest, { recursive: true, force: true }),
+          catch: (error) => {
+            const stderr =
+              error instanceof Error ? error.message : String(error);
+            return new CopyToWorktreeError({
+              message: `Failed to copy ${relativePath} to worktree: ${stderr}`,
+              path: relativePath,
+              stderr,
+              exitCode: null,
+            });
+          },
+        });
+        continue;
+      }
       yield* Effect.async<void, CopyToWorktreeError>((resume) => {
         execFile("cp", [...cowFlags, src, dest], (error) => {
           if (error) {

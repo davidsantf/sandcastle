@@ -19,6 +19,10 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, posix } from "node:path";
 import type { BindMountSandboxHandle } from "./SandboxProvider.js";
+import {
+  createSandboxExec,
+  nativePathToSandbox,
+} from "./sandboxes/test-shared.js";
 
 // ---------------------------------------------------------------------------
 // encodeProjectPath
@@ -498,20 +502,9 @@ describe("claudeSubagentsDirOnHost", () => {
 });
 
 describe("listClaudeSubagentSessionsInSandbox", () => {
-  /** Bind-mount handle backed by the host filesystem (sandbox path == host path). */
+  /** A filesystem-backed handle that honors the sandbox POSIX exec contract. */
   const fsHandle = (): Pick<BindMountSandboxHandle, "exec"> => ({
-    exec: async (command) => {
-      const { exec } = await import("node:child_process");
-      return new Promise((resolve) => {
-        exec(command, (err, stdout, stderr) => {
-          resolve({
-            stdout: stdout.toString(),
-            stderr: stderr.toString(),
-            exitCode: err && typeof err.code === "number" ? err.code : 0,
-          });
-        });
-      });
-    },
+    exec: createSandboxExec(process.cwd()),
   });
 
   it("returns absolute paths of agent-*.jsonl files in the subagents dir", async () => {
@@ -532,10 +525,12 @@ describe("listClaudeSubagentSessionsInSandbox", () => {
         "/sandbox/repo",
         sessionId,
         fsHandle(),
-        dir,
+        await nativePathToSandbox(dir),
       );
 
-      expect(result.sort()).toEqual([f1, f2].sort());
+      expect(result.sort()).toEqual(
+        (await Promise.all([f1, f2].map(nativePathToSandbox))).sort(),
+      );
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -548,7 +543,7 @@ describe("listClaudeSubagentSessionsInSandbox", () => {
         "/sandbox/repo",
         "abc-123",
         fsHandle(),
-        dir,
+        await nativePathToSandbox(dir),
       );
       expect(result).toEqual([]);
     } finally {
@@ -566,7 +561,7 @@ describe("listClaudeSubagentSessionsInSandbox", () => {
         "/sandbox/repo",
         "abc-123",
         fsHandle(),
-        dir,
+        await nativePathToSandbox(dir),
       );
       expect(result).toEqual([]);
     } finally {

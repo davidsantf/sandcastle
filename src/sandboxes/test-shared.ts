@@ -9,7 +9,8 @@
 import { execFile, spawn } from "node:child_process";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { promisify } from "node:util";
 import { createInterface } from "node:readline";
 import {
   createBindMountSandboxProvider,
@@ -19,59 +20,102 @@ import {
 } from "../SandboxProvider.js";
 import { BoundedTail, MAX_TAIL_CHARS } from "../boundedTail.js";
 
-export interface TempSandbox {
-  readonly worktreePath: string;
-  readonly exec: (
-    command: string,
-    options?: {
-      onLine?: (line: string) => void;
-      cwd?: string;
-      sudo?: boolean;
-    },
-  ) => Promise<ExecResult>;
-  readonly close: () => Promise<void>;
+const execFileAsync = promisify(execFile);
+
+/**
+ * T3 / AC3: Node and the POSIX shell have different roots on Windows. Ask the
+ * same shell that executes commands to translate paths (not command output).
+ * In particular, shell /tmp is not Node's C:\\tmp. Arguments are passed
+ * separately so spaces, quotes and shell metacharacters remain path data.
+ */
+const translatePath = async (
+  path: string,
+  format: "-aw" | "-au",
+  cwd: string,
+): Promise<string> => {
+  if (process.platform !== "win32") return resolve(cwd, path);
+  const { stdout } = await execFileAsync(
+    "sh",
+    ["-c", 'cygpath "$1" -- "$2"', "sandcastle-path", format, path],
+    { cwd },
+  );
+  return stdout.trimEnd();
+};
+
+export const sandboxPathToNative = (
+  path: string,
+  nativeCwd = process.cwd(),
+): Promise<string> => translatePath(path, "-aw", nativeCwd);
+
+export const nativePathToSandbox = (path: string): Promise<string> =>
+  translatePath(path, "-au", process.cwd());
+
+interface TestExecOptions {
+  onLine?: (line: string) => void;
+  cwd?: string;
+  sudo?: boolean;
+  stdin?: string;
 }
 
-export const createTempSandbox = async (
-  prefix: string,
-): Promise<TempSandbox> => {
-  const sandboxRoot = await mkdtemp(join(tmpdir(), prefix));
-  const worktreePath = join(sandboxRoot, "workspace");
-  await mkdir(worktreePath, { recursive: true });
-
-  const exec = (
+/** Run the sandbox's POSIX contract, independently of the host default shell. */
+export const createSandboxExec = (
+  nativeWorktreePath: string,
+  env = process.env,
+) => {
+  const nativeCwds = new Map<string, Promise<string>>();
+  return async (
     command: string,
-    options?: {
-      onLine?: (line: string) => void;
-      cwd?: string;
-      sudo?: boolean;
-    },
+    options?: TestExecOptions,
   ): Promise<ExecResult> => {
+    let nativeCwd = nativeWorktreePath;
+    if (options?.cwd !== undefined) {
+      let mapped = nativeCwds.get(options.cwd);
+      if (!mapped) {
+        mapped = sandboxPathToNative(options.cwd, nativeWorktreePath);
+        nativeCwds.set(options.cwd, mapped);
+      }
+      nativeCwd = await mapped;
+    }
+    // Windows locks a process's native startup cwd against deletion. Enter the
+    // requested directory through POSIX cd instead so syncIn can replace it.
+    // Both values remain separate arguments; no command or output substitution.
+    const cwd = process.platform === "win32" ? process.cwd() : nativeCwd;
+    const args =
+      process.platform === "win32"
+        ? [
+            "-c",
+            'cd -- "$1" && eval "shift 2; $2"',
+            "sandcastle-exec",
+            nativeCwd,
+            command,
+          ]
+        : ["-c", command];
     if (options?.onLine) {
       const onLine = options.onLine;
       return new Promise((resolve, reject) => {
-        const proc = spawn("sh", ["-c", command], {
-          cwd: options?.cwd ?? worktreePath,
-          stdio: ["ignore", "pipe", "pipe"],
+        const proc = spawn("sh", args, {
+          cwd,
+          env,
+          stdio: [
+            options.stdin === undefined ? "ignore" : "pipe",
+            "pipe",
+            "pipe",
+          ],
         });
-
+        if (options.stdin !== undefined) proc.stdin!.end(options.stdin);
         const stdoutTail = new BoundedTail(MAX_TAIL_CHARS, "\n");
         const stderrTail = new BoundedTail(MAX_TAIL_CHARS, "");
-
         const rl = createInterface({ input: proc.stdout! });
         rl.on("line", (line) => {
           stdoutTail.push(line);
           onLine(line);
         });
-
         proc.stderr!.on("data", (chunk: Buffer) => {
           stderrTail.push(chunk.toString());
         });
-
         proc.on("error", (error) => {
           reject(new Error(`exec failed: ${error.message}`));
         });
-
         proc.on("close", (code) => {
           resolve({
             stdout: stdoutTail.toString(),
@@ -81,17 +125,17 @@ export const createTempSandbox = async (
         });
       });
     }
-
     return new Promise((resolve, reject) => {
-      execFile(
+      const proc = execFile(
         "sh",
-        ["-c", command],
+        args,
         {
-          cwd: options?.cwd ?? worktreePath,
+          cwd,
+          env,
           maxBuffer: 10 * 1024 * 1024,
         },
         (error, stdout, stderr) => {
-          if (error && error.code === undefined) {
+          if (error && typeof error.code !== "number") {
             reject(new Error(`exec failed: ${error.message}`));
           } else {
             resolve({
@@ -102,14 +146,36 @@ export const createTempSandbox = async (
           }
         },
       );
+      proc.stdin?.end(options?.stdin);
     });
   };
+};
 
-  return {
-    worktreePath,
-    exec,
-    close: () => rm(sandboxRoot, { recursive: true, force: true }),
-  };
+export interface TempSandbox {
+  /** POSIX shell path, suitable for sandbox commands, never a native host path. */
+  readonly worktreePath: string;
+  readonly toNativePath: (sandboxPath: string) => Promise<string>;
+  readonly exec: ReturnType<typeof createSandboxExec>;
+  readonly close: () => Promise<void>;
+}
+
+export const createTempSandbox = async (
+  prefix: string,
+): Promise<TempSandbox> => {
+  const sandboxRoot = await mkdtemp(join(tmpdir(), prefix));
+  const nativeWorktreePath = join(sandboxRoot, "workspace");
+  try {
+    await mkdir(nativeWorktreePath, { recursive: true });
+    return {
+      worktreePath: await nativePathToSandbox(nativeWorktreePath),
+      toNativePath: (path) => sandboxPathToNative(path, nativeWorktreePath),
+      exec: createSandboxExec(nativeWorktreePath),
+      close: () => rm(sandboxRoot, { recursive: true, force: true }),
+    };
+  } catch (error) {
+    await rm(sandboxRoot, { recursive: true, force: true });
+    throw error;
+  }
 };
 
 export interface StubProviderRecord {

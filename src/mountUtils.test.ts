@@ -1,5 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 import { Effect } from "effect";
+import { dirname, join, resolve } from "node:path";
+import { realpathSync } from "node:fs";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
 import {
   defaultImageName,
   expandTilde,
@@ -15,7 +26,8 @@ import {
 } from "./mountUtils.js";
 import { SANDBOX_REPO_DIR } from "./SandboxFactory.js";
 
-vi.mock("node:fs", () => ({
+vi.mock("node:fs", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("node:fs")>()),
   existsSync: (p: string) =>
     p === "/existing/path" || p === "/home/testuser/data",
 }));
@@ -81,6 +93,12 @@ describe("expandTilde", () => {
 });
 
 describe("resolveHostPath", () => {
+  it("keeps relative host path resolution native", () => {
+    expect(resolveHostPath("cache/data")).toBe(
+      resolve(process.cwd(), "cache/data"),
+    );
+  });
+
   it("expands tilde and returns absolute path", () => {
     expect(resolveHostPath("~/data")).toBe("/home/testuser/data");
   });
@@ -90,7 +108,29 @@ describe("resolveHostPath", () => {
   });
 });
 
+// T2/AC2: sandbox paths use POSIX semantics, independently of host paths.
 describe("resolveSandboxPath", () => {
+  it("resolves parent segments with POSIX semantics", () => {
+    expect(resolveSandboxPath("cache/../data")).toBe(
+      `${SANDBOX_REPO_DIR}/data`,
+    );
+  });
+
+  it("does not rewrite literal backslashes in sandbox path components", () => {
+    expect(resolveSandboxPath("cache\\literal")).toBe(
+      `${SANDBOX_REPO_DIR}/cache\\literal`,
+    );
+    expect(resolveSandboxPath("/mnt/cache\\literal")).toBe(
+      "/mnt/cache\\literal",
+    );
+  });
+
+  it("expands the supported Windows tilde prefix without rewriting remaining components", () => {
+    expect(resolveSandboxPath("~\\cache\\literal", "/home/agent")).toBe(
+      "/home/agent/cache\\literal",
+    );
+  });
+
   it("returns absolute paths as-is", () => {
     expect(resolveSandboxPath("/mnt/data")).toBe("/mnt/data");
   });
@@ -390,6 +430,186 @@ describe("patchGitMountsForWindows", () => {
   });
 
   describe("on Windows platform", () => {
+    // T2 / AC1 / AC2: ADR-0006 remapping must compare filesystem identities,
+    // including aliases introduced by canonical worktree paths.
+    it("remaps aliased parent git mounts and replaces an aliased git file mount", async () => {
+      const root = await mkdtemp(join(tmpdir(), "sandcastle-mount-identity-"));
+      let overlay: string | undefined;
+      try {
+        const repo = join(root, "repo");
+        const alias = join(root, "alias");
+        const worktree = join(repo, "worktree");
+        await mkdir(join(repo, ".git", "worktrees", "branch"), {
+          recursive: true,
+        });
+        await mkdir(worktree);
+        await symlink(repo, alias, "junction");
+        await writeFile(
+          join(worktree, ".git"),
+          `gitdir: ${join(realpathSync.native(repo), ".git", "worktrees", "branch")}\n`,
+        );
+        const parentMount = {
+          hostPath: join(alias, ".git"),
+          sandboxPath: join(alias, ".git"),
+        };
+        const fileMount = {
+          hostPath: join(alias, "worktree", ".git"),
+          sandboxPath: join(alias, "worktree", ".git"),
+        };
+        const unrelated = { hostPath: root, sandboxPath: "/unrelated" };
+        const result = await Effect.runPromise(
+          patchGitMountsForWindows(
+            [parentMount, fileMount, unrelated],
+            worktree,
+            SANDBOX_REPO_DIR,
+            undefined,
+            undefined,
+            "win32",
+          ),
+        );
+        overlay = result.find(
+          (m) => m.sandboxPath === `${SANDBOX_REPO_DIR}/.git`,
+        )?.hostPath;
+        expect(result).toHaveLength(3);
+        expect(result[0]).toEqual({
+          ...parentMount,
+          sandboxPath: PARENT_GIT_SANDBOX_DIR,
+        });
+        expect(result[1]!.sandboxPath).toBe(`${SANDBOX_REPO_DIR}/.git`);
+        expect(result[1]!.hostPath).not.toBe(fileMount.hostPath);
+        expect(result[2]).toEqual(unrelated);
+        expect(await readFile(overlay!, "utf-8")).toBe(
+          `gitdir: ${PARENT_GIT_SANDBOX_DIR}/worktrees/branch\n`,
+        );
+      } finally {
+        if (overlay)
+          await rm(dirname(overlay), { recursive: true, force: true });
+        await rm(root, { recursive: true, force: true });
+      }
+    });
+
+    it("keeps lexical synthetic matches independent of filesystem identity", async () => {
+      const native = vi.spyOn(realpathSync, "native").mockImplementation(() => {
+        throw new Error("unexpected filesystem identity lookup");
+      });
+      let overlay: string | undefined;
+      try {
+        const result = await Effect.runPromise(
+          patchGitMountsForWindows(
+            [
+              { hostPath: "C:\\repo\\.git", sandboxPath: "C:/repo/.git" },
+              { hostPath: "C:/worktree/.git", sandboxPath: "C:/worktree/.git" },
+            ],
+            "C:/worktree",
+            SANDBOX_REPO_DIR,
+            makeReadFile("gitdir: C:/repo/.git/worktrees/branch"),
+            makeStatFile("file"),
+            "win32",
+          ),
+        );
+        overlay = result[1]!.hostPath;
+        expect(native).not.toHaveBeenCalled();
+        expect(result).toHaveLength(2);
+        expect(result[0]!.sandboxPath).toBe(PARENT_GIT_SANDBOX_DIR);
+        expect(result[1]!.sandboxPath).toBe(`${SANDBOX_REPO_DIR}/.git`);
+      } finally {
+        native.mockRestore();
+        if (overlay)
+          await rm(dirname(overlay), { recursive: true, force: true });
+      }
+    });
+
+    it("does not equate missing filesystem identities", async () => {
+      const native = vi.spyOn(realpathSync, "native").mockImplementation(() => {
+        throw Object.assign(new Error("missing"), { code: "ENOENT" });
+      });
+      let overlay: string | undefined;
+      try {
+        const unrelated = {
+          hostPath: "C:/missing/.git",
+          sandboxPath: "/unrelated",
+        };
+        const result = await Effect.runPromise(
+          patchGitMountsForWindows(
+            [unrelated],
+            "C:/worktree",
+            SANDBOX_REPO_DIR,
+            makeReadFile("gitdir: C:/repo/.git/worktrees/branch"),
+            makeStatFile("file"),
+            "win32",
+          ),
+        );
+        overlay = result[1]!.hostPath;
+        expect(result[0]).toEqual(unrelated);
+        expect(result).toHaveLength(2);
+      } finally {
+        native.mockRestore();
+        if (overlay)
+          await rm(dirname(overlay), { recursive: true, force: true });
+      }
+    });
+
+    it.each(["EACCES", "EIO"])(
+      "reports %s identity failures as WorktreeError",
+      async (code) => {
+        const native = vi
+          .spyOn(realpathSync, "native")
+          .mockImplementation(() => {
+            throw Object.assign(new Error(`identity lookup: ${code}`), {
+              code,
+            });
+          });
+        try {
+          const result = await Effect.runPromise(
+            Effect.either(
+              patchGitMountsForWindows(
+                [{ hostPath: "C:/alias/.git", sandboxPath: "C:/alias/.git" }],
+                "C:/worktree",
+                SANDBOX_REPO_DIR,
+                makeReadFile("gitdir: C:/repo/.git/worktrees/branch"),
+                makeStatFile("file"),
+                "win32",
+              ),
+            ),
+          );
+          expect(result).toMatchObject({
+            _tag: "Left",
+            left: {
+              _tag: "WorktreeError",
+              message: `Failed to resolve git mount identity: identity lookup: ${code}`,
+            },
+          });
+        } finally {
+          native.mockRestore();
+        }
+      },
+    );
+
+    it.each(["stat", "read"])(
+      "preserves the unchanged-mount fallback on .git %s failure",
+      async (operation) => {
+        const mounts = [
+          { hostPath: "C:/repo/.git", sandboxPath: "C:/repo/.git" },
+        ];
+        const fail = async (): Promise<never> => {
+          throw new Error("unreadable");
+        };
+        const result = await Effect.runPromise(
+          patchGitMountsForWindows(
+            mounts,
+            "C:/worktree",
+            SANDBOX_REPO_DIR,
+            operation === "read"
+              ? fail
+              : makeReadFile("gitdir: C:/repo/.git/worktrees/branch"),
+            operation === "stat" ? fail : makeStatFile("file"),
+            "win32",
+          ),
+        );
+        expect(result).toBe(mounts);
+      },
+    );
+
     it("returns mounts unchanged when .git is a directory", async () => {
       const mounts = [
         {
@@ -634,6 +854,21 @@ describe("formatVolumeMount", () => {
 });
 
 describe("processFileMountParents", () => {
+  it("uses POSIX parent semantics without interpreting literal backslashes", () => {
+    expect(
+      processFileMountParents(
+        [
+          {
+            hostPath: "host-file",
+            sandboxPath: "/home/agent/cache/name\\literal",
+          },
+        ],
+        "/home/agent",
+        () => ({ isFile: () => true }),
+      ),
+    ).toEqual(["/home/agent/cache"]);
+  });
+
   const sandboxHomedir = "/home/agent";
   const fileStatFn = () => ({ isFile: () => true });
   const dirStatFn = () => ({ isFile: () => false });

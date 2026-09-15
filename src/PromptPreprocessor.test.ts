@@ -8,6 +8,7 @@ import {
   TestContext,
 } from "effect";
 import { mkdtemp } from "node:fs/promises";
+import { realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -87,9 +88,9 @@ describe("PromptPreprocessor", () => {
 
   it("runs commands with the provided cwd", async () => {
     const { sandboxDir, sandbox, displayLayer } = await setup();
-    const prompt = "Dir: !`pwd`";
+    const prompt = 'Dir: !`node -p "process.cwd()"`';
     const result = await run(prompt, sandbox, displayLayer, sandboxDir);
-    expect(result).toBe(`Dir: ${sandboxDir}`);
+    expect(result).toBe(`Dir: ${realpathSync.native(sandboxDir)}`);
   });
 
   it("runs multiple shell expressions in parallel", async () => {

@@ -1,4 +1,12 @@
-import { Duration, Effect, Exit, TestClock, TestContext } from "effect";
+import {
+  Deferred,
+  Duration,
+  Effect,
+  Exit,
+  Fiber,
+  TestClock,
+  TestContext,
+} from "effect";
 import { afterEach, describe, expect, it } from "vitest";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { exec } from "node:child_process";
@@ -19,9 +27,10 @@ import { CopyToWorktreeTimeoutError } from "./errors.js";
 const execAsync = promisify(exec);
 
 const initRepo = async (dir: string) => {
-  await execAsync("git init -b main", { cwd: dir });
-  await execAsync('git config user.email "test@test.com"', { cwd: dir });
-  await execAsync('git config user.name "Test"', { cwd: dir });
+  await execAsync(
+    'git init -b main && git config user.email "test@test.com" && git config user.name "Test"',
+    { cwd: dir },
+  );
 };
 
 const commitFile = async (
@@ -31,8 +40,9 @@ const commitFile = async (
   message: string,
 ) => {
   await writeFile(join(dir, name), content);
-  await execAsync(`git add "${name}"`, { cwd: dir });
-  await execAsync(`git commit -m "${message}"`, { cwd: dir });
+  await execAsync(`git add "${name}" && git commit -m "${message}"`, {
+    cwd: dir,
+  });
 };
 
 describe("startSandbox", () => {
@@ -123,32 +133,36 @@ describe("startSandbox", () => {
       tempDirs.length = 0;
     });
 
-    it("creates handle, syncs repo, and returns sandboxLayer", async () => {
-      const hostDir = await mkdtemp(join(tmpdir(), "sandcastle-test-"));
-      tempDirs.push(hostDir);
-      await initRepo(hostDir);
-      await commitFile(hostDir, "hello.txt", "hello world", "initial");
+    it(
+      "creates handle, syncs repo, and returns sandboxLayer",
+      async () => {
+        const hostDir = await mkdtemp(join(tmpdir(), "sandcastle-test-"));
+        tempDirs.push(hostDir);
+        await initRepo(hostDir);
+        await commitFile(hostDir, "hello.txt", "hello world", "initial");
 
-      const provider = testIsolated();
-      const { handle, sandbox, worktreePath } = await Effect.runPromise(
-        startSandbox({
-          provider,
-          hostRepoDir: hostDir,
-          env: {},
-        }),
-      );
+        const provider = testIsolated();
+        const { handle, sandbox, worktreePath } = await Effect.runPromise(
+          startSandbox({
+            provider,
+            hostRepoDir: hostDir,
+            env: {},
+          }),
+        );
 
-      // Verify the repo was synced - hello.txt should exist
-      const result = await Effect.runPromise(
-        Effect.gen(function* () {
-          return yield* sandbox.exec("cat hello.txt");
-        }),
-      );
+        // Verify the repo was synced - hello.txt should exist
+        const result = await Effect.runPromise(
+          Effect.gen(function* () {
+            return yield* sandbox.exec("cat hello.txt");
+          }),
+        );
 
-      expect(result.stdout.trim()).toBe("hello world");
-      expect(worktreePath).toBeDefined();
-      await handle.close();
-    });
+        expect(result.stdout.trim()).toBe("hello world");
+        expect(worktreePath).toBeDefined();
+        await handle.close();
+      },
+      process.platform === "win32" ? 10_000 : 5_000,
+    );
 
     it("copies copyPaths into the sandbox after sync", async () => {
       const hostDir = await mkdtemp(join(tmpdir(), "sandcastle-test-"));
@@ -184,6 +198,7 @@ describe("startSandbox", () => {
       await commitFile(hostDir, "hello.txt", "hello", "initial");
       await writeFile(join(hostDir, "hang.txt"), "will hang");
 
+      const copyStarted = Effect.runSync(Deferred.make<void>());
       const realProvider = testIsolated();
       const hangingProvider = createIsolatedSandboxProvider({
         name: "hanging-copy",
@@ -197,6 +212,7 @@ describe("startSandbox", () => {
               if (sandboxPath.includes("repo.bundle")) {
                 return handle.copyIn(hostPath, sandboxPath);
               }
+              Deferred.unsafeDone(copyStarted, Effect.void);
               return new Promise<void>(() => {}); // never resolves
             },
           };
@@ -216,10 +232,8 @@ describe("startSandbox", () => {
             copyPaths: ["hang.txt"],
           }),
         );
-        // Yield to allow real async operations (create, syncIn) to complete
-        yield* Effect.yieldNow();
-        yield* Effect.promise(() => new Promise((r) => setTimeout(r, 2000)));
-        yield* Effect.yieldNow();
+        // Wait for this copy, surfacing setup failure instead of guessing a delay.
+        yield* Effect.raceFirst(Deferred.await(copyStarted), Fiber.join(fiber));
         // Now advance past the copyPaths timeout
         yield* TestClock.adjust(Duration.millis(COPY_PATHS_TIMEOUT_MS + 1));
         return yield* fiber.await;

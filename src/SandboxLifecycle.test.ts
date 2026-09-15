@@ -39,9 +39,12 @@ const makePathTranslatingSandbox = (
 const execAsync = promisify(exec);
 
 const initRepo = async (dir: string) => {
-  await execAsync("git init -b main", { cwd: dir });
-  await execAsync('git config user.email "test@test.com"', { cwd: dir });
-  await execAsync('git config user.name "Test"', { cwd: dir });
+  // T8: initialize the shared worktree identity in one shell launch. Sandbox
+  // globals start empty; keep local identity and lifecycle propagation intact.
+  await execAsync(
+    "git init -b main && git config user.email test@test.com && git config user.name Test",
+    { cwd: dir },
+  );
 };
 
 const commitFile = async (
@@ -51,8 +54,9 @@ const commitFile = async (
   message: string,
 ) => {
   await writeFile(join(dir, name), content);
-  await execAsync(`git add "${name}"`, { cwd: dir });
-  await execAsync(`git commit -m "${message}"`, { cwd: dir });
+  await execAsync(`git add "${name}" && git commit -m "${message}"`, {
+    cwd: dir,
+  });
 };
 
 const getHead = async (dir: string) => {
@@ -75,12 +79,8 @@ const setup = async () => {
 describe("withSandboxLifecycle (worktree mode)", () => {
   const setupWorktree = async () => {
     const hostDir = await mkdtemp(join(tmpdir(), "host-"));
-    await execAsync("git init -b main", { cwd: hostDir });
-    await execAsync('git config user.email "test@test.com"', { cwd: hostDir });
-    await execAsync('git config user.name "Test"', { cwd: hostDir });
-    await writeFile(join(hostDir, "file.txt"), "original");
-    await execAsync("git add file.txt", { cwd: hostDir });
-    await execAsync('git commit -m "initial commit"', { cwd: hostDir });
+    await initRepo(hostDir);
+    await commitFile(hostDir, "file.txt", "original", "initial commit");
 
     // Create a real git worktree from the host repo
     const worktreesDir = join(hostDir, ".sandcastle", "worktrees");
@@ -129,12 +129,7 @@ describe("withSandboxLifecycle (worktree mode)", () => {
         sandbox,
         (ctx) =>
           Effect.gen(function* () {
-            yield* ctx.sandbox.exec('git config user.email "test@test.com"', {
-              cwd: ctx.sandboxRepoDir,
-            });
-            yield* ctx.sandbox.exec('git config user.name "Test"', {
-              cwd: ctx.sandboxRepoDir,
-            });
+            // T8: the worktree already shares the identity installed by initRepo.
             yield* ctx.sandbox.exec(
               'sh -c "echo worktree-content > worktree-file.txt && git add worktree-file.txt && git commit -m \\"worktree commit\\""',
               { cwd: ctx.sandboxRepoDir },
@@ -300,12 +295,7 @@ describe("withSandboxLifecycle (worktree mode)", () => {
         sandbox,
         (ctx) =>
           Effect.gen(function* () {
-            yield* ctx.sandbox.exec('git config user.email "test@test.com"', {
-              cwd: ctx.sandboxRepoDir,
-            });
-            yield* ctx.sandbox.exec('git config user.name "Test"', {
-              cwd: ctx.sandboxRepoDir,
-            });
+            // T8: the worktree already shares the identity installed by initRepo.
             yield* ctx.sandbox.exec(
               'sh -c "echo new > new-file.txt && git add new-file.txt && git commit -m \\"new commit\\""',
               { cwd: ctx.sandboxRepoDir },
@@ -349,12 +339,7 @@ describe("withSandboxLifecycle (worktree mode)", () => {
         sandbox,
         (ctx) =>
           Effect.gen(function* () {
-            yield* ctx.sandbox.exec('git config user.email "test@test.com"', {
-              cwd: ctx.sandboxRepoDir,
-            });
-            yield* ctx.sandbox.exec('git config user.name "Test"', {
-              cwd: ctx.sandboxRepoDir,
-            });
+            // T8: the worktree already shares the identity installed by initRepo.
             yield* ctx.sandbox.exec(
               'sh -c "echo content > new-file.txt && git add new-file.txt && git commit -m \\"temp commit\\""',
               { cwd: ctx.sandboxRepoDir },
@@ -405,12 +390,7 @@ describe("withSandboxLifecycle (worktree mode)", () => {
           (ctx) =>
             Effect.gen(function* () {
               // Commit a change to file.txt in the worktree
-              yield* ctx.sandbox.exec('git config user.email "test@test.com"', {
-                cwd: ctx.sandboxRepoDir,
-              });
-              yield* ctx.sandbox.exec('git config user.name "Test"', {
-                cwd: ctx.sandboxRepoDir,
-              });
+              // T8: the worktree already shares the identity installed by initRepo.
               yield* ctx.sandbox.exec(
                 'sh -c "echo worktree-version > file.txt && git add file.txt && git commit -m \\"worktree change\\""',
                 { cwd: ctx.sandboxRepoDir },
@@ -446,12 +426,7 @@ describe("withSandboxLifecycle (worktree mode)", () => {
         sandbox,
         (ctx) =>
           Effect.gen(function* () {
-            yield* ctx.sandbox.exec('git config user.email "test@test.com"', {
-              cwd: ctx.sandboxRepoDir,
-            });
-            yield* ctx.sandbox.exec('git config user.name "Test"', {
-              cwd: ctx.sandboxRepoDir,
-            });
+            // T8: the worktree already shares the identity installed by initRepo.
             // Commit a change to a new file in the worktree
             yield* ctx.sandbox.exec(
               'sh -c "echo worktree-content > worktree-file.txt && git add worktree-file.txt && git commit -m \\"worktree change\\""',
@@ -501,12 +476,7 @@ describe("withSandboxLifecycle (worktree mode)", () => {
         sandbox,
         (ctx) =>
           Effect.gen(function* () {
-            yield* ctx.sandbox.exec('git config user.email "test@test.com"', {
-              cwd: ctx.sandboxRepoDir,
-            });
-            yield* ctx.sandbox.exec('git config user.name "Test"', {
-              cwd: ctx.sandboxRepoDir,
-            });
+            // T8: the worktree already shares the identity installed by initRepo.
             yield* ctx.sandbox.exec(
               'sh -c "echo docker-content > docker-file.txt && git add docker-file.txt && git commit -m \\"docker worktree commit\\""',
               { cwd: ctx.sandboxRepoDir },
@@ -543,12 +513,7 @@ describe("withSandboxLifecycle (worktree mode)", () => {
         sandbox,
         (ctx) =>
           Effect.gen(function* () {
-            yield* ctx.sandbox.exec('git config user.email "test@test.com"', {
-              cwd: ctx.sandboxRepoDir,
-            });
-            yield* ctx.sandbox.exec('git config user.name "Test"', {
-              cwd: ctx.sandboxRepoDir,
-            });
+            // T8: the worktree already shares the identity installed by initRepo.
 
             // Create a feature branch off the worktree, make a commit, then merge it back
             // This produces a merge commit — exactly what caused the production failure
@@ -592,12 +557,7 @@ describe("withSandboxLifecycle (worktree mode)", () => {
         sandbox,
         (ctx) =>
           Effect.gen(function* () {
-            yield* ctx.sandbox.exec('git config user.email "test@test.com"', {
-              cwd: ctx.sandboxRepoDir,
-            });
-            yield* ctx.sandbox.exec('git config user.name "Test"', {
-              cwd: ctx.sandboxRepoDir,
-            });
+            // T8: the worktree already shares the identity installed by initRepo.
 
             // Create two independent branches from main, each modifying the shared file
             yield* ctx.sandbox.exec(
@@ -707,12 +667,7 @@ describe("withSandboxLifecycle (worktree mode)", () => {
         sandbox,
         (ctx) =>
           Effect.gen(function* () {
-            yield* ctx.sandbox.exec('git config user.email "test@test.com"', {
-              cwd: ctx.sandboxRepoDir,
-            });
-            yield* ctx.sandbox.exec('git config user.name "Test"', {
-              cwd: ctx.sandboxRepoDir,
-            });
+            // T8: the worktree already shares the identity installed by initRepo.
             yield* ctx.sandbox.exec(
               'sh -c "echo explicit > explicit-file.txt && git add explicit-file.txt && git commit -m \\"explicit branch commit\\""',
               { cwd: ctx.sandboxRepoDir },
@@ -757,12 +712,7 @@ describe("withSandboxLifecycle (worktree mode)", () => {
         (ctx) =>
           Effect.gen(function* () {
             callOrder.push("work");
-            yield* ctx.sandbox.exec('git config user.email "test@test.com"', {
-              cwd: ctx.sandboxRepoDir,
-            });
-            yield* ctx.sandbox.exec('git config user.name "Test"', {
-              cwd: ctx.sandboxRepoDir,
-            });
+            // T8: the worktree already shares the identity installed by initRepo.
             yield* ctx.sandbox.exec(
               'sh -c "echo content > new.txt && git add new.txt && git commit -m \\"test commit\\""',
               { cwd: ctx.sandboxRepoDir },
@@ -927,12 +877,7 @@ describe("withSandboxLifecycle (worktree mode)", () => {
           sandbox,
           (ctx) =>
             Effect.gen(function* () {
-              yield* ctx.sandbox.exec('git config user.email "test@test.com"', {
-                cwd: ctx.sandboxRepoDir,
-              });
-              yield* ctx.sandbox.exec('git config user.name "Test"', {
-                cwd: ctx.sandboxRepoDir,
-              });
+              // T8: the worktree already shares the identity installed by initRepo.
               yield* ctx.sandbox.exec(
                 'sh -c "echo content > merge-file.txt && git add merge-file.txt && git commit -m \\"merge test\\""',
                 { cwd: ctx.sandboxRepoDir },
@@ -1057,7 +1002,9 @@ describe("withSandboxLifecycle (worktree mode)", () => {
           signal: ac.signal,
           hooks: {
             host: {
-              onSandboxReady: [{ command: "sleep 60" }],
+              onSandboxReady: [
+                { command: 'node -e "setTimeout(() => {}, 2000)"' },
+              ],
             },
           },
         },
@@ -1067,7 +1014,7 @@ describe("withSandboxLifecycle (worktree mode)", () => {
     );
 
     setTimeout(() => ac.abort("cancelled"), 50);
-    await expect(promise).rejects.toThrow();
+    await expect(promise).rejects.toThrow(/abort/i);
   });
 
   it("sandbox.onSandboxReady hook is killed when signal fires", async () => {
@@ -1201,7 +1148,12 @@ describe("withSandboxLifecycle (worktree mode)", () => {
           branch: "sandcastle/test",
           hooks: {
             host: {
-              onSandboxReady: [{ command: "sleep 2", timeoutMs: 500 }],
+              onSandboxReady: [
+                {
+                  command: 'node -e "setTimeout(() => {}, 2000)"',
+                  timeoutMs: 500,
+                },
+              ],
             },
           },
         },
@@ -1388,12 +1340,7 @@ describe("withSandboxLifecycle (worktree mode)", () => {
         sandbox,
         (ctx) =>
           Effect.gen(function* () {
-            yield* ctx.sandbox.exec('git config user.email "test@test.com"', {
-              cwd: ctx.sandboxRepoDir,
-            });
-            yield* ctx.sandbox.exec('git config user.name "Test"', {
-              cwd: ctx.sandboxRepoDir,
-            });
+            // T8: the worktree already shares the identity installed by initRepo.
             yield* ctx.sandbox.exec(
               'sh -c "echo wt > wt.txt && git add wt.txt && git commit -m \\"wt commit\\""',
               { cwd: ctx.sandboxRepoDir },
@@ -1449,15 +1396,19 @@ describe("runHostHooks", () => {
     await Effect.runPromise(
       runHostHooks(
         [
-          { command: "echo first > order.txt" },
-          { command: "echo second >> order.txt" },
+          {
+            command: `node -e "require('node:fs').writeFileSync('order.txt', 'first\\n')"`,
+          },
+          {
+            command: `node -e "require('node:fs').appendFileSync('order.txt', 'second\\n')"`,
+          },
         ],
         dir,
       ),
     );
 
     const content = await readFile(join(dir, "order.txt"), "utf-8");
-    const lines = content.trim().split("\n");
+    const lines = content.trim().split(/\r?\n/);
     expect(lines).toEqual(["first", "second"]);
   });
 
@@ -1480,7 +1431,9 @@ describe("runHostHooks", () => {
   it("uses the provided cwd", async () => {
     const dir = await mkdtemp(join(tmpdir(), "host-hooks-"));
 
-    await Effect.runPromise(runHostHooks([{ command: "pwd > cwd.txt" }], dir));
+    await Effect.runPromise(
+      runHostHooks([{ command: 'node -p "process.cwd()" > cwd.txt' }], dir),
+    );
 
     const content = await readFile(join(dir, "cwd.txt"), "utf-8");
     expect(content.trim()).toBe(dir);
@@ -1492,13 +1445,17 @@ describe("runHostHooks", () => {
 
     // Start a long-running hook then abort after a short delay
     const promise = Effect.runPromise(
-      runHostHooks([{ command: "sleep 60" }], dir, ac.signal),
+      runHostHooks(
+        [{ command: 'node -e "setTimeout(() => {}, 2000)"' }],
+        dir,
+        ac.signal,
+      ),
     );
 
     // Give the process time to start, then abort
     setTimeout(() => ac.abort("cancelled"), 50);
 
-    await expect(promise).rejects.toThrow();
+    await expect(promise).rejects.toThrow(/abort/i);
   });
 
   it("works normally when signal is not provided", async () => {
@@ -1516,10 +1473,13 @@ describe("runHostHooks", () => {
   it("respects per-hook timeoutMs override", async () => {
     const dir = await mkdtemp(join(tmpdir(), "host-hooks-"));
 
-    // sleep 2 with a 500ms timeout should fail
+    // A portable two-second process with a 500ms hook timeout should fail
     await expect(
       Effect.runPromise(
-        runHostHooks([{ command: "sleep 2", timeoutMs: 500 }], dir),
+        runHostHooks(
+          [{ command: 'node -e "setTimeout(() => {}, 2000)"', timeoutMs: 500 }],
+          dir,
+        ),
       ),
     ).rejects.toThrow(/timed out/);
   });

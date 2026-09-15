@@ -5,9 +5,9 @@
  * validation, image naming, and Windows path normalization.
  */
 
-import { existsSync, statSync } from "node:fs";
+import { existsSync, realpathSync, statSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
-import { isAbsolute, resolve, join, dirname } from "node:path";
+import { isAbsolute, resolve, join, posix } from "node:path";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { Effect } from "effect";
 import type { MountConfig } from "./MountConfig.js";
@@ -87,7 +87,10 @@ export const resolveSandboxPath = (
   const expanded = hasTilde
     ? expandTilde(sandboxPath, sandboxHomedir)
     : sandboxPath;
-  return isAbsolute(expanded) ? expanded : resolve(SANDBOX_REPO_DIR, expanded);
+  // T2/AC2: only container destinations use POSIX paths; host paths stay native.
+  return posix.isAbsolute(expanded)
+    ? expanded
+    : posix.resolve(SANDBOX_REPO_DIR, expanded);
 };
 
 /**
@@ -269,6 +272,41 @@ export const patchGitMountsForWindows = (
     const gitdirPath = match[1]!;
     const { parentGitDir, worktreeName } = parseGitdirPath(gitdirPath);
 
+    // T2 / AC1 / AC2: WorktreeManager canonicalizes existing paths, but Git
+    // pointers and mounts can still use short names or junction aliases. Keep
+    // lexical matches (including synthetic test paths) filesystem-independent.
+    const matchesHostPath = (left: string, right: string): boolean => {
+      try {
+        return realpathSync.native(left) === realpathSync.native(right);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+        throw error;
+      }
+    };
+    // Resolve identities before creating the override. Do not treat permission
+    // or I/O errors as proof that two existing paths refer to different entries.
+    const identifiedMounts = yield* Effect.try({
+      try: () =>
+        gitMounts.map((mount) => {
+          const hostPath = mount.hostPath.replace(/\\/g, "/");
+          if (hostPath === parentGitDir.replace(/\\/g, "/")) {
+            return { mount, isParent: true, isGitFile: false };
+          }
+          if (hostPath === gitEntryPath.replace(/\\/g, "/")) {
+            return { mount, isParent: false, isGitFile: true };
+          }
+          return {
+            mount,
+            isParent: matchesHostPath(mount.hostPath, parentGitDir),
+            isGitFile: matchesHostPath(mount.hostPath, gitEntryPath),
+          };
+        }),
+      catch: (e) =>
+        new WorktreeError({
+          message: `Failed to resolve git mount identity: ${e instanceof Error ? e.message : String(e)}`,
+        }),
+    });
+
     // Create a temp file with the corrected gitdir content
     const correctedGitdir = `${PARENT_GIT_SANDBOX_DIR}/worktrees/${worktreeName}`;
     const tempDir = yield* Effect.tryPromise({
@@ -288,19 +326,15 @@ export const patchGitMountsForWindows = (
     });
 
     // Build corrected mounts
-    const normalizedParentGitDir = parentGitDir.replace(/\\/g, "/");
-    const gitFileHostPath = gitEntryPath.replace(/\\/g, "/");
-
     const correctedMounts: Array<{ hostPath: string; sandboxPath: string }> =
       [];
     let replacedGitFile = false;
 
-    for (const m of gitMounts) {
-      const normalizedHostPath = m.hostPath.replace(/\\/g, "/");
-      if (normalizedHostPath === normalizedParentGitDir) {
+    for (const { mount: m, isParent, isGitFile } of identifiedMounts) {
+      if (isParent) {
         // Remap parent .git dir to deterministic sandbox path
         correctedMounts.push({ ...m, sandboxPath: PARENT_GIT_SANDBOX_DIR });
-      } else if (normalizedHostPath === gitFileHostPath) {
+      } else if (isGitFile) {
         // Replace .git file mount with corrected version (host repo is a worktree)
         correctedMounts.push({
           ...m,
@@ -377,7 +411,7 @@ export const processFileMountParents = (
 
     if (!isFile) continue;
 
-    const parentDir = dirname(mount.sandboxPath);
+    const parentDir = posix.dirname(mount.sandboxPath);
 
     // Parent IS sandboxHomedir — it always exists in the image
     if (parentDir === sandboxHomedir) continue;

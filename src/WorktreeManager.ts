@@ -1,8 +1,9 @@
-import { Effect, Option } from "effect";
+import { Effect } from "effect";
 import { FileSystem } from "@effect/platform";
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { join, normalize } from "node:path";
+import { realpathSync } from "node:fs";
+import { basename, dirname, join, normalize, posix, relative } from "node:path";
 import { WorktreeError, WorktreeTimeoutError, withTimeout } from "./errors.js";
 
 const WORKTREE_TIMEOUT_MS = 30_000;
@@ -134,15 +135,73 @@ export const findCollidingWorktree = (
   existing.find((wt) => normalizePath(wt.path) === normalizePath(worktreePath));
 
 /**
- * Whether `worktreePath` lives under `worktreesDir` (i.e. is a worktree managed
- * by sandcastle rather than the main working tree or an external worktree).
- * Separators are normalized so the check holds on Windows.
+ * Component-aware containment of already-canonical filesystem identities.
+ * This lexical helper also accepts Git's forward slashes on Windows; callers
+ * must resolve existing paths before using it as a filesystem safety boundary.
  */
 export const isManagedWorktreePath = (
   worktreePath: string,
   worktreesDir: string,
-): boolean =>
-  normalizePath(worktreePath).startsWith(normalizePath(worktreesDir));
+): boolean => {
+  const child = posix.relative(
+    normalizePath(worktreesDir),
+    normalizePath(worktreePath),
+  );
+  return (
+    child !== "" &&
+    child !== ".." &&
+    !child.startsWith("../") &&
+    !posix.isAbsolute(child)
+  );
+};
+
+// T1 / AC1: ordinary realpath can retain Windows 8.3 aliases. All existing
+// filesystem identities cross this native boundary; never fall back lexically.
+// Only ENOENT positively establishes absence. Permission/I/O failures are errors.
+const existingIdentity = (
+  path: string,
+): Effect.Effect<string | null, WorktreeError> =>
+  Effect.try({
+    try: () => {
+      try {
+        return realpathSync.native(path);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+        throw error;
+      }
+    },
+    catch: (error) =>
+      new WorktreeError({
+        message: `Cannot establish filesystem identity for '${path}': ${String(error)}`,
+      }),
+  });
+
+const filesystemIdentity = (
+  path: string,
+): Effect.Effect<string, WorktreeError> =>
+  existingIdentity(path).pipe(
+    Effect.flatMap((identity) =>
+      identity === null
+        ? Effect.fail(
+            new WorktreeError({
+              message: `Cannot establish filesystem identity for missing path '${path}'`,
+            }),
+          )
+        : Effect.succeed(identity),
+    ),
+  );
+
+const requireManagedIdentity = (
+  path: string,
+  root: string,
+): Effect.Effect<void, WorktreeError> =>
+  isManagedWorktreePath(path, root)
+    ? Effect.void
+    : Effect.fail(
+        new WorktreeError({
+          message: `Refusing unsafe worktree path '${path}': outside managed root '${root}'`,
+        }),
+      );
 
 /**
  * Whether a directory entry under `.sandcastle/worktrees/` is orphaned — not
@@ -302,10 +361,13 @@ export const create = (
 > =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
+    const realRepoDir = yield* filesystemIdentity(repoDir);
     const worktreesDir = join(repoDir, ".sandcastle", "worktrees");
     yield* fs
       .makeDirectory(worktreesDir, { recursive: true })
       .pipe(Effect.mapError((e) => new WorktreeError({ message: e.message })));
+
+    const realWorktreesDir = yield* filesystemIdentity(worktreesDir);
 
     let branch: string;
     let worktreeName: string;
@@ -327,27 +389,50 @@ export const create = (
     }
 
     const worktreePath = join(worktreesDir, worktreeName);
+    yield* requireManagedIdentity(worktreePath, worktreesDir);
+    const targetIdentity = yield* existingIdentity(worktreePath);
+    if (targetIdentity !== null)
+      yield* requireManagedIdentity(targetIdentity, realWorktreesDir);
 
     if (opts?.branch) {
       // Proactively detect collision before git produces a confusing error.
       // Match by branch first; fall back to target path (covers mid-rebase
       // detached-HEAD state where the branch field is null).
       const existing = yield* listWorktrees(repoDir);
-      const collision = findCollidingWorktree(existing, branch, worktreePath);
+      // Resolve both Git paths and the requested path, including detached HEAD.
+      // Keep branch-first priority even if the requested directory also exists.
+      let collision = existing.find((wt) => wt.branch === branch);
+      if (!collision && targetIdentity !== null) {
+        for (const entry of existing) {
+          if ((yield* existingIdentity(entry.path)) === targetIdentity) {
+            collision = entry;
+            break;
+          }
+        }
+      }
       if (collision) {
         // Only reuse worktrees managed by sandcastle (under .sandcastle/worktrees/)
-        if (isManagedWorktreePath(collision.path, worktreesDir)) {
-          const dirty = yield* hasUncommittedChanges(collision.path);
+        const collisionIdentity = yield* filesystemIdentity(collision.path);
+        if (
+          collision !== existing[0] &&
+          collisionIdentity !== realRepoDir &&
+          isManagedWorktreePath(collisionIdentity, realWorktreesDir)
+        ) {
+          // Preserve the repo anchor across a linked .sandcastle. Returning the
+          // resolved external storage path would make remove() ascend the wrong repo.
+          const managedPath = join(
+            worktreesDir,
+            relative(realWorktreesDir, collisionIdentity),
+          );
+          const dirty = yield* hasUncommittedChanges(managedPath);
           if (dirty) {
             console.warn(
-              `Reusing worktree at ${collision.path} (branch '${branch}') — worktree has uncommitted changes`,
+              `Reusing worktree at ${managedPath} (branch '${branch}') — worktree has uncommitted changes`,
             );
           } else {
-            yield* fastForwardFromOrigin(collision.path, branch);
+            yield* fastForwardFromOrigin(managedPath, branch);
           }
-          // git reports forward slashes even on Windows; return a
-          // platform-native path so downstream join/fs calls stay consistent.
-          return { path: normalize(collision.path), branch };
+          return { path: managedPath, branch };
         }
         // Branch is checked out in the main working tree or external worktree
         yield* Effect.fail(
@@ -446,13 +531,41 @@ export const hasUncommittedChanges = (
  */
 export const remove = (
   worktreePath: string,
-): Effect.Effect<void, WorktreeError> => {
-  // Derive the main repo dir: worktreePath = <repoDir>/.sandcastle/worktrees/<name>
-  const repoDir = join(worktreePath, "..", "..", "..");
-  return execGit(["worktree", "remove", "--force", worktreePath], repoDir).pipe(
-    Effect.asVoid,
-  );
-};
+): Effect.Effect<void, WorktreeError> =>
+  Effect.gen(function* () {
+    // T1 / AC1: derive the anchor BEFORE resolving a linked managed root, then
+    // validate the layout and both identities before Git can remove anything.
+    const path = normalize(worktreePath);
+    const worktreesDir = dirname(path);
+    const configDir = dirname(worktreesDir);
+    if (
+      basename(worktreesDir) !== "worktrees" ||
+      basename(configDir) !== ".sandcastle"
+    ) {
+      return yield* Effect.fail(
+        new WorktreeError({
+          message: `Refusing unsafe worktree path '${worktreePath}': expected .sandcastle/worktrees/<name>`,
+        }),
+      );
+    }
+    const repoDir = yield* filesystemIdentity(dirname(configDir));
+    const rootIdentity = yield* filesystemIdentity(worktreesDir);
+    const identity = yield* filesystemIdentity(path);
+    yield* requireManagedIdentity(identity, rootIdentity);
+    const existing = yield* listWorktrees(repoDir);
+    const mainIdentity = existing[0]
+      ? yield* filesystemIdentity(existing[0].path)
+      : repoDir;
+    if (identity === repoDir || identity === mainIdentity) {
+      return yield* Effect.fail(
+        new WorktreeError({
+          message: `Refusing to remove the main repository at '${path}'`,
+        }),
+      );
+    }
+    // Pass the validated entry, not a resolved symlink target, to deletion.
+    yield* execGit(["worktree", "remove", "--force", path], repoDir);
+  });
 
 /**
  * Prunes stale git worktree metadata and removes orphaned directories under
@@ -468,61 +581,59 @@ export const pruneStale = (
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
 
-    // Let git clean up metadata for worktrees whose directories are gone
-    yield* execGit(["worktree", "prune"], repoDir);
-
+    yield* filesystemIdentity(repoDir);
     const worktreesDir = join(repoDir, ".sandcastle", "worktrees");
+    const rootIdentity = yield* existingIdentity(worktreesDir);
 
-    // Read directory entries — return null if directory doesn't exist
-    const entries: string[] | null = yield* fs.readDirectory(worktreesDir).pipe(
-      Effect.map((es): string[] | null => es),
-      Effect.catchSome((e) =>
-        e._tag === "SystemError" && e.reason === "NotFound"
-          ? Option.some(Effect.succeed(null as string[] | null))
-          : Option.none(),
-      ),
-      Effect.mapError((e) => new WorktreeError({ message: e.message })),
-    );
+    // T1 / AC1: preflight every active identity before even pruning metadata.
+    // An inaccessible active worktree must never authorize candidate deletion.
+    const activeWorktreePaths = new Set<string>();
+    for (const entry of yield* listWorktrees(repoDir)) {
+      const identity = yield* existingIdentity(entry.path);
+      if (identity !== null) activeWorktreePaths.add(identity);
+    }
 
-    if (entries === null) return;
-
-    // `git worktree list` canonicalizes paths via realpath. If repoDir or
-    // .sandcastle is a symlink, joining the un-canonicalized prefix produces
-    // strings that never match git's output, and every active worktree looks
-    // orphaned. Resolve the prefix once so the Set lookup below works.
-    const realWorktreesDir = yield* fs
-      .realPath(worktreesDir)
-      .pipe(Effect.catchAll(() => Effect.succeed(worktreesDir)));
-
-    // Get the list of active worktree paths from git
-    const worktreeList = yield* execGit(
-      ["worktree", "list", "--porcelain"],
-      repoDir,
-    );
-    const activeWorktreePaths = new Set(
-      worktreeList
-        .split("\n")
-        .filter((line) => line.startsWith("worktree "))
-        .map((line) => line.slice("worktree ".length).trim()),
-    );
-
-    // Remove any directory under .sandcastle/worktrees/ that is not an active worktree
-    for (const entry of entries) {
-      const entryPath = join(realWorktreesDir, entry);
-      const isDir = yield* fs.stat(entryPath).pipe(
-        Effect.map((s) => s.type === "Directory"),
-        Effect.catchAll(() => Effect.succeed(false)),
-      );
-      if (isDir && isOrphanedWorktreePath(entryPath, activeWorktreePaths)) {
-        yield* fs.remove(entryPath, { recursive: true, force: true }).pipe(
-          Effect.mapError(
-            (e) =>
-              new WorktreeError({
-                message: `Failed to remove ${entryPath}: ${e.message}`,
-              }),
-          ),
+    const orphans: string[] = [];
+    if (rootIdentity !== null) {
+      const entries = yield* fs
+        .readDirectory(worktreesDir)
+        .pipe(
+          Effect.mapError((e) => new WorktreeError({ message: e.message })),
         );
+      // Preflight ALL candidates before deletion, so a later identity error
+      // cannot leave an earlier orphan removed. The root itself may be linked;
+      // an entry escaping that canonical root is not a managed worktree.
+      for (const entry of entries) {
+        const entryPath = join(worktreesDir, entry);
+        const identity = yield* existingIdentity(entryPath);
+        if (identity === null) continue;
+        yield* requireManagedIdentity(identity, rootIdentity);
+        const info = yield* fs
+          .stat(entryPath)
+          .pipe(
+            Effect.mapError((e) => new WorktreeError({ message: e.message })),
+          );
+        if (
+          info.type === "Directory" &&
+          isOrphanedWorktreePath(identity, activeWorktreePaths)
+        ) {
+          orphans.push(entryPath);
+        }
       }
+    }
+
+    // Positively missing worktrees still get their stale metadata pruned.
+    yield* execGit(["worktree", "prune"], repoDir);
+    for (const entryPath of orphans) {
+      // Never pass a resolved external target to a recursive removal.
+      yield* fs.remove(entryPath, { recursive: true, force: true }).pipe(
+        Effect.mapError(
+          (e) =>
+            new WorktreeError({
+              message: `Failed to remove ${entryPath}: ${e.message}`,
+            }),
+        ),
+      );
     }
   }).pipe(
     withTimeout(
