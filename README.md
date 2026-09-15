@@ -2313,10 +2313,10 @@ timeout retire continuations and request cooperative cancellation. They cannot
 cancel an unsettled ledger write or hard-terminate a noncooperating in-process
 adapter; late settlement cannot launch more effects or upgrade a completed result.
 
-Canonical Windows `npm run build` also has a **separate packaging limitation**:
-POSIX `rm`/`cp` postbuild commands may fail even after ESM and DTS generation
-succeeds. Successful compilation/declaration checks do not establish packaging,
-global-suite or production Windows durability success.
+`npm run build` compiles the package, copies its templates using portable Node
+filesystem APIs, and checks that public types are Effect-free. Successful
+packaging and portable tests do not establish production Windows ledger
+durability support; the ledger-storage boundary above remains unchanged.
 
 Slice 16 still owns the plugin resumable phase runner and Sandcastle delegation;
 slice 17 broader feedback routing; slice 18 human-confirmed finalization and
@@ -2502,10 +2502,25 @@ does not perform a live MCP call.
 
 ```bash
 npm install
-npm run build    # Bundle with tsup
-npm test         # Run tests with vitest
+npm run build     # Compile, copy templates, and check public types
+npm test          # Build once, then run template-copy and Vitest tests
 npm run typecheck # Type-check
 ```
+
+Use `npm run build` for the complete package in `dist/`. Running `npx tsup`
+only compiles the code and declarations; it cleans `dist/` without copying the
+templates needed by CLI `init`.
+
+`npm test` and `npm run test:watch` build once before starting tests. When invoking
+Vitest directly (for example, `npx vitest run src/cli.test.ts`), run
+`npm run build` first so CLI tests use current compiled code and templates. Watch
+mode does not rebuild `dist/` on source changes; rebuild before rerunning CLI
+tests after changing their production code or templates. CLI scaffolding tests
+do not build container images or require a running Docker or Podman daemon.
+
+CI runs the full test suite on Ubuntu and Windows with Node.js 22 for pushes to
+`main` and pull requests. This validates portable behavior and existing platform
+boundaries, not production Windows ledger-storage support.
 
 ## License
 

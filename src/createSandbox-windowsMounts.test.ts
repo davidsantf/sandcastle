@@ -113,7 +113,7 @@ describe("createSandbox Windows mount patching", () => {
       // gitMounts should be an array (possibly empty if no parent .git)
       expect(Array.isArray(gitMounts)).toBe(true);
       // worktreePath should be the created worktree path
-      expect(calledWorktreePath).toContain(".sandcastle/worktrees");
+      expect(calledWorktreePath).toContain(join(".sandcastle", "worktrees"));
       // sandboxRepoDir should be the canonical sandbox dir
       expect(sandboxRepoDir).toBe(SANDBOX_REPO_DIR);
     } finally {

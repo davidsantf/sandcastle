@@ -3,15 +3,16 @@
  * This replaces FilesystemSandbox which has been removed.
  */
 import { Effect } from "effect";
-import { spawn } from "node:child_process";
 import { copyFile, mkdir } from "node:fs/promises";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { createInterface } from "node:readline";
-import { BoundedTail, MAX_TAIL_CHARS } from "./boundedTail.js";
 import { CopyError, ExecError } from "./errors.js";
-import { type ExecResult, type SandboxService } from "./SandboxFactory.js";
+import { type SandboxService } from "./SandboxFactory.js";
+import {
+  createSandboxExec,
+  sandboxPathToNative,
+} from "./sandboxes/test-shared.js";
 
 /**
  * Creates an isolated git global config env so that test sandbox
@@ -27,84 +28,25 @@ const createIsolatedGitEnv = (): Record<string, string> => {
 export const makeLocalSandbox = (sandboxDir: string): SandboxService => {
   const gitEnv = createIsolatedGitEnv();
   const env = { ...process.env, ...gitEnv };
+  const exec = createSandboxExec(sandboxDir, env);
 
   return {
-    exec: (command, options) => {
-      return Effect.async<ExecResult, ExecError>((resume) => {
-        const proc = spawn("sh", ["-c", command], {
-          cwd: options?.cwd ?? sandboxDir,
-          stdio: [
-            options?.stdin !== undefined ? "pipe" : "ignore",
-            "pipe",
-            "pipe",
-          ],
-          env,
-        });
-
-        if (options?.stdin !== undefined) {
-          proc.stdin!.write(options.stdin);
-          proc.stdin!.end();
-        }
-
-        proc.on("error", (error) => {
-          resume(
-            Effect.fail(
-              new ExecError({
-                command,
-                message: `Failed to exec: ${error.message}`,
-              }),
-            ),
-          );
-        });
-
-        if (options?.onLine) {
-          const onLine = options.onLine;
-          const stdoutTail = new BoundedTail(MAX_TAIL_CHARS, "\n");
-          const stderrTail = new BoundedTail(MAX_TAIL_CHARS, "");
-          const rl = createInterface({ input: proc.stdout! });
-          rl.on("line", (line) => {
-            stdoutTail.push(line);
-            onLine(line);
-          });
-          proc.stderr!.on("data", (chunk: Buffer) => {
-            stderrTail.push(chunk.toString());
-          });
-          proc.on("close", (code) => {
-            resume(
-              Effect.succeed({
-                stdout: stdoutTail.toString(),
-                stderr: stderrTail.toString(),
-                exitCode: code ?? 0,
-              }),
-            );
-          });
-        } else {
-          const stdoutChunks: string[] = [];
-          const stderrChunks: string[] = [];
-          proc.stdout!.on("data", (chunk: Buffer) => {
-            stdoutChunks.push(chunk.toString());
-          });
-          proc.stderr!.on("data", (chunk: Buffer) => {
-            stderrChunks.push(chunk.toString());
-          });
-          proc.on("close", (code) => {
-            resume(
-              Effect.succeed({
-                stdout: stdoutChunks.join(""),
-                stderr: stderrChunks.join(""),
-                exitCode: code ?? 0,
-              }),
-            );
-          });
-        }
-      });
-    },
+    exec: (command, options) =>
+      Effect.tryPromise({
+        try: () => exec(command, options),
+        catch: (error) =>
+          new ExecError({
+            command,
+            message: `Failed to exec: ${error instanceof Error ? error.message : String(error)}`,
+          }),
+      }),
 
     copyIn: (hostPath, sandboxPath) =>
       Effect.tryPromise({
         try: async () => {
-          await mkdir(dirname(sandboxPath), { recursive: true });
-          await copyFile(hostPath, sandboxPath);
+          const nativePath = await sandboxPathToNative(sandboxPath, sandboxDir);
+          await mkdir(dirname(nativePath), { recursive: true });
+          await copyFile(hostPath, nativePath);
         },
         catch: (e) =>
           new CopyError({
@@ -116,7 +58,10 @@ export const makeLocalSandbox = (sandboxDir: string): SandboxService => {
       Effect.tryPromise({
         try: async () => {
           await mkdir(dirname(hostPath), { recursive: true });
-          await copyFile(sandboxPath, hostPath);
+          await copyFile(
+            await sandboxPathToNative(sandboxPath, sandboxDir),
+            hostPath,
+          );
         },
         catch: (e) =>
           new CopyError({

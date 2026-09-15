@@ -1,32 +1,51 @@
 import { Effect } from "effect";
 import { FileSystem } from "@effect/platform";
 import { NodeFileSystem } from "@effect/platform-node";
-import { exec } from "node:child_process";
+import childProcess, { exec, execFile } from "node:child_process";
+import { realpathSync } from "node:fs";
 import {
-  chmod,
   mkdir,
   mkdtemp,
   readFile,
   readdir,
+  rm,
   stat,
   symlink,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { promisify } from "node:util";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   create,
   generateTempBranchName,
   getCurrentBranch,
   hasUncommittedChanges,
+  isManagedWorktreePath,
   pruneStale,
   remove,
   sanitizeName,
 } from "./WorktreeManager.js";
 
+// Observe production Git invocations while retaining real subprocess execution.
+vi.mock("node:child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:child_process")>();
+  return { ...actual, execFile: vi.fn(actual.execFile) };
+});
+
 const execAsync = promisify(exec);
+const execFileAsync = promisify(childProcess.execFile);
+
+// T1 / AC1: real directory aliases on both hosts, without Windows symlink privileges.
+const linkDirectory = (target: string, path: string) =>
+  symlink(target, path, process.platform === "win32" ? "junction" : "dir");
+
+const expectNoTrackingConfig = async (dir: string, pattern: string) => {
+  await expect(
+    execFileAsync("git", ["config", "--get-regexp", pattern], { cwd: dir }),
+  ).rejects.toMatchObject({ code: 1, stdout: "", stderr: "" });
+};
 
 const initRepo = async (dir: string) => {
   await execAsync("git init -b main", { cwd: dir });
@@ -358,6 +377,8 @@ describe("WorktreeManager.create", () => {
     await run(remove(path));
   });
 
+  // T1: Windows measurements reached 4�5s before reuse; multi-repo origin tests
+  // need a local 15s budget for serial fetch/merge/rebase, not a global increase.
   it("fast-forwards a clean reused worktree when origin has moved ahead", async () => {
     const { repoDir, pushOrigin } = await setupRepoWithOrigin();
 
@@ -388,7 +409,7 @@ describe("WorktreeManager.create", () => {
     expect(newFile).toBe("new");
 
     await run(remove(first.path));
-  });
+  }, 15_000);
 
   it("preserves unpushed commits when the reused branch has diverged from origin", async () => {
     const { repoDir, pushOrigin } = await setupRepoWithOrigin();
@@ -422,7 +443,7 @@ describe("WorktreeManager.create", () => {
     expect(localFile).toBe("local");
 
     await run(remove(first.path));
-  });
+  }, 15_000);
 
   it("does not refresh a dirty reused worktree", async () => {
     const { repoDir, pushOrigin } = await setupRepoWithOrigin();
@@ -456,7 +477,7 @@ describe("WorktreeManager.create", () => {
     expect(dirty).toBe("uncommitted");
 
     await run(remove(first.path));
-  });
+  }, 15_000);
 
   it("treats fetch failure as non-fatal and reuses the worktree as-is", async () => {
     // No origin remote at all — `git fetch origin <branch>` will fail.
@@ -513,7 +534,7 @@ describe("WorktreeManager.create", () => {
     expect(localFile).toBe("local");
 
     await run(remove(first.path));
-  });
+  }, 15_000);
 
   it("does not advance HEAD past a mid-rebase pause (detached HEAD, clean tree)", async () => {
     // A `git rebase` paused at an `edit`/`break`/`exec` instruction leaves
@@ -569,14 +590,14 @@ describe("WorktreeManager.create", () => {
       "git rev-parse --git-path rebase-merge",
       { cwd: second.path },
     );
-    const resolvedRebaseDir = rebaseMergePath.trim().startsWith("/")
+    const resolvedRebaseDir = isAbsolute(rebaseMergePath.trim())
       ? rebaseMergePath.trim()
       : join(second.path, rebaseMergePath.trim());
     expect((await stat(resolvedRebaseDir)).isDirectory()).toBe(true);
 
     await execAsync("git rebase --abort", { cwd: first.path }).catch(() => {});
     await run(remove(first.path));
-  });
+  }, 15_000);
 
   it("reuses worktree with unpushed commits (not considered dirty)", async () => {
     const repoDir = await setupRepo();
@@ -672,11 +693,10 @@ describe("WorktreeManager.create", () => {
 
     // If -c branch.autoSetupMerge=false is working, the new branch should
     // have no upstream tracking config (no branch.<name>.remote or .merge)
-    const { stdout: trackingConfig } = await execAsync(
-      `git config --get-regexp "branch\\.sandcastle/no-tracking-test\\." || true`,
-      { cwd: repoDir },
+    await expectNoTrackingConfig(
+      repoDir,
+      "branch\\.sandcastle/no-tracking-test\\.",
     );
-    expect(trackingConfig.trim()).toBe("");
 
     await run(remove(path));
   });
@@ -693,11 +713,7 @@ describe("WorktreeManager.create", () => {
 
     // The temp branch should also have no upstream tracking config
     const escapedBranch = branch.replace(/\//g, "\\/").replace(/\./g, "\\.");
-    const { stdout: trackingConfig } = await execAsync(
-      `git config --get-regexp "branch\\.${escapedBranch}\\." || true`,
-      { cwd: repoDir },
-    );
-    expect(trackingConfig.trim()).toBe("");
+    await expectNoTrackingConfig(repoDir, `branch\\.${escapedBranch}\\.`);
 
     await run(remove(path));
   });
@@ -733,8 +749,7 @@ describe("WorktreeManager.pruneStale", () => {
     const { path } = await run(create(repoDir));
 
     // Manually delete the worktree directory (simulating a crash)
-    const { execSync } = await import("node:child_process");
-    execSync(`rm -rf "${path}"`);
+    await rm(path, { recursive: true, force: true });
 
     // pruneStale should not throw
     await run(pruneStale(repoDir));
@@ -783,7 +798,7 @@ describe("WorktreeManager.pruneStale", () => {
     // running sandboxes.
     const repoDir = await setupRepo();
     const externalDir = await mkdtemp(join(tmpdir(), "wt-external-"));
-    await symlink(externalDir, join(repoDir, ".sandcastle"));
+    await linkDirectory(externalDir, join(repoDir, ".sandcastle"));
 
     const { path } = await run(create(repoDir));
 
@@ -849,42 +864,242 @@ describe("WorktreeManager.hasUncommittedChanges", () => {
 });
 
 describe("WorktreeManager git locale", () => {
-  // Regression for #595: this module matches git's stderr (e.g. "invalid
-  // reference") to decide control flow. git localizes those strings via
-  // gettext, so in a non-English locale the matches silently fail and worktree
-  // creation breaks. execGit must force LC_ALL=C so git always emits English.
-  //
-  // No non-English locale is installed on CI, so git would emit English
-  // regardless and a plain behavioral test could not fail. Instead we shadow
-  // the real `git` binary with a shim that records the LC_ALL it received,
-  // asserting the module invokes git in the C locale even when the parent
-  // process is set to a different one.
+  // T1: observe the real subprocess boundary instead of a POSIX-only shell shim.
   it("invokes git with LC_ALL=C even when the process locale is non-English", async () => {
-    if (process.platform === "win32") return; // POSIX shell shim
     const repoDir = await setupRepo();
-    const shimDir = await mkdtemp(join(tmpdir(), "wt-git-shim-"));
-    const logPath = join(shimDir, "lc_all.log");
-    const gitShim = join(shimDir, "git");
-    await writeFile(
-      gitShim,
-      `#!/bin/sh\nprintf '%s' "\${LC_ALL-}" > "${logPath}"\necho main\n`,
-    );
-    await chmod(gitShim, 0o755);
-
-    const originalPath = process.env.PATH;
+    const spawn = vi.mocked(execFile);
+    spawn.mockClear();
     const originalLcAll = process.env.LC_ALL;
-    process.env.PATH = `${shimDir}:${originalPath ?? ""}`;
     process.env.LC_ALL = "en_US.UTF-8";
     try {
-      const branch = await run(getCurrentBranch(repoDir));
-      expect(branch).toBe("main");
+      expect(await run(getCurrentBranch(repoDir))).toBe("main");
+      expect(spawn).toHaveBeenCalledWith(
+        "git",
+        ["rev-parse", "--abbrev-ref", "HEAD"],
+        expect.objectContaining({
+          env: expect.objectContaining({ LC_ALL: "C" }),
+        }),
+        expect.any(Function),
+      );
     } finally {
-      if (originalPath === undefined) delete process.env.PATH;
-      else process.env.PATH = originalPath;
+      spawn.mockClear();
       if (originalLcAll === undefined) delete process.env.LC_ALL;
       else process.env.LC_ALL = originalLcAll;
     }
-
-    expect(await readFile(logPath, "utf8")).toBe("C");
   });
+});
+
+// T1 / AC1: establish filesystem identity before authorizing reuse or deletion.
+describe("WorktreeManager canonical identity", () => {
+  it.each([
+    "/repo/.sandcastle/worktrees",
+    "/repo/.sandcastle/worktrees-other/feature",
+    "/repo/.sandcastle/worktrees/../external",
+    "/other/.sandcastle/worktrees/feature",
+  ])("rejects non-descendant managed path %s", (path) => {
+    expect(isManagedWorktreePath(path, "/repo/.sandcastle/worktrees")).toBe(
+      false,
+    );
+  });
+
+  it.each([
+    "C:/repo/.sandcastle/worktrees",
+    "C:/repo/.sandcastle/worktrees-other/feature",
+    "C:/repo/.sandcastle/worktrees/../external",
+    "D:/repo/.sandcastle/worktrees/feature",
+    "//server/share/repo/.sandcastle/worktrees/feature",
+  ])("rejects non-descendant Windows path %s", (path) => {
+    expect(
+      isManagedWorktreePath(path, "C:\\repo\\.sandcastle\\worktrees"),
+    ).toBe(false);
+  });
+
+  it("retains two active worktrees across repo aliases while pruning a valid orphan", async () => {
+    const repoDir = await setupRepo();
+    const aliasParent = await mkdtemp(join(tmpdir(), "wt-alias-"));
+    const alias = join(aliasParent, "repo");
+    await linkDirectory(repoDir, alias);
+    const a = await run(create(alias, { branch: "active-a" }));
+    const b = await run(create(repoDir, { branch: "active-b" }));
+    const orphan = join(alias, ".sandcastle", "worktrees", "orphan");
+    await mkdir(orphan);
+    await writeFile(join(a.path, "dirty.txt"), "keep active data");
+
+    await run(pruneStale(alias));
+
+    expect(await readFile(join(a.path, "dirty.txt"), "utf8")).toBe(
+      "keep active data",
+    );
+    expect((await stat(b.path)).isDirectory()).toBe(true);
+    await expect(stat(orphan)).rejects.toMatchObject({ code: "ENOENT" });
+    await run(remove(a.path));
+    await run(remove(b.path));
+  }, 15_000);
+
+  it.each(["repo", ".sandcastle"])(
+    "reuses and removes through linked %s without losing the repo anchor",
+    async (linked) => {
+      const realRepo = await setupRepo();
+      const external = await mkdtemp(join(tmpdir(), "wt-linked-"));
+      const repoDir = linked === "repo" ? join(external, "alias") : realRepo;
+      if (linked === "repo") await linkDirectory(realRepo, repoDir);
+      else await linkDirectory(external, join(repoDir, ".sandcastle"));
+      const first = await run(create(repoDir, { branch: "linked-branch" }));
+      await writeFile(join(first.path, "dirty.txt"), "keep me");
+      const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        const second = await run(create(repoDir, { branch: "linked-branch" }));
+        expect(second.path).toBe(first.path);
+        expect(await readFile(join(second.path, "dirty.txt"), "utf8")).toBe(
+          "keep me",
+        );
+        expect(warning).toHaveBeenCalledWith(
+          expect.stringContaining("uncommitted changes"),
+        );
+        await run(remove(second.path));
+        await expect(stat(first.path)).rejects.toMatchObject({
+          code: "ENOENT",
+        });
+        expect((await stat(realRepo)).isDirectory()).toBe(true);
+      } finally {
+        warning.mockRestore();
+      }
+    },
+  );
+
+  it("uses canonical path fallback for detached reuse through a linked managed root", async () => {
+    const repoDir = await setupRepo();
+    const external = await mkdtemp(join(tmpdir(), "wt-linked-"));
+    await linkDirectory(external, join(repoDir, ".sandcastle"));
+    const first = await run(create(repoDir, { branch: "detached" }));
+    await execAsync("git checkout --detach", { cwd: first.path });
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const second = await run(create(repoDir, { branch: "detached" }));
+      expect(second.path).toBe(first.path);
+      expect(await getBranch(second.path)).toBe("HEAD");
+      expect(log).toHaveBeenCalledWith(
+        expect.stringContaining("skipping origin refresh"),
+      );
+      await run(remove(second.path));
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("rejects branch reuse in a sibling-prefix external worktree", async () => {
+    const repoDir = await setupRepo();
+    const external = join(
+      repoDir,
+      ".sandcastle",
+      "worktrees-external",
+      "feature",
+    );
+    await execFileAsync("git", ["worktree", "add", "-b", "feature", external], {
+      cwd: repoDir,
+    });
+    const err = await runFail(create(repoDir, { branch: "feature" }));
+    expect(err._tag).toBe("WorktreeError");
+    expect(err.message).toMatch(/already checked out/);
+    expect((await stat(external)).isDirectory()).toBe(true);
+  });
+
+  it.each(["create", "remove", "prune"])(
+    "rejects an escaping entry before %s can touch its external target",
+    async (operation) => {
+      const repoDir = await setupRepo();
+      const externalParent = await mkdtemp(join(tmpdir(), "wt-outside-"));
+      const external = join(externalParent, "feature");
+      await execFileAsync(
+        "git",
+        ["worktree", "add", "-b", "external", external],
+        { cwd: repoDir },
+      );
+      await writeFile(join(external, "keep.txt"), "external data");
+      const root = join(repoDir, ".sandcastle", "worktrees");
+      await mkdir(root, { recursive: true });
+      const escape = join(root, "external");
+      await linkDirectory(external, escape);
+      const operationEffect =
+        operation === "create"
+          ? create(repoDir, { branch: "external" })
+          : operation === "remove"
+            ? remove(escape)
+            : pruneStale(repoDir);
+      const result = await run(Effect.either(operationEffect));
+      expect(await readFile(join(external, "keep.txt"), "utf8")).toBe(
+        "external data",
+      );
+      expect(result._tag).toBe("Left");
+    },
+  );
+
+  it.each(["EACCES", "EIO"])(
+    "fails closed on unresolved active identity (%s) before pruning any candidate or metadata",
+    async (code) => {
+      const repoDir = await setupRepo();
+      const active = await run(create(repoDir, { branch: "active" }));
+      const missing = await run(create(repoDir, { branch: "missing" }));
+      await rm(missing.path, { recursive: true, force: true });
+      const root = join(repoDir, ".sandcastle", "worktrees");
+      const orphan = join(root, "orphan");
+      await mkdir(orphan);
+      const native = realpathSync.native;
+      const activeIdentity = native(active.path);
+      const identity = vi
+        .spyOn(realpathSync, "native")
+        .mockImplementation((path) => {
+          const resolved = native(path);
+          if (resolved === activeIdentity)
+            throw Object.assign(new Error("identity denied"), { code });
+          return resolved;
+        });
+      try {
+        const result = await run(Effect.either(pruneStale(repoDir)));
+        expect(result._tag).toBe("Left");
+        if (result._tag === "Left")
+          expect(result.left).toMatchObject({
+            _tag: "WorktreeError",
+            message: expect.stringContaining("identity"),
+          });
+        expect((await stat(orphan)).isDirectory()).toBe(true);
+        expect((await stat(active.path)).isDirectory()).toBe(true);
+        const { stdout } = await execAsync("git worktree list --porcelain", {
+          cwd: repoDir,
+        });
+        expect(stdout).toContain("refs/heads/missing");
+      } finally {
+        identity.mockRestore();
+      }
+    },
+  );
+
+  it.each(["root", "candidate"])(
+    "fails closed on unresolved %s identity without lexical fallback",
+    async (which) => {
+      const repoDir = await setupRepo();
+      const root = join(repoDir, ".sandcastle", "worktrees");
+      const orphan = join(root, "orphan");
+      await mkdir(orphan, { recursive: true });
+      const native = realpathSync.native;
+      const denied = native(which === "root" ? root : orphan);
+      const identity = vi
+        .spyOn(realpathSync, "native")
+        .mockImplementation((path) => {
+          const resolved = native(path);
+          if (resolved === denied)
+            throw Object.assign(new Error("identity denied"), {
+              code: "EACCES",
+            });
+          return resolved;
+        });
+      try {
+        const result = await run(Effect.either(pruneStale(repoDir)));
+        expect(result._tag).toBe("Left");
+        expect((await stat(orphan)).isDirectory()).toBe(true);
+      } finally {
+        identity.mockRestore();
+      }
+    },
+  );
 });

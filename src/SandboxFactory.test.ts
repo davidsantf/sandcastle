@@ -2,7 +2,14 @@ import { Effect, Exit, Layer, Ref } from "effect";
 import { NodeFileSystem } from "@effect/platform-node";
 import { exec } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdtemp, mkdir, readdir, writeFile, rm } from "node:fs/promises";
+import {
+  mkdtemp,
+  mkdir,
+  readdir,
+  readFile,
+  writeFile,
+  rm,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -30,9 +37,10 @@ import {
 const execAsync = promisify(exec);
 
 const initRepo = async (dir: string) => {
-  await execAsync("git init -b main", { cwd: dir });
-  await execAsync('git config user.email "test@test.com"', { cwd: dir });
-  await execAsync('git config user.name "Test"', { cwd: dir });
+  await execAsync(
+    'git init -b main && git config user.email "test@test.com" && git config user.name "Test"',
+    { cwd: dir },
+  );
 };
 
 const commitFile = async (
@@ -42,8 +50,9 @@ const commitFile = async (
   message: string,
 ) => {
   await writeFile(join(dir, name), content);
-  await execAsync(`git add "${name}"`, { cwd: dir });
-  await execAsync(`git commit -m "${message}"`, { cwd: dir });
+  await execAsync(`git add "${name}" && git commit -m "${message}"`, {
+    cwd: dir,
+  });
 };
 
 /** Initialize a real git repo with an initial commit so WorktreeManager.create succeeds. */
@@ -219,12 +228,15 @@ describe("WorktreeDockerSandboxFactory", () => {
     const opts = mockProvider.createCalls[0];
     expect(observedWorktree).toBeDefined();
     expect(opts.mounts).toContainEqual({
-      hostPath: observedWorktree,
+      hostPath: observedWorktree!.replace(/\\/g, "/"),
       sandboxPath: SANDBOX_REPO_DIR,
     });
     expect(opts.mounts).toContainEqual({
-      hostPath: `${hostRepoDir}/.git`,
-      sandboxPath: `${hostRepoDir}/.git`,
+      hostPath: join(hostRepoDir, ".git").replace(/\\/g, "/"),
+      sandboxPath:
+        process.platform === "win32"
+          ? "/.sandcastle-parent-git"
+          : join(hostRepoDir, ".git"),
     });
   });
 
@@ -566,12 +578,15 @@ describe("WorktreeDockerSandboxFactory", () => {
       expect(mockProvider.createCalls).toHaveLength(1);
       const opts = mockProvider.createCalls[0];
       expect(opts.mounts).toContainEqual({
-        hostPath: hostRepoDir,
+        hostPath: hostRepoDir.replace(/\\/g, "/"),
         sandboxPath: SANDBOX_REPO_DIR,
       });
       expect(opts.mounts).toContainEqual({
-        hostPath: `${hostRepoDir}/.git`,
-        sandboxPath: `${hostRepoDir}/.git`,
+        hostPath: join(hostRepoDir, ".git").replace(/\\/g, "/"),
+        sandboxPath:
+          process.platform === "win32"
+            ? `${SANDBOX_REPO_DIR}/.git`
+            : join(hostRepoDir, ".git"),
       });
     });
 
@@ -616,7 +631,13 @@ describe("WorktreeDockerSandboxFactory", () => {
   });
 });
 
-describe("WorktreeDockerSandboxFactory — isolated providers", () => {
+// Real worktree + bundle/clone setup exceeded 5s in focused Windows runs.
+// This budget is scoped to isolated-provider integration tests, not production.
+const isolatedSuite = "WorktreeDockerSandboxFactory — isolated providers";
+const isolatedTiming = {
+  timeout: process.platform === "win32" ? 15_000 : 5_000,
+};
+describe(isolatedSuite, isolatedTiming, () => {
   const tempDirs: string[] = [];
 
   const makeIsolatedLayer = (hostRepoDir: string, copyToWorktree?: string[]) =>
@@ -879,9 +900,13 @@ describe("WorktreeDockerSandboxFactory — isolated providers", () => {
           );
         }).pipe(Effect.provide(makeIsolatedLayer(hostDir))),
       ),
-    ).rejects.toThrow();
+    ).rejects.toThrow("boom");
 
+    expect(observedWorktreePath).toBeDefined();
     expect(existsSync(observedWorktreePath!)).toBe(true);
+    expect(
+      await readFile(join(observedWorktreePath!, "dirty.txt"), "utf8"),
+    ).toBe("dirty");
   });
 
   it("removes worktree when isolated sandbox start fails", async () => {
@@ -1005,7 +1030,9 @@ describe("WorktreeDockerSandboxFactory — no-sandbox provider", () => {
         yield* factory.withSandbox((info, sandbox) => {
           receivedInfo = info;
           return Effect.gen(function* () {
-            const r = yield* sandbox.exec("cat hello.txt");
+            const r = yield* sandbox.exec(
+              `node -e "process.stdout.write(require('node:fs').readFileSync('hello.txt', 'utf8'))"`,
+            );
             execOut = r.stdout.trim();
           });
         });

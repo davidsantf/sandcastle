@@ -1,5 +1,5 @@
-import { Cause, Effect, Layer, Ref } from "effect";
-import { exec } from "node:child_process";
+import { Cause, Clock, Duration, Effect, Layer, Ref } from "effect";
+import { exec, execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import {
@@ -13,7 +13,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { Display, type DisplayEntry, SilentDisplay } from "./Display.js";
 import { makeLocalSandbox } from "./testSandbox.js";
 import { orchestrate } from "./Orchestrator.js";
@@ -39,6 +39,7 @@ import type { BindMountSandboxHandle } from "./SandboxProvider.js";
 const noopAgentStreamEmitterLayer = agentStreamEmitterLayer();
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 const testProvider = claudeCode("test-model");
 
@@ -48,9 +49,9 @@ const testDisplayLayer = Layer.mergeAll(
 );
 
 const initRepo = async (dir: string) => {
-  await execAsync("git init -b main", { cwd: dir });
-  await execAsync('git config user.email "test@test.com"', { cwd: dir });
-  await execAsync('git config user.name "Test"', { cwd: dir });
+  // Host Git uses testSetup's per-worker identity. The lifecycle still
+  // propagates it into makeLocalSandbox's initially empty global config.
+  await execFileAsync("git", ["init", "-b", "main"], { cwd: dir });
 };
 
 const commitFile = async (
@@ -60,8 +61,8 @@ const commitFile = async (
   message: string,
 ) => {
   await writeFile(join(dir, name), content);
-  await execAsync(`git add "${name}"`, { cwd: dir });
-  await execAsync(`git commit -m "${message}"`, { cwd: dir });
+  await execFileAsync("git", ["add", "--", name], { cwd: dir });
+  await execFileAsync("git", ["commit", "-m", message], { cwd: dir });
 };
 
 const getHead = async (dir: string) => {
@@ -211,13 +212,12 @@ describe("Orchestrator", () => {
         makeMockAgentLayer(dir, async (repoDir) => {
           await writeFile(join(repoDir, "agent-output.txt"), "agent was here");
           await execAsync("git add -A", { cwd: repoDir });
-          await execAsync('git config user.email "agent@test.com"', {
-            cwd: repoDir,
-          });
-          await execAsync('git config user.name "Agent"', { cwd: repoDir });
-          await execAsync('git commit -m "RALPH: agent commit"', {
-            cwd: repoDir,
-          });
+          await execAsync(
+            'git -c user.email=agent@test.com -c user.name=Agent commit -m "RALPH: agent commit"',
+            {
+              cwd: repoDir,
+            },
+          );
           return "Done with iteration.";
         }),
     );
@@ -436,16 +436,22 @@ describe("Orchestrator", () => {
       (dir) =>
         makeMockAgentLayer(dir, async (repoDir) => {
           iterationCount++;
+          // Awaited lifecycle sync must expose the previous iteration before the next starts.
+          if (iterationCount > 1) {
+            expect(
+              await readFile(
+                join(repoDir, `iter-${iterationCount - 1}.txt`),
+                "utf8",
+              ),
+            ).toBe(`iteration ${iterationCount - 1}`);
+          }
           const filename = `iter-${iterationCount}.txt`;
           await writeFile(
             join(repoDir, filename),
             `iteration ${iterationCount}`,
           );
           await execAsync("git add -A", { cwd: repoDir });
-          await execAsync('git config user.email "agent@test.com"', {
-            cwd: repoDir,
-          });
-          await execAsync('git config user.name "Agent"', { cwd: repoDir });
+          // T8: host-side Git uses the per-worker identity from testSetup.
           await execAsync(
             `git commit -m "RALPH: iteration ${iterationCount}"`,
             {
@@ -479,7 +485,9 @@ describe("Orchestrator", () => {
       const content = await readFile(join(hostDir, `iter-${i}.txt`), "utf-8");
       expect(content).toBe(`iteration ${i}`);
     }
-  });
+    // T6/T8: three real Git/sync iterations exceeded 10s in serial Windows
+    // runs; 15s allows 50% headroom without changing production deadlines.
+  }, 15_000);
 
   it("handles iteration with no agent commits gracefully", async () => {
     const hostDir = await mkdtemp(join(tmpdir(), "orch-host-"));
@@ -514,7 +522,8 @@ describe("Orchestrator", () => {
     const hostHead = await getHead(hostDir);
     const { stdout } = await execAsync("git log --oneline", { cwd: hostDir });
     expect(stdout.trim().split("\n")).toHaveLength(1);
-  });
+    // T8: real Git/shell integration hit the 5s serial limit; allow 3s headroom.
+  }, 8_000);
 
   it("each iteration gets an isolated sandbox (no state leaks)", async () => {
     const hostDir = await mkdtemp(join(tmpdir(), "orch-iso-host-"));
@@ -556,7 +565,8 @@ describe("Orchestrator", () => {
     expect(result.completionSignal).toBe("<promise>COMPLETE</promise>");
     // Untracked file from iteration 1 must not exist in iteration 2's sandbox
     expect(markerExistedInIter2).toBe(false);
-  });
+    // T8: real Git/shell integration hit the 5s serial limit; allow 3s headroom.
+  }, 8_000);
 });
 
 describe("OrchestrateResult", () => {
@@ -607,10 +617,7 @@ describe("OrchestrateResult", () => {
             `content ${iterationCount}`,
           );
           await execAsync("git add -A", { cwd: repoDir });
-          await execAsync('git config user.email "agent@test.com"', {
-            cwd: repoDir,
-          });
-          await execAsync('git config user.name "Agent"', { cwd: repoDir });
+          // T8: host-side Git uses the per-worker identity from testSetup.
           await execAsync(`git commit -m "commit ${iterationCount}"`, {
             cwd: repoDir,
           });
@@ -640,7 +647,9 @@ describe("OrchestrateResult", () => {
     // All shas should be unique
     const uniqueShas = new Set(result.commits.map((c) => c.sha));
     expect(uniqueShas.size).toBe(3);
-  });
+    // T6/T8: three real Git/sync iterations exceeded 10s in serial Windows
+    // runs; 15s allows 50% headroom without changing production deadlines.
+  }, 15_000);
 
   it("returns empty commits and branch when agent makes no commits", async () => {
     const hostDir = await mkdtemp(join(tmpdir(), "orch-result-"));
@@ -668,7 +677,8 @@ describe("OrchestrateResult", () => {
 
     expect(result.commits).toEqual([]);
     expect(result.branch).toBe("main");
-  });
+    // T8: real Git/shell integration hit the 5s serial limit; allow 3s headroom.
+  }, 8_000);
 
   it("returns commit shas and branch after a single iteration", async () => {
     const hostDir = await mkdtemp(join(tmpdir(), "orch-result-"));
@@ -682,11 +692,10 @@ describe("OrchestrateResult", () => {
         makeMockAgentLayer(dir, async (repoDir) => {
           await writeFile(join(repoDir, "new-file.txt"), "new content");
           await execAsync("git add -A", { cwd: repoDir });
-          await execAsync('git config user.email "agent@test.com"', {
-            cwd: repoDir,
-          });
-          await execAsync('git config user.name "Agent"', { cwd: repoDir });
-          await execAsync('git commit -m "agent commit"', { cwd: repoDir });
+          await execAsync(
+            'git -c user.email=agent@test.com -c user.name=Agent commit -m "agent commit"',
+            { cwd: repoDir },
+          );
           return "Done.";
         }),
     );
@@ -711,7 +720,8 @@ describe("OrchestrateResult", () => {
     // The sha should match what's on the host
     const hostHead = await getHead(hostDir);
     expect(result.commits[0]!.sha).toBe(hostHead);
-  });
+    // T8: real Git/shell integration hit the 5s serial limit; allow 3s headroom.
+  }, 8_000);
 
   it("surfaces commits even when worktree has uncommitted changes", async () => {
     const hostDir = await mkdtemp(join(tmpdir(), "orch-result-"));
@@ -758,15 +768,12 @@ describe("OrchestrateResult", () => {
                   "committed content",
                 );
                 await execAsync("git add -A", { cwd: repoDir });
-                await execAsync('git config user.email "agent@test.com"', {
-                  cwd: repoDir,
-                });
-                await execAsync('git config user.name "Agent"', {
-                  cwd: repoDir,
-                });
-                await execAsync('git commit -m "agent commit"', {
-                  cwd: repoDir,
-                });
+                await execAsync(
+                  'git -c user.email=agent@test.com -c user.name=Agent commit -m "agent commit"',
+                  {
+                    cwd: repoDir,
+                  },
+                );
 
                 // Leave uncommitted changes
                 await writeFile(
@@ -809,7 +816,8 @@ describe("OrchestrateResult", () => {
     // Commits should still be surfaced
     expect(result.commits).toHaveLength(1);
     expect(result.commits[0]!.sha).toMatch(/^[0-9a-f]{40}$/);
-  });
+    // T8: real Git/shell integration hit the 5s serial limit; allow 3s headroom.
+  }, 8_000);
 });
 
 describe("parseStreamLine (via claudeCode provider)", () => {
@@ -1126,7 +1134,8 @@ describe("Orchestrator tool call display integration", () => {
       name: "WebSearch",
       formattedArgs: "effect-ts docs",
     });
-  });
+    // T8: real Git/shell integration hit the 5s serial limit; allow 3s headroom.
+  }, 8_000);
 });
 
 describe("Orchestrator agent stream emitter", () => {
@@ -1212,7 +1221,8 @@ describe("Orchestrator agent stream emitter", () => {
       iteration: 1,
     });
     expect(toolCallEvents[0]!.timestamp).toBeInstanceOf(Date);
-  });
+    // T8: real Git/shell integration hit the 5s serial limit; allow 3s headroom.
+  }, 8_000);
 
   it("swallows errors thrown by the callback", async () => {
     const hostDir = await mkdtemp(join(tmpdir(), "orch-stream-err-"));
@@ -1273,7 +1283,8 @@ describe("Orchestrator agent stream emitter", () => {
     );
 
     expect(result.completionSignal).toBe("<promise>COMPLETE</promise>");
-  });
+    // T8: real Git/shell integration hit the 5s serial limit; allow 3s headroom.
+  }, 8_000);
 
   it("emits raw events for every line including lines parseStreamLine drops", async () => {
     const hostDir = await mkdtemp(join(tmpdir(), "orch-stream-raw-"));
@@ -1365,7 +1376,8 @@ describe("Orchestrator agent stream emitter", () => {
     ]);
     expect(rawEvents[0]!.iteration).toBe(1);
     expect(rawEvents[0]!.timestamp).toBeInstanceOf(Date);
-  });
+    // T8: real Git/shell integration hit the 5s serial limit; allow 3s headroom.
+  }, 8_000);
 });
 
 describe("Orchestrator error handling", () => {
@@ -1463,7 +1475,8 @@ describe("Orchestrator error handling", () => {
     // Should detect COMPLETE from the stdout fallback
     expect(result.iterations.length).toBe(1);
     expect(result.completionSignal).toBe("<promise>COMPLETE</promise>");
-  });
+    // T8: real Git/shell integration hit the 5s serial limit; allow 3s headroom.
+  }, 8_000);
 
   it("preserves iteration 1 work when agent fails on iteration 2", async () => {
     const hostDir = await mkdtemp(join(tmpdir(), "orch-partial-host-"));
@@ -1490,13 +1503,12 @@ describe("Orchestrator error handling", () => {
                   yield* Effect.promise(async () => {
                     await writeFile(join(cwd, "iter1.txt"), "iteration 1 data");
                     await execAsync("git add -A", { cwd });
-                    await execAsync('git config user.email "agent@test.com"', {
-                      cwd,
-                    });
-                    await execAsync('git config user.name "Agent"', { cwd });
-                    await execAsync('git commit -m "RALPH: iteration 1"', {
-                      cwd,
-                    });
+                    await execAsync(
+                      'git -c user.email=agent@test.com -c user.name=Agent commit -m "RALPH: iteration 1"',
+                      {
+                        cwd,
+                      },
+                    );
                   });
                   const output = "Finished iteration 1.";
                   const streamOutput = toStreamJson(output);
@@ -1539,7 +1551,8 @@ describe("Orchestrator error handling", () => {
     // But iteration 1's commit should be preserved on host
     const content = await readFile(join(hostDir, "iter1.txt"), "utf-8");
     expect(content).toBe("iteration 1 data");
-  });
+    // T8: real Git/shell integration hit the 5s serial limit; allow 3s headroom.
+  }, 8_000);
 
   it("propagates error when syncIn fails (invalid host repo)", async () => {
     const { factoryLayer, sandboxRepoDir } = makeTestSandboxFactory(
@@ -2741,13 +2754,12 @@ describe("Orchestrator with pi provider", () => {
         makeMockPiAgentLayer(dir, async (repoDir) => {
           await writeFile(join(repoDir, "pi-output.txt"), "pi was here");
           await execAsync("git add -A", { cwd: repoDir });
-          await execAsync('git config user.email "agent@test.com"', {
-            cwd: repoDir,
-          });
-          await execAsync('git config user.name "Agent"', { cwd: repoDir });
-          await execAsync('git commit -m "RALPH: pi agent commit"', {
-            cwd: repoDir,
-          });
+          await execAsync(
+            'git -c user.email=agent@test.com -c user.name=Agent commit -m "RALPH: pi agent commit"',
+            {
+              cwd: repoDir,
+            },
+          );
           return "Done with iteration.";
         }),
     );
@@ -3056,13 +3068,12 @@ describe("Orchestrator with codex provider", () => {
         makeMockCodexAgentLayer(dir, async (repoDir) => {
           await writeFile(join(repoDir, "codex-output.txt"), "codex was here");
           await execAsync("git add -A", { cwd: repoDir });
-          await execAsync('git config user.email "agent@test.com"', {
-            cwd: repoDir,
-          });
-          await execAsync('git config user.name "Agent"', { cwd: repoDir });
-          await execAsync('git commit -m "RALPH: codex agent commit"', {
-            cwd: repoDir,
-          });
+          await execAsync(
+            'git -c user.email=agent@test.com -c user.name=Agent commit -m "RALPH: codex agent commit"',
+            {
+              cwd: repoDir,
+            },
+          );
           return "Done with iteration.";
         }),
     );
@@ -4058,22 +4069,52 @@ describe("Orchestrator completion timeout (hanging process)", () => {
       ),
     );
 
-    const start = Date.now();
-    const result = await Effect.runPromise(
-      orchestrate({
-        provider: testProvider,
-        hostRepoDir: hostDir,
-        iterations: 1,
-        prompt: "do some work",
-        // Large completion timeout — clean exit must NOT wait for it.
-        completionTimeoutSeconds: 30,
-      }).pipe(Effect.provide(Layer.merge(factoryLayer, testDisplayLayer))),
+    const clock = await Effect.runPromise(
+      Clock.clockWith((clock) => Effect.succeed(clock)),
     );
-    const elapsedMs = Date.now() - start;
+    const sleep = clock.sleep.bind(clock);
+    const graceTimers: { cancelled: boolean; fired: boolean }[] = [];
+    const sleepSpy = vi.spyOn(clock, "sleep").mockImplementation((duration) => {
+      if (Duration.toMillis(duration) !== 30_000) {
+        return sleep(duration);
+      }
+      const timer = { cancelled: false, fired: false };
+      graceTimers.push(timer);
+      return sleep(duration).pipe(
+        Effect.tap(() =>
+          Effect.sync(() => {
+            timer.fired = true;
+          }),
+        ),
+        Effect.onInterrupt(() =>
+          Effect.sync(() => {
+            timer.cancelled = true;
+          }),
+        ),
+      );
+    });
 
-    expect(result.completionSignal).toBe("<promise>COMPLETE</promise>");
-    // Clean exit beats the grace window — no waiting added.
-    expect(elapsedMs).toBeLessThan(2_000);
+    try {
+      const result = await Effect.runPromise(
+        orchestrate({
+          provider: testProvider,
+          hostRepoDir: hostDir,
+          iterations: 1,
+          prompt: "do some work",
+          completionTimeoutSeconds: 30,
+        }).pipe(Effect.provide(Layer.merge(factoryLayer, testDisplayLayer))),
+      );
+
+      expect(result.completionSignal).toBe("<promise>COMPLETE</promise>");
+      // Observe the actual grace timers, excluding Git setup and sync-out.
+      expect(graceTimers.length).toBeGreaterThan(0);
+      for (const timer of graceTimers) {
+        expect(timer).toEqual({ cancelled: true, fired: false });
+      }
+    } finally {
+      sleepSpy.mockRestore();
+      await rm(hostDir, { recursive: true, force: true });
+    }
   }, 10_000);
 
   it("emits a warning when the completion timeout fires", async () => {

@@ -36,8 +36,10 @@
   },
   "scripts": {
     "build": "tsup",
-    "postbuild": "rm -rf dist/templates && cp -r src/templates dist/templates && node scripts/check-public-types-effect-free.mjs",
-    "test": "vitest run",
+    "postbuild": "node scripts/copy-templates.mjs && node scripts/check-public-types-effect-free.mjs",
+    "pretest": "npm run build",
+    "test": "node --test scripts/copy-templates.test.mjs && vitest run",
+    "pretest:watch": "npm run build",
     "test:watch": "vitest",
     "typecheck": "tsgo --noEmit",
     "format": "prettier --write .",

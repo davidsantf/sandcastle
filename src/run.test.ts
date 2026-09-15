@@ -116,7 +116,9 @@ describe("printFileDisplayStartup", () => {
       hostRepoDir: process.cwd(),
     });
     const allOutput = consoleSpy.mock.calls.flat().join(" ");
-    expect(allOutput).toContain("tail -f .sandcastle/logs/main.log");
+    expect(allOutput).toContain(
+      `tail -f ${join(".sandcastle", "logs", "main.log")}`,
+    );
     expect(allOutput).not.toContain(process.cwd());
   });
 
@@ -128,9 +130,7 @@ describe("printFileDisplayStartup", () => {
       hostRepoDir,
     });
     const allOutput = consoleSpy.mock.calls.flat().join(" ");
-    expect(allOutput).toContain(
-      "tail -f /some/other/repo/.sandcastle/logs/main.log",
-    );
+    expect(allOutput).toContain(`tail -f ${logPath}`);
   });
 });
 

@@ -14,9 +14,10 @@ import { countCommitsToSync, syncOut } from "./syncOut.js";
 const execAsync = promisify(exec);
 
 const initRepo = async (dir: string) => {
-  await execAsync("git init -b main", { cwd: dir });
-  await execAsync('git config user.email "test@test.com"', { cwd: dir });
-  await execAsync('git config user.name "Test"', { cwd: dir });
+  await execAsync(
+    'git init -b main && git config user.email "test@test.com" && git config user.name "Test"',
+    { cwd: dir },
+  );
 };
 
 const commitFile = async (
@@ -26,8 +27,9 @@ const commitFile = async (
   message: string,
 ) => {
   await writeFile(join(dir, name), content);
-  await execAsync(`git add "${name}"`, { cwd: dir });
-  await execAsync(`git commit -m "${message}"`, { cwd: dir });
+  await execAsync(`git add "${name}" && git commit -m "${message}"`, {
+    cwd: dir,
+  });
 };
 
 const getLog = async (dir: string) => {
@@ -35,7 +37,13 @@ const getLog = async (dir: string) => {
   return stdout.trim().split("\n");
 };
 
-describe("syncOut", () => {
+// T3 / AC6: real bundle/clone/format-patch/am round trips exceed five seconds
+// on Windows (a serial run measured 3.5–14.99s, with multi-commit cases
+// exceeding 15s under load). Production timeouts and unit-test budgets stay
+// unchanged; this budget covers only real filesystem/git round trips.
+const syncTiming = { timeout: process.platform === "win32" ? 30_000 : 5_000 };
+
+describe("syncOut", syncTiming, () => {
   it("extracts a single commit from sandbox back to host", async () => {
     const hostDir = await mkdtemp(join(tmpdir(), "host-"));
     await initRepo(hostDir);
@@ -299,7 +307,7 @@ describe("syncOut", () => {
       await handle.exec('git commit -m "add new"', { cwd: wp });
 
       // Simulate a stale git am session on the host by creating rebase-apply dir
-      await execAsync("mkdir -p .git/rebase-apply", { cwd: hostDir });
+      await mkdir(join(hostDir, ".git", "rebase-apply"), { recursive: true });
       await writeFile(join(hostDir, ".git/rebase-apply/applying"), "");
 
       // syncOut should succeed despite the stale session
@@ -624,7 +632,7 @@ describe("syncOut", () => {
   });
 });
 
-describe("countCommitsToSync", () => {
+describe("countCommitsToSync", syncTiming, () => {
   it("returns 0 after a successful syncOut when no new commits exist (run-2 case)", async () => {
     const hostDir = await mkdtemp(join(tmpdir(), "host-"));
     await initRepo(hostDir);
