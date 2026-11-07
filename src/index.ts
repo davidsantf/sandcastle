@@ -1,4 +1,44 @@
 export { run } from "./run.js";
+export { MultiProjectJournal } from "./MultiProjectJournal.js";
+export type { OrchestrationLease } from "./MultiProjectJournal.js";
+export { runMultiProjectOrchestrationPass } from "./MultiProjectOrchestrator.js";
+export type {
+  MultiProjectHost,
+  MultiProjectPassResult,
+  OrchestrationValidationEvidence,
+} from "./MultiProjectOrchestrator.js";
+export {
+  parseOrchestrationCatalog,
+  evaluateOrchestrationChecks,
+  taskKey,
+} from "./MultiProjectProtocol.js";
+export type {
+  OrchestrationCatalog,
+  OrchestrationProject,
+  OrchestrationTask,
+  OrchestrationTaskState,
+  OrchestrationStage,
+  OrchestrationCheck,
+  OrchestrationHubEvidence,
+  OrchestrationWorkerRequest,
+  OrchestrationWorkerReceipt,
+} from "./MultiProjectProtocol.js";
+export {
+  createGitHubOrchestrationHub,
+  createAdoOrchestrationHub,
+  createAdoReadTransport,
+  githubCliTransport,
+} from "./MultiProjectHubs.js";
+export type { OrchestrationHubTransport } from "./MultiProjectHubs.js";
+export {
+  createSandcastleOrchestrationWorker,
+  buildMultiProjectWorkerPrompt,
+  resolveOrchestrationGitRevision,
+} from "./MultiProjectWorker.js";
+export { runMultiProjectDemo } from "./MultiProjectDemo.js";
+export { runMultiProjectEntrypoint } from "./MultiProjectEntrypoint.js";
+export type { MultiProjectHostConfiguration } from "./MultiProjectEntrypoint.js";
+export { createMultiProjectSandcastleHost } from "./MultiProjectHostFactory.js";
 export type {
   RunOptions,
   RunResult,

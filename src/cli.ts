@@ -35,6 +35,7 @@ import type {
 } from "./InitService.js";
 import { ConfigDirError, InitError } from "./errors.js";
 import { VERSION } from "./version.js";
+import { runMultiProjectEntrypoint } from "./MultiProjectEntrypoint.js";
 
 // --- Shared options ---
 
@@ -689,8 +690,30 @@ const rootCommand = Command.make("sandcastle", {}, () =>
   }),
 );
 
+const orchestrationCommand = Command.make(
+  "orchestrate",
+  {
+    config: Options.text("config").pipe(Options.optional),
+    demo: Options.text("demo").pipe(Options.optional),
+  },
+  ({ config, demo }) =>
+    Effect.tryPromise(async () => {
+      const result = await runMultiProjectEntrypoint({
+        config: Option.getOrUndefined(config),
+        demoDirectory: Option.getOrUndefined(demo),
+      });
+      console.log(JSON.stringify(result, null, 2));
+      if (result.status !== "completed") process.exitCode = 2;
+    }),
+);
+
 export const sandcastle = rootCommand.pipe(
-  Command.withSubcommands([initCommand, dockerCommand, podmanCommand]),
+  Command.withSubcommands([
+    initCommand,
+    dockerCommand,
+    podmanCommand,
+    orchestrationCommand,
+  ]),
 );
 
 export const cli = Command.run(sandcastle, {

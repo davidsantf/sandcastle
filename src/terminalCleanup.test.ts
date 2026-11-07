@@ -8,7 +8,7 @@ describe("makeTerminalCleanupHandler", () => {
 
     const handler = makeTerminalCleanupHandler(
       { isTTY: true, setRawMode },
-      { write },
+      { isTTY: true, write },
     );
     handler();
 
@@ -23,7 +23,7 @@ describe("makeTerminalCleanupHandler", () => {
 
     const handler = makeTerminalCleanupHandler(
       { isTTY: false, setRawMode },
-      { write },
+      { isTTY: true, write },
     );
     handler();
 
@@ -36,7 +36,7 @@ describe("makeTerminalCleanupHandler", () => {
 
     const handler = makeTerminalCleanupHandler(
       { isTTY: true }, // isTTY true but no setRawMode
-      { write },
+      { isTTY: true, write },
     );
     handler();
 
@@ -52,11 +52,19 @@ describe("makeTerminalCleanupHandler", () => {
 
     const handler = makeTerminalCleanupHandler(
       { isTTY: true, setRawMode },
-      { write },
+      { isTTY: true, write },
     );
 
     expect(() => handler()).not.toThrow();
     // cursor is still shown even after setRawMode failure
     expect(write).toHaveBeenCalledWith(SHOW_CURSOR);
+  });
+
+  it("restores raw stdin without corrupting piped JSON stdout", () => {
+    const setRawMode = vi.fn();
+    const write = vi.fn(() => true);
+    makeTerminalCleanupHandler({ isTTY: true, setRawMode }, { write })();
+    expect(setRawMode).toHaveBeenCalledWith(false);
+    expect(write).not.toHaveBeenCalled();
   });
 });

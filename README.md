@@ -63,6 +63,26 @@ await run({
 });
 ```
 
+## Multi-project DevSquad orchestration
+
+`sandcastle orchestrate` coordinates independent and integrated GitHub/ADO
+projects through specify, plan, decompose, implement, verify, and review. The
+host owns authorization and acceptance; workers cannot approve themselves,
+merge, deploy, or mutate hubs. A transactional SQLite journal retains artifacts,
+exclusive reservations, fencing, and unknown outcomes across restarts.
+
+Requires Node 22.13+ for this feature. Try the offline scripted-worker demo:
+
+```powershell
+sandcastle orchestrate --demo .\.sandcastle\orchestration-demo
+```
+
+Run it again with the same directory to resume without redispatch. For real
+workers, use `sandcastle orchestrate --config <trusted-host-module>` with explicit
+authorization, validation, sandbox, and native GitHub/ADO evidence adapters.
+See [setup, authority boundaries, and recovery](docs/agents/multi-project-orchestration.md).
+No PR creation, push, merge, or deployment is automatic.
+
 ## Persistent DevSquad/ADO workflow checkpoints
 
 Host coordinators can persist offline resume state and serialize local workflow

@@ -1,5 +1,5 @@
 import { exec } from "node:child_process";
-import { mkdtemp, readdir, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -30,6 +30,99 @@ const runCli = (args: string, cwd: string) =>
   execAsync(`node ${cliPath} ${args}`, { cwd });
 
 describe("sandcastle CLI", () => {
+  it("exposes the real orchestration configuration and demo entrypoints", async () => {
+    const { stdout } = await runCli("orchestrate --help", process.cwd());
+    expect(stdout).toContain("--config");
+    expect(stdout).toContain("--demo");
+  });
+
+  it("emits parseable orchestration JSON and resumes completed demo work without redispatch", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "cli-orchestration-demo-"));
+    try {
+      const args = `orchestrate --demo "${directory}"`;
+      const first = JSON.parse((await runCli(args, process.cwd())).stdout);
+      const second = JSON.parse((await runCli(args, process.cwd())).stdout);
+      expect(first.status).toBe("completed");
+      expect(first.tasks).toHaveLength(3);
+      expect(first.dispatched).toBe(18);
+      expect(first.evaluatedChecks).toBeGreaterThan(0);
+      expect(second.status).toBe("completed");
+      expect(second.dispatched).toBe(0);
+      expect(second.eventCount).toBe(first.eventCount);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it.each(["", "--config missing.mjs --demo unused"])(
+    "rejects ambiguous orchestration options: %s",
+    async (args) => {
+      await expect(
+        runCli(`orchestrate ${args}`, process.cwd()),
+      ).rejects.toMatchObject({
+        code: 1,
+      });
+    },
+  );
+
+  it("returns nonzero with durable needs-input JSON when host authorization is denied", async () => {
+    const directory = await mkdtemp(
+      join(tmpdir(), "cli-orchestration-denied-"),
+    );
+    try {
+      const config = join(directory, "host.mjs");
+      const catalog = {
+        id: "denied",
+        projects: [
+          {
+            id: "one",
+            repositoryRoot: directory,
+            mode: "individual",
+            hub: { kind: "github", repository: "fixture/one", pullRequest: 1 },
+          },
+        ],
+        tasks: [
+          {
+            id: "one",
+            projectId: "one",
+            title: "Fixture",
+            brief: "No external execution",
+            branch: "work/one",
+            baseBranch: "main",
+            scopes: ["src"],
+            acceptance: [{ label: "unit", command: "unused" }],
+          },
+        ],
+      };
+      await writeFile(
+        config,
+        `export default {
+        catalog: ${JSON.stringify(catalog)},
+        journalPath: ${JSON.stringify(join(directory, "journal.sqlite"))},
+        host: {
+          authorize: async () => false,
+          resolveRevision: async () => "${"a".repeat(40)}",
+          execute: async () => { throw new Error("Must not execute"); },
+          validate: async () => { throw new Error("Must not validate"); },
+          observe: async () => { throw new Error("Must not observe"); },
+        }
+      };`,
+      );
+      try {
+        await runCli(`orchestrate --config "${config}"`, process.cwd());
+        expect.fail("Denied authority must not exit successfully");
+      } catch (error) {
+        expect(error).toMatchObject({ code: 2 });
+        const output = JSON.parse((error as { stdout: string }).stdout);
+        expect(output.status).toBe("needs-input");
+        expect(output.dispatched).toBe(0);
+        expect(output.tasks[0].reason).toContain("authorization denied");
+      }
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("shows help with --help flag", async () => {
     const { stdout } = await runCli("--help", process.cwd());
     expect(stdout).toContain("sandcastle");
