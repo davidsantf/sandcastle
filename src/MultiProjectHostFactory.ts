@@ -12,14 +12,25 @@ import {
 import type { MultiProjectHost } from "./MultiProjectOrchestrator.js";
 import type { OrchestrationWorkerRequest } from "./MultiProjectProtocol.js";
 
-export function createMultiProjectSandcastleHost(options: {
-  agent: AgentProvider;
-  sandbox: (request: OrchestrationWorkerRequest) => SandboxProvider;
-  authorize: MultiProjectHost["authorize"];
-  validate: MultiProjectHost["validate"];
-  githubTransport?: OrchestrationHubTransport;
-  adoTransport?: OrchestrationHubTransport;
-}): MultiProjectHost {
+export function createMultiProjectSandcastleHost(
+  options: (
+    | {
+        agent: AgentProvider;
+        sandbox: (request: OrchestrationWorkerRequest) => SandboxProvider;
+        execute?: never;
+      }
+    | {
+        execute: MultiProjectHost["execute"];
+        agent?: never;
+        sandbox?: never;
+      }
+  ) & {
+    authorize: MultiProjectHost["authorize"];
+    validate: MultiProjectHost["validate"];
+    githubTransport?: OrchestrationHubTransport;
+    adoTransport?: OrchestrationHubTransport;
+  },
+): MultiProjectHost {
   const github = createGitHubOrchestrationHub(options.githubTransport);
   const ado = options.adoTransport
     ? createAdoOrchestrationHub(options.adoTransport)
@@ -27,7 +38,10 @@ export function createMultiProjectSandcastleHost(options: {
   return {
     authorize: options.authorize,
     validate: options.validate,
-    execute: createSandcastleOrchestrationWorker(options),
+    execute:
+      options.execute !== undefined
+        ? options.execute
+        : createSandcastleOrchestrationWorker(options),
     resolveRevision: resolveOrchestrationGitRevision,
     observe: async (project, task, signal) => {
       const boundProject = {

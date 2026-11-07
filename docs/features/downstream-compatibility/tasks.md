@@ -5,7 +5,8 @@
 - [x] Active-generation scheduling, immutable task intent and reservations.
 - [ ] Adapt factory impact/work-item receipts and bounded causal provenance.
 - [ ] Host-owned issue-to-change-request registration and exact acceptance.
-- [ ] Actual configured DevSquad route, review/governance and CLI integration.
+- [x] Explicit installed DevSquad phase route and runnable host configuration.
+- [ ] Fenced Cowork critic/review history and governance host integration.
 - [ ] Cross-provider propagation, replay/version/cycle/budget negative controls.
 - [ ] Whole-product demo, typecheck/build and retained review evidence.
 

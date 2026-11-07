@@ -1625,6 +1625,34 @@ describe("resumeSession on non-Claude providers", () => {
 // ---------------------------------------------------------------------------
 
 describe("copilot factory", () => {
+  it("selects the installed named agent in both print and interactive modes", () => {
+    const provider = copilot("fixture-model", {
+      agent: "devsquad:devsquad.implement",
+    });
+    expect(provider.buildPrintCommand(opts("test")).command).toContain(
+      "--agent 'devsquad:devsquad.implement'",
+    );
+    expect(provider.buildInteractiveArgs!(opts("test"))).toEqual([
+      "copilot",
+      "--model",
+      "fixture-model",
+      "--agent",
+      "devsquad:devsquad.implement",
+      "-i",
+      "test",
+    ]);
+    expect(
+      copilot("fixture-model").buildPrintCommand(opts("test")).command,
+    ).not.toContain("--agent");
+  });
+  it.each(["", "x\n--allow-all-tools", "x';echo token", "x".repeat(201)])(
+    "rejects invalid custom agent names",
+    (agent) => {
+      expect(() => copilot("fixture-model", { agent })).toThrow(
+        /custom agent name/,
+      );
+    },
+  );
   it("returns a provider with name 'copilot'", () => {
     const provider = copilot("claude-sonnet-4.5");
     expect(provider.name).toBe("copilot");

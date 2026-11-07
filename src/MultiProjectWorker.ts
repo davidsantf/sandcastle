@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
-import type { AgentProvider } from "./AgentProvider.js";
+import { copilot, type AgentProvider } from "./AgentProvider.js";
 import type { SandboxProvider } from "./SandboxProvider.js";
-import { run } from "./run.js";
+import { run, type RunResult } from "./run.js";
 import { Output } from "./Output.js";
 import {
   parseWorkerReceipt,
@@ -30,7 +30,7 @@ const stageInstructions = {
 export const buildMultiProjectWorkerPrompt = (
   request: OrchestrationWorkerRequest,
 ): string =>
-  `You are a focused DevSquad ${request.stage} worker.
+  `You are a focused orchestration ${request.stage} worker.
 ${stageInstructions[request.stage]}
 
 The host owns identity, credentials, authorization, tools, scheduling, and audit.
@@ -60,6 +60,11 @@ export function createSandcastleOrchestrationWorker(options: {
   agent: AgentProvider;
   sandbox: (request: OrchestrationWorkerRequest) => SandboxProvider;
   invoke?: typeof run;
+  attestExecution?: (
+    request: OrchestrationWorkerRequest,
+    result: RunResult,
+    signal: AbortSignal,
+  ) => Promise<boolean>;
 }) {
   return async (
     request: OrchestrationWorkerRequest,
@@ -92,7 +97,103 @@ export function createSandcastleOrchestrationWorker(options: {
         kind: "unknown",
         reason: "unexpected branch or uncommitted worktree",
       };
-    return parseWorkerReceipt(result.output);
+    const receipt = parseWorkerReceipt(result.output);
+    if (
+      signal.aborted ||
+      (options.attestExecution &&
+        !(await options.attestExecution(request, result, signal)))
+    )
+      return { kind: "unknown", reason: "execution identity not attested" };
+    return receipt;
+  };
+}
+
+export interface DevsquadPhaseCapability {
+  readonly framework: "devsquad";
+  readonly provider: "copilot";
+  readonly stage: Exclude<OrchestrationWorkerRequest["stage"], "verify">;
+  readonly capabilityId: string;
+  readonly agentName: string;
+  readonly definitionDigest: string;
+  readonly model: { readonly id: string; readonly family: string };
+  readonly available: boolean;
+}
+
+export function createDevsquadOrchestrationWorker(options: {
+  sandbox: (request: OrchestrationWorkerRequest) => SandboxProvider;
+  resolveCapability: (
+    request: OrchestrationWorkerRequest,
+    signal: AbortSignal,
+  ) => Promise<DevsquadPhaseCapability | null>;
+  authorizeCapability: (
+    request: OrchestrationWorkerRequest,
+    capability: DevsquadPhaseCapability,
+    signal: AbortSignal,
+  ) => Promise<boolean>;
+  attestExecution: (
+    request: OrchestrationWorkerRequest,
+    capability: DevsquadPhaseCapability,
+    result: RunResult,
+    signal: AbortSignal,
+  ) => Promise<boolean>;
+  invoke?: typeof run;
+}) {
+  return async (
+    request: OrchestrationWorkerRequest,
+    signal: AbortSignal,
+  ): Promise<OrchestrationWorkerReceipt> => {
+    if (request.stage === "verify")
+      throw new Error("verification belongs to the host");
+    const resolved = await options.resolveCapability(request, signal);
+    const identifier = /^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,199}$/;
+    if (
+      !resolved ||
+      resolved.framework !== "devsquad" ||
+      resolved.provider !== "copilot" ||
+      resolved.stage !== request.stage ||
+      resolved.available !== true ||
+      !identifier.test(resolved.capabilityId) ||
+      !identifier.test(resolved.agentName) ||
+      !resolved.model ||
+      !identifier.test(resolved.model.id) ||
+      !identifier.test(resolved.model.family) ||
+      !/^[a-f0-9]{64}$/.test(resolved.definitionDigest)
+    )
+      return {
+        kind: "failed",
+        signature: "devsquad-capability-unavailable",
+        evidence:
+          "Exact installed DevSquad phase capability is unavailable or invalid.",
+      };
+    const capability: DevsquadPhaseCapability = Object.freeze({
+      framework: resolved.framework,
+      provider: resolved.provider,
+      stage: resolved.stage,
+      capabilityId: resolved.capabilityId,
+      agentName: resolved.agentName,
+      definitionDigest: resolved.definitionDigest,
+      model: Object.freeze({
+        id: resolved.model.id,
+        family: resolved.model.family,
+      }),
+      available: resolved.available,
+    });
+    if (!(await options.authorizeCapability(request, capability, signal)))
+      return {
+        kind: "failed",
+        signature: "devsquad-route-not-authorized",
+        evidence:
+          "Host refused the exact framework, phase, model and definition binding.",
+      };
+    if (signal.aborted)
+      return { kind: "unknown", reason: "DevSquad dispatch canceled" };
+    return createSandcastleOrchestrationWorker({
+      agent: copilot(capability.model.id, { agent: capability.agentName }),
+      sandbox: options.sandbox,
+      invoke: options.invoke,
+      attestExecution: (request, result, signal) =>
+        options.attestExecution(request, capability, result, signal),
+    })(request, signal);
   };
 }
 

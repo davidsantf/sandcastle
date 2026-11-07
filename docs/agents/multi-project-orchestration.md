@@ -1,9 +1,11 @@
 # Multi-project orchestration
 
-Sandcastle's host runs a bounded DevSquad lifecycle across independent and
+Sandcastle's host runs a bounded orchestration lifecycle across independent and
 integrated projects. It stores tasks, artifact versions, reservations, and
 append-only events in one SQLite database. It does not create PRs, push commits,
 merge, deploy, or schedule recurring automation.
+Real DevSquad execution requires the explicit named-agent route described below;
+generic workers and the offline demonstration are not framework executions.
 
 ## Setup and safe demonstration
 
@@ -110,7 +112,7 @@ Example trusted module:
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import {
-  copilot,
+  createDevsquadOrchestrationWorker,
   createMultiProjectSandcastleHost,
   createAdoReadTransport,
   parseOrchestrationCatalog,
@@ -119,6 +121,9 @@ import { docker } from "@ai-hero/sandcastle/sandboxes/docker";
 import {
   authorizeExactIntent,
   validateTask,
+  resolveInstalledDevsquadCapability,
+  authorizeFrameworkCapability,
+  attestFrameworkExecution,
 } from "./trusted-host-controls.mjs";
 
 const catalog = parseOrchestrationCatalog(
@@ -126,9 +131,6 @@ const catalog = parseOrchestrationCatalog(
     await readFile(new URL("./projects.json", import.meta.url), "utf8"),
   ),
 );
-const model = process.env.ORCHESTRATION_MODEL;
-if (!model)
-  throw new Error("Set ORCHESTRATION_MODEL to a supported Copilot CLI model");
 if (!process.env.ADO_PAT)
   throw new Error("Set the host-only ADO_PAT for ADO projects");
 
@@ -136,8 +138,12 @@ export default {
   catalog,
   journalPath: path.resolve(".sandcastle", "orchestration.sqlite"),
   host: createMultiProjectSandcastleHost({
-    agent: copilot(model),
-    sandbox: () => docker(),
+    execute: createDevsquadOrchestrationWorker({
+      sandbox: () => docker(),
+      resolveCapability: resolveInstalledDevsquadCapability,
+      authorizeCapability: authorizeFrameworkCapability,
+      attestExecution: attestFrameworkExecution,
+    }),
     // Must obtain host authorization for exact task, stage, artifacts,
     // acceptance commands, branch, revision, contracts, and request.intent.
     // Do not implement this as a model output's "approved" field.
@@ -156,6 +162,52 @@ invented tool. The host intentionally provides no default permissive authorizer
 or fake production validation. `createMultiProjectSandcastleHost()` wires real
 Sandcastle workers, host Git verification, and native adapters; authorization
 and measurable acceptance remain mandatory injected capabilities.
+
+### Installed DevSquad execution route
+
+Install/configure DevSquad using its supported setup in the **same execution
+backend** used by the configured sandbox. A desktop-only plugin does not establish
+availability inside a container. No framework installer runs automatically.
+Copilot CLI must support `--agent`; use the actual names exposed by that
+installation, not guessed aliases. Execute the trusted module with
+`sandcastle orchestrate --config .\.sandcastle\orchestration.mjs`.
+
+`resolveCapability(request, signal)` returns `null` or a host-registry entry:
+
+```javascript
+{
+  framework: "devsquad",
+  provider: "copilot",
+  stage: request.stage,
+  capabilityId: "host-registry-phase-id",
+  agentName: "actual-installed-agent-name",
+  definitionDigest: "sha256-of-verified-installed-agent-definition",
+  model: { id: "configured-supported-model", family: "canonical-model-family" },
+  available: true
+}
+```
+
+The resolver must verify the installed definition/provider and canonical model
+identity for the exact stage. `available: true` is a host attestation, not a
+worker claim. `authorizeCapability` must bind this immutable registry entry to
+the request intent, revision, stage and sandbox policy. `attestExecution` receives
+that same entry, the request and actual `RunResult`; it must independently verify
+the executed agent/model/definition using host-owned backend evidence. Merely
+echoing a requested model or accepting the worker receipt is not attestation.
+
+The adapter calls the existing bounded Sandcastle `run` API using
+`copilot(model.id, { agent: agentName })`, which sends the real `--agent` flag.
+It supports named specify/plan/decompose/implement/fix/review agents; verification
+remains host-owned. This does not invoke the implementation-only ADO DevSquad
+adapter as a reviewer. Missing/mismatched capabilities and denied authorization
+prevent invocation; failed execution attestation remains `unknown`. There is no
+generic fallback and no default authorizer/attestor. Core host reservations cover
+this invocation, including unknown outcomes.
+
+The route's injected integration tests exercise command selection and host
+binding, not a live installed DevSquad run. Specialized Cowork critics, fenced
+review history, governance and impact publication still need whole-product
+integration; this phase-worker route alone does not complete those policies.
 
 Authorize each exact `request.intent` through your host's policy/approval store.
 Requests are copied and deeply frozen; callbacks must not mutate their scope,

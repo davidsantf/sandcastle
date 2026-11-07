@@ -101,6 +101,28 @@ function fakeHost(
   return { host, requests, audits, humanCalls: () => humanCalls };
 }
 
+describe("core orchestration contract contexts", () => {
+  const contracts: Readonly<Record<string, string>>[] = [
+    {},
+    { "api:one:api": "e".repeat(64) },
+  ];
+  it.each(contracts)(
+    "reviews independent and qualified contracts %j",
+    async (contracts) => {
+      const fixture = fakeHost();
+      const result = await runCoworkReview(
+        { ...context, contracts },
+        policy,
+        fixture.host,
+        [],
+        new AbortController().signal,
+      );
+      expect(result.state).toBe("ready");
+      expect(fixture.requests).toHaveLength(coworkReviewPasses.length);
+    },
+  );
+});
+
 describe("host-attested canonical critic routing", () => {
   it.each([
     "research",
@@ -236,6 +258,24 @@ describe("staged review evidence, not worker approval", () => {
       resolveRevision: async () => context.revision,
       audit: async () => {},
     };
+    const contractCases: Readonly<Record<string, string>>[] = [
+      {},
+      { "api:one:api": "e".repeat(64) },
+    ];
+    it.each(contractCases)(
+      "accepts independent and qualified stage contracts %j",
+      async (contracts) => {
+        expect(
+          (
+            await runCoworkStageCritic(
+              { ...request, contracts },
+              policy.routing,
+              host,
+            )
+          ).state,
+        ).toBe("passed");
+      },
+    );
     it.each([
       "research",
       "design",

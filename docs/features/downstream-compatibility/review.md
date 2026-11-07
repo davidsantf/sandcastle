@@ -44,12 +44,47 @@ control fail: it observed one orphan generation instead of zero after failed
 task insertion. The transaction was immediately restored before the final
 passing checks.
 
+## Explicit framework route integration
+
+`createDevsquadOrchestrationWorker` now selects installed named agents through
+the actual Copilot CLI `--agent` flag, using existing bounded `run` execution.
+The host must resolve the exact available framework/stage/provider/definition
+digest/model-family binding, authorize that immutable capability and independently
+attest the actual execution. Missing/denied capabilities do not invoke an agent;
+unattested outcomes remain unknown. The host factory accepts this explicit
+executor instead of silently constructing a generic worker. Generic prompts no
+longer claim to be DevSquad.
+
+Integration tests initially failed for independent `contracts: {}` and qualified
+`api:one:api` contract keys. Review and stage critics now accept both, while
+requiring valid hashes, nonempty review artifacts and complete changed-file
+coverage. Core prerequisite contract checks remain unchanged.
+
+Actual final checks: **32 Copilot factory tests** and **146 combined
+core/journal/worker/review/governance tests passed**. Typecheck, ESM/declaration
+build, public declaration checker and whitespace checks passed. Removing only
+the print command's `--agent` interpolation made the targeted named-agent test
+fail; restoring it returned the final checks to green.
+
+Compiled public-export fixture exercised six named phase commands and six
+attestations; an unavailable capability dispatched nothing. Its retained script
+is the session artifact `files/framework-route-smoke.mjs`, not a production
+attestor. The compiled CLI demo completed three independent/integrated fake-hub
+tasks with 18 dispatches, 9 checks and 42 events. Restart dispatched zero and
+kept 42 events. These are injected fixtures, not a live DevSquad installation run.
+
+The complete `AgentProvider.test.ts` run also exposed five Windows
+`sessionStorage` failures outside the changed Copilot provider path (Pi/Codex
+session discovery, a POSIX path expectation, and Claude subagent file copies).
+Those unrelated areas were not changed. The targeted Copilot suite passes;
+this is not a claim that the full provider suite passes on Windows.
+
 ## Remaining boundary
 
 Generic journal records are host-owned JSON, not authorization. A concrete
 factory adapter must validate completed publication receipts, independently
 verified upstream revision/contract evidence, configured rules, lineage,
 budgets, approved destinations and exact downstream acceptance before append.
-Issue-backed registration, real configured DevSquad routes, critics/governance,
+Issue-backed registration, fenced critics/governance,
 measured quality loops and release observation are still being integrated.
 No live hub write, coding/framework run, merge or deployment was performed.

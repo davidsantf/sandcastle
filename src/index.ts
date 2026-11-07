@@ -38,9 +38,11 @@ export {
 export type { OrchestrationHubTransport } from "./MultiProjectHubs.js";
 export {
   createSandcastleOrchestrationWorker,
+  createDevsquadOrchestrationWorker,
   buildMultiProjectWorkerPrompt,
   resolveOrchestrationGitRevision,
 } from "./MultiProjectWorker.js";
+export type { DevsquadPhaseCapability } from "./MultiProjectWorker.js";
 export { runMultiProjectDemo } from "./MultiProjectDemo.js";
 export { runMultiProjectEntrypoint } from "./MultiProjectEntrypoint.js";
 export type { MultiProjectHostConfiguration } from "./MultiProjectEntrypoint.js";

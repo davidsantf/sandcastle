@@ -18,6 +18,7 @@ import {
 const hash = /^[a-f0-9]{64}$/;
 const revision = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
 const identifier = /^[a-zA-Z0-9][a-zA-Z0-9._/-]{0,199}$/;
+const contractIdentifier = /^[a-zA-Z0-9][a-zA-Z0-9._/:-]{0,199}$/;
 const categories = new Set([
   "correctness",
   "security",
@@ -125,12 +126,13 @@ function validContext(context: CoworkReviewContext): boolean {
     identifier.test(context.author.family) &&
     ["ordinary", "critical"].includes(context.risk) &&
     validFiles(context.changedFiles) &&
+    Object.keys(context.artifacts).length > 0 &&
     digests.every(
       (values) =>
-        Object.keys(values).length > 0 &&
         Object.keys(values).length <= 1000 &&
         Object.entries(values).every(
-          ([name, digest]) => identifier.test(name) && hash.test(digest),
+          ([name, digest]) =>
+            contractIdentifier.test(name) && hash.test(digest),
         ),
     )
   );
@@ -408,10 +410,9 @@ export async function runCoworkStageCritic(
     !hash.test(request.intent) ||
     !revision.test(request.revision) ||
     !hash.test(request.artifact) ||
-    Object.keys(request.contracts).length === 0 ||
     Object.keys(request.contracts).length > 1000 ||
     !Object.entries(request.contracts).every(
-      ([name, value]) => identifier.test(name) && hash.test(value),
+      ([name, value]) => contractIdentifier.test(name) && hash.test(value),
     )
   ) {
     return { state: "blocked", reason: "invalid-input" };

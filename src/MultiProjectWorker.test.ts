@@ -8,7 +8,9 @@ import { createBindMountSandboxProvider } from "./SandboxProvider.js";
 import { run } from "./run.js";
 import {
   createSandcastleOrchestrationWorker,
+  createDevsquadOrchestrationWorker,
   resolveOrchestrationGitRevision,
+  type DevsquadPhaseCapability,
 } from "./MultiProjectWorker.js";
 import { createMultiProjectSandcastleHost } from "./MultiProjectHostFactory.js";
 import { runMultiProjectEntrypoint } from "./MultiProjectEntrypoint.js";
@@ -77,6 +79,148 @@ beforeEach(() => vi.mocked(run).mockReset());
 afterEach(() => {
   for (const folder of folders.splice(0))
     rmSync(folder, { recursive: true, force: true });
+});
+
+describe("explicit installed DevSquad execution", () => {
+  const capability = (
+    stage: DevsquadPhaseCapability["stage"] = "implement",
+  ): DevsquadPhaseCapability => ({
+    framework: "devsquad",
+    provider: "copilot",
+    stage,
+    capabilityId: `devsquad.${stage}`,
+    agentName: `devsquad.${stage === "fix" ? "implement" : stage}`,
+    definitionDigest: "d".repeat(64),
+    model: { id: "fixture-model", family: "fixture-family" },
+    available: true,
+  });
+  const fixture = (selected: DevsquadPhaseCapability | null = capability()) => {
+    const authorizeCapability = vi.fn(async () => true);
+    const attestExecution = vi.fn(async () => true);
+    const resolveCapability = vi.fn(async () => selected);
+    const execute = createDevsquadOrchestrationWorker({
+      sandbox: () => sandbox,
+      resolveCapability,
+      authorizeCapability,
+      attestExecution,
+    });
+    vi.mocked(run).mockResolvedValue(result);
+    return { execute, resolveCapability, authorizeCapability, attestExecution };
+  };
+  it("wires the configured framework executor into the runnable host", async () => {
+    const framework = fixture();
+    const host = createMultiProjectSandcastleHost({
+      execute: framework.execute,
+      authorize: async () => true,
+      validate: async () => {
+        throw new Error("this fixture does not run acceptance");
+      },
+    });
+    expect(await host.execute(request(), signal())).toEqual(receipt);
+    expect(framework.authorizeCapability).toHaveBeenCalledOnce();
+    expect(framework.attestExecution).toHaveBeenCalledOnce();
+  });
+  it.each([
+    "specify",
+    "plan",
+    "decompose",
+    "implement",
+    "fix",
+    "review",
+  ] as const)(
+    "invokes the actual named %s capability through run",
+    async (stage) => {
+      const selected = capability(stage);
+      const host = fixture(selected);
+      const input = { ...request(), stage };
+      const abort = signal();
+      expect(await host.execute(input, abort)).toEqual(receipt);
+      const invocation = vi.mocked(run).mock.calls[0]![0];
+      expect(
+        invocation.agent.buildPrintCommand({
+          prompt: "fixture",
+          dangerouslySkipPermissions: false,
+        }).command,
+      ).toContain(`--agent '${selected.agentName}'`);
+      expect(invocation.maxIterations).toBe(1);
+      expect(invocation.signal).toBe(abort);
+      expect(host.authorizeCapability).toHaveBeenCalledWith(
+        input,
+        selected,
+        abort,
+      );
+      expect(host.attestExecution).toHaveBeenCalledWith(
+        input,
+        selected,
+        result,
+        abort,
+      );
+    },
+  );
+  it.each([
+    null,
+    { ...capability(), available: false },
+    { ...capability(), stage: "plan" as const },
+    { ...capability(), definitionDigest: "unverified" },
+  ])(
+    "has no generic fallback for unavailable or mismatched capabilities",
+    async (selected) => {
+      const host = fixture(selected);
+      expect(await host.execute(request(), signal())).toMatchObject({
+        kind: "failed",
+        signature: "devsquad-capability-unavailable",
+      });
+      expect(run).not.toHaveBeenCalled();
+      expect(host.authorizeCapability).not.toHaveBeenCalled();
+    },
+  );
+  it("requires authorization and keeps unattested outcomes unknown", async () => {
+    const host = fixture();
+    host.authorizeCapability.mockResolvedValue(false);
+    expect(await host.execute(request(), signal())).toMatchObject({
+      kind: "failed",
+      signature: "devsquad-route-not-authorized",
+    });
+    expect(run).not.toHaveBeenCalled();
+    host.authorizeCapability.mockResolvedValue(true);
+    host.attestExecution.mockResolvedValue(false);
+    expect(await host.execute(request(), signal())).toMatchObject({
+      kind: "unknown",
+    });
+  });
+  it("binds authorization to immutable model and agent definitions", async () => {
+    const selected = { ...capability(), model: { ...capability().model } };
+    const host = fixture(selected);
+    host.authorizeCapability.mockImplementation(async () => {
+      selected.agentName = "generic";
+      selected.model.id = "other-model";
+      return true;
+    });
+    expect(await host.execute(request(), signal())).toEqual(receipt);
+    const invocation = vi.mocked(run).mock.calls[0]![0];
+    const command = invocation.agent.buildPrintCommand({
+      prompt: "fixture",
+      dangerouslySkipPermissions: false,
+    }).command;
+    expect(command).toContain("--agent 'devsquad.implement'");
+    expect(command).toContain("--model 'fixture-model'");
+    expect(command).not.toContain("generic");
+  });
+  it("does not dispatch after cancellation or use an agent for host verification", async () => {
+    const host = fixture();
+    const abort = new AbortController();
+    host.authorizeCapability.mockImplementation(async () => {
+      abort.abort();
+      return true;
+    });
+    expect(await host.execute(request(), abort.signal)).toMatchObject({
+      kind: "unknown",
+    });
+    await expect(
+      host.execute({ ...request(), stage: "verify" }, signal()),
+    ).rejects.toThrow(/host/);
+    expect(run).not.toHaveBeenCalled();
+  });
 });
 
 describe("real worker and host wiring", () => {

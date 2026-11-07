@@ -80,6 +80,10 @@ sandcastle orchestrate --demo .\.sandcastle\orchestration-demo
 Run it again with the same directory to resume without redispatch. For real
 workers, use `sandcastle orchestrate --config <trusted-host-module>` with explicit
 authorization, validation, sandbox, and native GitHub/ADO evidence adapters.
+Use `createDevsquadOrchestrationWorker()` as the host's `execute` capability
+to select installed named DevSquad phase agents through Copilot CLI `--agent`.
+Unavailable or unattested framework capabilities do not fall back to generic
+workers. The offline demo does not execute DevSquad.
 See [setup, authority boundaries, and recovery](docs/agents/multi-project-orchestration.md).
 No PR creation, push, merge, or deployment is automatic.
 
