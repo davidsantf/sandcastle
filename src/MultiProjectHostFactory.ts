@@ -44,6 +44,16 @@ export function createMultiProjectSandcastleHost(
         : createSandcastleOrchestrationWorker(options),
     resolveRevision: resolveOrchestrationGitRevision,
     observe: async (project, task, signal) => {
+      if (task.sourceItem && !task.pullRequest)
+        return {
+          revision: "",
+          policiesKnown: false,
+          required: [],
+          checks: [],
+          labels: [],
+          diagnostic:
+            "Issue-backed work requires its separately registered change request",
+        };
       const boundProject = {
         ...project,
         hub: {

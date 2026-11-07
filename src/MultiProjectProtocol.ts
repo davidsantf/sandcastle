@@ -34,6 +34,12 @@ export interface OrchestrationTask {
   branch: string;
   baseBranch: string;
   pullRequest?: number;
+  sourceItem?: {
+    provider: "github" | "azure-devops";
+    id: string;
+    url: string;
+    cause: { recordKey: string; recordVersion: number; recordDigest: string };
+  };
   scopes: string[];
   dependsOn: string[];
   requiresContracts: { task: string; name: string }[];
@@ -82,6 +88,8 @@ export interface OrchestrationTaskState {
   invocation?: string;
   intent?: string;
   pendingSince?: number;
+  pullRequest?: number;
+  changeRequestEvidence?: string;
 }
 
 export interface OrchestrationWorkerRequest {
@@ -145,6 +153,28 @@ const scope = z
         v.split("/").every((part) => part && part !== "." && part !== "..")),
     "scopes must be literal repository-relative file or directory paths",
   );
+const sourceItemSchema = z.strictObject({
+  provider: z.enum(["github", "azure-devops"]),
+  id: z.string().min(1).max(200),
+  url: z
+    .string()
+    .url()
+    .refine((value) => {
+      const parsed = new URL(value);
+      return (
+        parsed.protocol === "https:" &&
+        !parsed.username &&
+        !parsed.password &&
+        !parsed.search &&
+        !parsed.hash
+      );
+    }, "credential-free HTTPS item link required"),
+  cause: z.strictObject({
+    recordKey: z.string().regex(/^factory:[a-f0-9]{64}$/),
+    recordVersion: z.number().int().min(2),
+    recordDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  }),
+});
 const hubSchema = z.discriminatedUnion("kind", [
   z
     .object({
@@ -194,6 +224,7 @@ const catalogSchema = z
             branch,
             baseBranch: branch,
             pullRequest: z.number().int().positive().optional(),
+            sourceItem: sourceItemSchema.optional(),
             scopes: z.array(scope).min(1).max(100),
             dependsOn: z.array(qualified).max(100).default([]),
             requiresContracts: z
@@ -299,7 +330,19 @@ export const parseOrchestrationCatalog = (
         "task branches must be distinct from other tasks and the base",
       );
     branches.add(branchKey);
-    const changeRequestKey = `${task.projectId}:${task.pullRequest ?? project.hub.pullRequest}`;
+    if (task.sourceItem && task.pullRequest)
+      throw new Error(
+        "issue-backed tasks require separate host-owned change request registration",
+      );
+    if (
+      task.sourceItem &&
+      task.sourceItem.provider !==
+        (project.hub.kind === "github" ? "github" : "azure-devops")
+    )
+      throw new Error("source item provider must match the configured project");
+    const changeRequestKey = task.sourceItem
+      ? `${task.projectId}:item:${task.sourceItem.provider}:${task.sourceItem.id}`
+      : `${task.projectId}:${task.pullRequest ?? project.hub.pullRequest}`;
     if (pullRequests.has(changeRequestKey))
       throw new Error("task change requests must be distinct");
     pullRequests.add(changeRequestKey);
@@ -494,6 +537,8 @@ const taskStateSchema = z
       .regex(/^[a-f0-9]{64}$/)
       .optional(),
     pendingSince: z.number().int().nonnegative().optional(),
+    pullRequest: z.number().int().positive().optional(),
+    changeRequestEvidence: z.string().min(1).max(64000).optional(),
   })
   .strict();
 

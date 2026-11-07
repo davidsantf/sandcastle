@@ -2,8 +2,9 @@
 
 Sandcastle's host runs a bounded orchestration lifecycle across independent and
 integrated projects. It stores tasks, artifact versions, reservations, and
-append-only events in one SQLite database. It does not create PRs, push commits,
-merge, deploy, or schedule recurring automation.
+append-only events in one SQLite database. The optional Cowork factory creates
+items and registers PRs only through explicit trusted host capabilities.
+It does not push commits, merge, deploy, or schedule recurring automation.
 Real DevSquad execution requires the explicit named-agent route described below;
 generic workers and the offline demonstration are not framework executions.
 
@@ -103,8 +104,8 @@ The scheduler resolves this active generation automatically on restart.
 These are integration primitives, not automatic impact authorization. A factory
 adapter must independently validate source/contract evidence, completed hub
 publication, configured rules and budgets before append. Automatic propagation
-and issue-to-PR registration are not yet wired in this foundation;
-see `docs/features/downstream-compatibility/`.
+and issue-to-PR registration are wired by `createCoworkOrchestrationFactory`;
+see [Cowork composition and configured capabilities](cowork-orchestration.md).
 
 Example trusted module:
 

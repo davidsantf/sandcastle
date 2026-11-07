@@ -12,6 +12,8 @@ import { MultiProjectJournal } from "./MultiProjectJournal.js";
 import {
   runMultiProjectOrchestrationPass,
   type MultiProjectHost,
+  type OrchestrationHostRunContext,
+  type OrchestrationPolicyEvidence,
 } from "./MultiProjectOrchestrator.js";
 import {
   digest,
@@ -111,6 +113,218 @@ const host = (overrides: Partial<MultiProjectHost> = {}): MultiProjectHost => ({
   }),
   observe: async () => green(),
   ...overrides,
+});
+
+describe("fenced host policy lifecycle", () => {
+  const passed = (): OrchestrationPolicyEvidence => ({
+    state: "passed",
+    revision: sha,
+    evaluatedScope: 1,
+    checks: [{ name: "host-policy", state: "passed" }],
+    evidence: "Independently evaluated policy fixture",
+  });
+  const individual = (): OrchestrationCatalog => {
+    const c = catalog();
+    return { ...c, tasks: [c.tasks[2]!] };
+  };
+  it("binds a fresh fenced host each pass and persists non-vacuous phase and verification gates", async () => {
+    const c = catalog();
+    const journal = open();
+    const contexts: OrchestrationHostRunContext[] = [];
+    let gates = 0;
+    const configured = host({
+      bindRun: (context) => {
+        contexts.push(context);
+        expect(Object.isFrozen(context)).toBe(true);
+        expect(Object.isFrozen(context.lease)).toBe(true);
+        expect(context.journal).toBe(journal);
+        return host({
+          assessPhase: async () => {
+            gates++;
+            return passed();
+          },
+          validatePolicy: async () => {
+            gates++;
+            return passed();
+          },
+        });
+      },
+    });
+    const first = await runMultiProjectOrchestrationPass({
+      catalog: c,
+      journal,
+      host: configured,
+    });
+    expect(first.status).toBe("completed");
+    expect(first.evaluatedChecks).toBe(24);
+    expect(gates).toBe(15);
+    expect(journal.hostEvents(c.id)).toHaveLength(15);
+    const next = await runMultiProjectOrchestrationPass({
+      catalog: c,
+      journal,
+      host: configured,
+    });
+    expect(next.dispatched).toBe(0);
+    expect(contexts).toHaveLength(2);
+    expect(contexts[1]!.lease.fence).toBeGreaterThan(contexts[0]!.lease.fence);
+    expect(() =>
+      journal.compareAndSwapHostRecord(
+        c.id,
+        contexts[0]!.lease,
+        `policy:${digest("stale")}`,
+        0,
+        { evidence: "late old callback" },
+        { kind: "late" },
+      ),
+    ).toThrow();
+  });
+  it("does not invoke workers when host binding fails", async () => {
+    const execute = vi.fn(host().execute);
+    await expect(
+      runMultiProjectOrchestrationPass({
+        catalog: individual(),
+        journal: open(),
+        host: host({
+          execute,
+          bindRun: () => {
+            throw new Error("binding failed");
+          },
+        }),
+      }),
+    ).rejects.toThrow("binding failed");
+    expect(execute).not.toHaveBeenCalled();
+  });
+  it.each(["scope", "checks", "revision"] as const)(
+    "rejects a success-shaped policy with missing %s",
+    async (failure) => {
+      const c = individual();
+      const result = await runMultiProjectOrchestrationPass({
+        catalog: c,
+        journal: open(),
+        host: host({
+          validatePolicy: async () => ({
+            ...passed(),
+            ...(failure === "scope"
+              ? { evaluatedScope: 0 }
+              : failure === "checks"
+                ? { checks: [] }
+                : { revision: sha2 }),
+          }),
+        }),
+      });
+      expect(result.status).toBe("needs-input");
+      expect(result.tasks[0]!.status).toBe("needs-input");
+      expect(result.tasks[0]!.attempts).toBe(0);
+    },
+  );
+  it("records implemented source and artifact before a blocked critic, without blocking independent lanes", async () => {
+    const c = catalog();
+    const journal = open();
+    let producer = sha;
+    const result = await runMultiProjectOrchestrationPass({
+      catalog: c,
+      journal,
+      host: host({
+        execute: async (request) => {
+          if (request.project.id === "api" && request.stage === "implement")
+            producer = sha2;
+          return {
+            kind: "completed",
+            artifact: `artifact:${request.stage}`,
+            contracts: {},
+            findings: [],
+          };
+        },
+        resolveRevision: async (project) =>
+          project.id === "api" ? producer : sha,
+        assessPhase: async (request, receipt, revision) => {
+          const state = journal
+            .states(c.id)
+            .find((item) => item.key === taskKey(request.task))!;
+          expect(state.status).toBe("running");
+          expect(state.artifacts[request.stage]).toBe(receipt.artifact);
+          expect(state.revision).toBe(revision);
+          return request.project.id === "api" && request.stage === "implement"
+            ? {
+                ...passed(),
+                state: "blocked",
+                revision,
+                checks: [{ name: "build-critic", state: "failed" }],
+                evidence: "Missing contract compatibility",
+              }
+            : { ...passed(), revision };
+        },
+      }),
+    });
+    const producerState = result.tasks.find((item) => item.key === "api:one")!;
+    expect(producerState.status).toBe("needs-input");
+    expect(producerState.revision).toBe(sha2);
+    expect(producerState.artifacts.implement).toBe("artifact:implement");
+    expect(result.tasks.find((item) => item.key === "docs:one")!.status).toBe(
+      "completed",
+    );
+    expect(result.tasks.find((item) => item.key === "app:one")!.status).toBe(
+      "needs-input",
+    );
+  });
+  it("retains unknown policy reservations across restart without redispatch", async () => {
+    const c = individual();
+    const journal = open();
+    const execute = vi.fn(host().execute);
+    const configured = host({
+      execute,
+      validatePolicy: async () => ({
+        ...passed(),
+        state: "unknown",
+        checks: [],
+        evaluatedScope: 0,
+        evidence: "Critic dispatch outcome unresolved",
+      }),
+    });
+    const first = await runMultiProjectOrchestrationPass({
+      catalog: c,
+      journal,
+      host: configured,
+    });
+    expect(first.tasks[0]!.status).toBe("unknown");
+    const count = execute.mock.calls.length;
+    const again = await runMultiProjectOrchestrationPass({
+      catalog: c,
+      journal,
+      host: configured,
+    });
+    expect(again.dispatched).toBe(0);
+    expect(execute).toHaveBeenCalledTimes(count);
+    expect(journal.allReservations()).toHaveLength(1);
+  });
+  it("rechecks a completed producer's actual source after consumer review", async () => {
+    const c = catalog();
+    let producer = sha;
+    const result = await runMultiProjectOrchestrationPass({
+      catalog: c,
+      journal: open(),
+      host: host({
+        resolveRevision: async (project) =>
+          project.id === "api" ? producer : sha,
+        execute: async (request) => {
+          if (request.project.id === "app" && request.stage === "review")
+            producer = sha2;
+          return {
+            kind: "completed",
+            artifact: `artifact:${request.stage}`,
+            contracts: {},
+            findings: [],
+          };
+        },
+      }),
+    });
+    expect(result.tasks.find((item) => item.key === "app:one")!.status).toBe(
+      "needs-input",
+    );
+    expect(result.tasks.find((item) => item.key === "docs:one")!.status).toBe(
+      "completed",
+    );
+  });
 });
 
 describe("multi-project catalog and non-vacuous checks", () => {

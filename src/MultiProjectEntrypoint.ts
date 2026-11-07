@@ -2,6 +2,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { MultiProjectJournal } from "./MultiProjectJournal.js";
 import { runMultiProjectDemo } from "./MultiProjectDemo.js";
+import { runMultiProjectCoworkDemo } from "./MultiProjectCoworkDemo.js";
 import {
   runMultiProjectOrchestrationPass,
   type MultiProjectHost,
@@ -17,10 +18,17 @@ export interface MultiProjectHostConfiguration {
 export async function runMultiProjectEntrypoint(options: {
   config?: string;
   demoDirectory?: string;
+  coworkDemoDirectory?: string;
   signal?: AbortSignal;
 }) {
-  if (Boolean(options.config) === Boolean(options.demoDirectory))
-    throw new Error("choose exactly one of --config or --demo");
+  if (
+    [options.config, options.demoDirectory, options.coworkDemoDirectory].filter(
+      Boolean,
+    ).length !== 1
+  )
+    throw new Error("choose exactly one of --config, --demo or --cowork-demo");
+  if (options.coworkDemoDirectory)
+    return runMultiProjectCoworkDemo(options.coworkDemoDirectory);
   if (options.demoDirectory) return runMultiProjectDemo(options.demoDirectory);
   const configModule = await import(
     pathToFileURL(path.resolve(options.config!)).href

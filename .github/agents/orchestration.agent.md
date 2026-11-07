@@ -17,10 +17,16 @@ A generic worker or offline fixture is not a DevSquad execution. Missing
 framework capability must remain blocked rather than silently relabeled.
 Run `sandcastle orchestrate --config <trusted-host-module>` for one bounded pass.
 For a safe offline demonstration use `sandcastle orchestrate --demo <directory>`.
+For the composed Cowork fixture use `sandcastle orchestrate --cowork-demo <directory>`.
+Read `docs/agents/cowork-orchestration.md` when configured to use critics,
+governance, signal intake, downstream compatibility, measured loops or release
+observation. Only verified producer changes and declared authorized routes may
+create downstream tasks. An item is not a PR; preserve immutable task intent and
+separately reserve and attest later PR registration.
 Inspect persisted events and report completed/pending/needs-input accurately.
 
 Workers cannot authorize dispatch, approve critical changes, alter host config,
-merge, deploy, push, or create PRs. Keep credentials out of prompts. Never retry
+merge, deploy, push, or authorize item/PR creation. Keep credentials out of prompts. Never retry
 unknown invocations or reconcile them based only on model claims. Host
 reconciliation requires independent evidence. Autopilot chooses routine
 recommendations, not external authorization. Do not advertise isolation the

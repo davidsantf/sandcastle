@@ -85,7 +85,16 @@ to select installed named DevSquad phase agents through Copilot CLI `--agent`.
 Unavailable or unattested framework capabilities do not fall back to generic
 workers. The offline demo does not execute DevSquad.
 See [setup, authority boundaries, and recovery](docs/agents/multi-project-orchestration.md).
-No PR creation, push, merge, or deployment is automatic.
+Cowork composition adds diverse critics, governed instruction/component checks,
+durable signal-to-item scheduling, and downstream compatibility tasks. A verified
+contract change in A can create a GitHub/ADO item in B and dispatch B's agent;
+its later PR is separately authorized and registered without changing its intent.
+Run `sandcastle orchestrate --cowork-demo .\.sandcastle\cowork-demo` for the
+composed offline fixture, including executed negative controls, quantitative
+quality gates, and synthetic read-only first-ring evidence.
+See [Cowork configuration](docs/agents/cowork-orchestration.md).
+External item/PR creation requires configured host authorization. Push, merge,
+deployment and recurring automation are not automatic.
 
 ## Persistent DevSquad/ADO workflow checkpoints
 

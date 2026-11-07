@@ -31,7 +31,57 @@ export interface OrchestrationValidationEvidence {
   contracts: Record<string, string>;
 }
 
+export interface OrchestrationHostRunContext {
+  readonly runId: string;
+  readonly journal: MultiProjectJournal;
+  readonly lease: OrchestrationLease;
+}
+
+export interface OrchestrationPolicyEvidence {
+  state: "passed" | "blocked" | "needs-human" | "unknown" | "stale";
+  revision: string;
+  evaluatedScope: number;
+  checks: OrchestrationCheck[];
+  evidence: string;
+}
+
 export interface MultiProjectHost {
+  bindRun?(context: OrchestrationHostRunContext): MultiProjectHost;
+  beforeTasks?(signal: AbortSignal): Promise<OrchestrationPolicyEvidence>;
+  observeSourceItem?(
+    project: OrchestrationProject,
+    task: OrchestrationTask,
+    signal: AbortSignal,
+  ): Promise<{ labels: string[]; evidence: string }>;
+  registerChangeRequest?(
+    request: OrchestrationWorkerRequest,
+    signal: AbortSignal,
+  ): Promise<
+    | {
+        state: "registered";
+        pullRequest: number;
+        revision: string;
+        evidence: string;
+      }
+    | { state: "blocked" | "unknown"; evidence: string }
+  >;
+  afterTask?(
+    project: OrchestrationProject,
+    task: OrchestrationTask,
+    state: OrchestrationTaskState,
+    signal: AbortSignal,
+  ): Promise<OrchestrationPolicyEvidence>;
+  assessPhase?(
+    request: OrchestrationWorkerRequest,
+    receipt: Extract<OrchestrationWorkerReceipt, { kind: "completed" }>,
+    revision: string,
+    signal: AbortSignal,
+  ): Promise<OrchestrationPolicyEvidence>;
+  validatePolicy?(
+    request: OrchestrationWorkerRequest,
+    evidence: OrchestrationValidationEvidence,
+    signal: AbortSignal,
+  ): Promise<OrchestrationPolicyEvidence>;
   /** Explicit trusted host policy; no serializable worker proposal grants authority. */
   authorize(
     request: OrchestrationWorkerRequest,
@@ -64,6 +114,7 @@ export interface MultiProjectPassResult {
   tasks: OrchestrationTaskState[];
   dispatched: number;
   evaluatedChecks: number;
+  followUps?: OrchestrationPolicyEvidence[];
 }
 
 const nextStage = {
@@ -149,7 +200,8 @@ export async function runMultiProjectOrchestrationPass(options: {
       repositoryRoot: realpathSync(project.repositoryRoot),
     })),
   };
-  const { journal, host } = options;
+  const { journal } = options;
+  let host = options.host;
   const now = options.now ?? Date.now;
   const projects = new Map(catalog.projects.map((p) => [p.id, p]));
   const roots = new Map(
@@ -277,11 +329,97 @@ export async function runMultiProjectOrchestrationPass(options: {
     freezeRequest(request);
     return request;
   };
+  const prerequisitesCurrent = async (
+    task: OrchestrationTask,
+    request: OrchestrationWorkerRequest,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const states = journal.states(catalog.id);
+    for (const key of task.dependsOn) {
+      const producer = catalog.tasks.find((item) => taskKey(item) === key);
+      const state = states.find((item) => item.key === key);
+      if (!producer || !state || state.status !== "completed") return false;
+      const revision = await host.resolveRevision(
+        projects.get(producer.projectId)!,
+        producer,
+        signal,
+        state.baseRevision,
+      );
+      if (!validRevision(revision) || revision !== state.revision) return false;
+    }
+    return task.requiresContracts.every(
+      (prerequisite) =>
+        states.find((item) => item.key === prerequisite.task)?.contracts[
+          prerequisite.name
+        ] === request.contracts[`${prerequisite.task}:${prerequisite.name}`],
+    );
+  };
+  const acceptPolicy = (
+    state: OrchestrationTaskState,
+    request: OrchestrationWorkerRequest,
+    policy: OrchestrationPolicyEvidence,
+    revision: string,
+  ): boolean => {
+    if (
+      !policy ||
+      !["passed", "blocked", "needs-human", "unknown", "stale"].includes(
+        policy.state,
+      ) ||
+      typeof policy.evidence !== "string" ||
+      !policy.evidence.trim() ||
+      !Array.isArray(policy.checks) ||
+      !Number.isSafeInteger(policy.evaluatedScope) ||
+      policy.evaluatedScope < 0
+    ) {
+      stop(state, "host policy returned invalid evidence");
+      return false;
+    }
+    const recorded = journal.compareAndSwapHostRecord(
+      catalog.id,
+      lease,
+      `policy:${digest({ run: catalog.id, invocation: state.invocation, stage: state.stage })}`,
+      0,
+      { intent: request.intent, revision, policy },
+      { kind: "host-policy-evaluated", task: state.key },
+    );
+    if (!recorded) throw new Error("host policy evidence conflict");
+    evaluatedChecks += policy.checks.length;
+    if (policy.state === "unknown" || policy.state === "stale") {
+      stop(state, `host policy ${policy.state}: ${policy.evidence}`, true);
+      return false;
+    }
+    if (policy.state !== "passed") {
+      stop(state, `host policy ${policy.state}: ${policy.evidence}`);
+      return false;
+    }
+    const checks = evaluateOrchestrationChecks(
+      {
+        revision: policy.revision,
+        policiesKnown: true,
+        required: policy.checks.map((check) => check.name),
+        checks: policy.checks,
+        labels: [],
+      },
+      revision,
+    );
+    if (
+      policy.revision !== revision ||
+      policy.evaluatedScope === 0 ||
+      checks.state !== "passed"
+    ) {
+      stop(state, "host policy lacks current non-vacuous passing evidence");
+      return false;
+    }
+    return true;
+  };
 
   const execute = async (
-    task: OrchestrationTask,
+    catalogTask: OrchestrationTask,
     initial: OrchestrationTaskState,
   ): Promise<void> => {
+    const task = initial.pullRequest
+      ? { ...catalogTask, pullRequest: initial.pullRequest }
+      : catalogTask;
     const project = projects.get(task.projectId)!;
     try {
       const current = await bounded(
@@ -323,7 +461,7 @@ export async function runMultiProjectOrchestrationPass(options: {
       stop(initial, "host authorization denied");
       return;
     }
-    const state = update(
+    let state = update(
       initial,
       {
         status: "running",
@@ -337,9 +475,26 @@ export async function runMultiProjectOrchestrationPass(options: {
     try {
       await bounded(
         async (signal) => {
+          if (!(await prerequisitesCurrent(task, request, signal))) {
+            stop(state, "prerequisite revision or contract changed");
+            return;
+          }
           if (["implement", "fix"].includes(state.stage)) {
-            const evidence = await host.observe(project, task, signal);
-            if (evidence.diagnostic || humanStop(evidence.labels)) {
+            const evidence =
+              task.sourceItem && !task.pullRequest
+                ? host.observeSourceItem
+                  ? await host.observeSourceItem(project, task, signal)
+                  : {
+                      labels: [],
+                      evidence: "",
+                      diagnostic: "source item policy reader unavailable",
+                    }
+                : await host.observe(project, task, signal);
+            if (
+              ("diagnostic" in evidence && evidence.diagnostic) ||
+              ("evidence" in evidence && !evidence.evidence) ||
+              humanStop(evidence.labels)
+            ) {
               stop(
                 state,
                 "hub labels unavailable or require human intervention",
@@ -363,6 +518,72 @@ export async function runMultiProjectOrchestrationPass(options: {
             }
           }
           if (state.stage === "verify") {
+            if (task.sourceItem && !task.pullRequest) {
+              if (!host.registerChangeRequest) {
+                stop(
+                  state,
+                  "issue-backed work requires host-owned change request registration",
+                );
+                return;
+              }
+              const registration = await host.registerChangeRequest(
+                request,
+                signal,
+              );
+              if (registration.state !== "registered") {
+                stop(
+                  state,
+                  registration.evidence,
+                  registration.state === "unknown",
+                );
+                return;
+              }
+              const conflicts = journal.states(catalog.id).some((other) => {
+                const configured = catalog.tasks.find(
+                  (item) => taskKey(item) === other.key,
+                )!;
+                return (
+                  other.key !== state.key &&
+                  configured.projectId === task.projectId &&
+                  (other.pullRequest ??
+                    configured.pullRequest ??
+                    (configured.sourceItem
+                      ? undefined
+                      : project.hub.pullRequest)) === registration.pullRequest
+                );
+              });
+              if (
+                !Number.isSafeInteger(registration.pullRequest) ||
+                registration.pullRequest <= 0 ||
+                registration.revision !== state.revision ||
+                !registration.evidence ||
+                conflicts ||
+                (await host.resolveRevision(
+                  project,
+                  task,
+                  signal,
+                  state.baseRevision,
+                )) !== registration.revision ||
+                !(await prerequisitesCurrent(task, request, signal))
+              ) {
+                stop(
+                  state,
+                  "change request registration lacks current, distinct revision-bound evidence",
+                  true,
+                );
+                return;
+              }
+              update(
+                state,
+                {
+                  status: "pending",
+                  pullRequest: registration.pullRequest,
+                  changeRequestEvidence: registration.evidence,
+                },
+                "change-request-registered",
+              );
+              return;
+            }
             const evidence = await host.validate(request, signal);
             const revision = await host.resolveRevision(
               project,
@@ -422,6 +643,31 @@ export async function runMultiProjectOrchestrationPass(options: {
               );
               return;
             }
+            if (host.validatePolicy) {
+              const policy = await host.validatePolicy(
+                request,
+                evidence,
+                signal,
+              );
+              if (!acceptPolicy(state, request, policy, revision)) return;
+              const current = await host.resolveRevision(
+                project,
+                task,
+                signal,
+                state.baseRevision,
+              );
+              if (
+                current !== revision ||
+                !(await prerequisitesCurrent(task, request, signal))
+              ) {
+                stop(
+                  state,
+                  "source or prerequisites changed during host policy",
+                  true,
+                );
+                return;
+              }
+            }
             const hub = await host.observe(project, task, signal);
             if (humanStop(hub.labels)) {
               stop(state, "hub requires human intervention");
@@ -435,6 +681,22 @@ export async function runMultiProjectOrchestrationPass(options: {
             if (result.state === "failed") {
               repairHubFailure(state, hub, result.signature!);
             } else if (result.state === "passed") {
+              if (
+                (await host.resolveRevision(
+                  project,
+                  task,
+                  signal,
+                  state.baseRevision,
+                )) !== revision ||
+                !(await prerequisitesCurrent(task, request, signal))
+              ) {
+                stop(
+                  state,
+                  "source or prerequisites changed before verification checkpoint",
+                  true,
+                );
+                return;
+              }
               update(
                 state,
                 {
@@ -494,6 +756,47 @@ export async function runMultiProjectOrchestrationPass(options: {
             ...receipt.amendments,
             [state.stage]: receipt.artifact,
           };
+          if (host.assessPhase && state.stage !== "review") {
+            const revision = await host.resolveRevision(
+              project,
+              task,
+              signal,
+              state.baseRevision,
+            );
+            if (!validRevision(revision)) {
+              stop(state, "phase source revision unavailable", true);
+              return;
+            }
+            state = update(
+              state,
+              { artifacts, revision },
+              "phase-outcome-recorded",
+            );
+            const policy = await host.assessPhase(
+              request,
+              receipt,
+              revision,
+              signal,
+            );
+            if (!acceptPolicy(state, request, policy, revision)) return;
+            const current = await host.resolveRevision(
+              project,
+              task,
+              signal,
+              state.baseRevision,
+            );
+            if (
+              current !== revision ||
+              !(await prerequisitesCurrent(task, request, signal))
+            ) {
+              stop(
+                state,
+                "source or prerequisites changed during phase critic",
+                true,
+              );
+              return;
+            }
+          }
           if (state.stage === "review") {
             const revision = await host.resolveRevision(
               project,
@@ -543,6 +846,18 @@ export async function runMultiProjectOrchestrationPass(options: {
               stop(state, "final review readiness changed or is unresolved");
               return;
             }
+            if (
+              (await host.resolveRevision(
+                project,
+                task,
+                signal,
+                state.baseRevision,
+              )) !== revision ||
+              !(await prerequisitesCurrent(task, request, signal))
+            ) {
+              stop(state, "prerequisite evidence changed during review");
+              return;
+            }
             update(state, { status: "completed", artifacts }, "completed");
           } else if (state.stage === "implement" || state.stage === "fix") {
             const revision = await host.resolveRevision(
@@ -551,7 +866,10 @@ export async function runMultiProjectOrchestrationPass(options: {
               signal,
               state.baseRevision,
             );
-            if (!validRevision(revision)) {
+            if (
+              !validRevision(revision) ||
+              (host.assessPhase && revision !== state.revision)
+            ) {
               stop(state, "implemented revision unavailable", true);
               return;
             }
@@ -572,7 +890,10 @@ export async function runMultiProjectOrchestrationPass(options: {
               signal,
               state.baseRevision,
             );
-            if (!validRevision(revision)) {
+            if (
+              !validRevision(revision) ||
+              (host.assessPhase && revision !== state.revision)
+            ) {
               stop(state, "artifact source revision unavailable", true);
               return;
             }
@@ -601,15 +922,186 @@ export async function runMultiProjectOrchestrationPass(options: {
     }
   };
 
+  const followUps: OrchestrationPolicyEvidence[] = [];
+  const followed = new Set<string>();
+  const reconcileCompleted = async (): Promise<void> => {
+    if (!host.afterTask) return;
+    const active = journal.catalog(catalog.id);
+    for (const state of journal.states(catalog.id)) {
+      if (state.status !== "completed" || !state.revision) continue;
+      const key = digest({
+        run: catalog.id,
+        task: state.key,
+        revision: state.revision,
+      });
+      if (followed.has(key)) continue;
+      followed.add(key);
+      const configured = active.tasks.find(
+        (task) => taskKey(task) === state.key,
+      )!;
+      const task = structuredClone(
+        state.pullRequest
+          ? { ...configured, pullRequest: state.pullRequest }
+          : configured,
+      );
+      const retained = structuredClone(state);
+      freezeRequest(task);
+      freezeRequest(retained);
+      let outcome: OrchestrationPolicyEvidence;
+      try {
+        const current = await bounded(
+          (signal) =>
+            host.resolveRevision(
+              projects.get(task.projectId)!,
+              task,
+              signal,
+              state.baseRevision,
+            ),
+          catalog.invocationTimeoutMs,
+          controller.signal,
+        );
+        if (current !== state.revision)
+          throw new Error("Completed source changed before follow-up");
+        outcome = await bounded(
+          (signal) =>
+            host.afterTask!(
+              projects.get(task.projectId)!,
+              task,
+              retained,
+              signal,
+            ),
+          catalog.invocationTimeoutMs,
+          controller.signal,
+        );
+        const checks = evaluateOrchestrationChecks(
+          {
+            revision: outcome.revision,
+            policiesKnown: true,
+            required: outcome.checks.map((check) => check.name),
+            checks: outcome.checks,
+            labels: [],
+          },
+          state.revision,
+        );
+        evaluatedChecks += checks.evaluated;
+        if (
+          outcome.state === "passed" &&
+          (outcome.revision !== state.revision ||
+            checks.state !== "passed" ||
+            !Number.isSafeInteger(outcome.evaluatedScope) ||
+            outcome.evaluatedScope <= 0)
+        ) {
+          outcome = {
+            ...outcome,
+            state: "blocked",
+            evidence:
+              "Follow-up gate lacks non-vacuous revision-bound evidence",
+          };
+        }
+      } catch {
+        outcome = {
+          state: "unknown",
+          revision: state.revision,
+          evaluatedScope: 0,
+          checks: [],
+          evidence:
+            "Follow-up operation interrupted; external outcome unresolved",
+        };
+      }
+      const recordKey = `follow-up:${key}`;
+      const prior = journal.readHostRecord(recordKey);
+      if (
+        !journal.compareAndSwapHostRecord(
+          catalog.id,
+          lease,
+          recordKey,
+          prior.version,
+          { task: state.key, revision: state.revision, outcome },
+          { kind: "follow-up-outcome" },
+        )
+      )
+        throw new Error("Follow-up outcome CAS conflict");
+      followUps.push(outcome);
+    }
+  };
+
   try {
     journal.initialize(catalog, lease);
     catalog = journal.catalog(catalog.id);
+    if (host.bindRun) {
+      host = host.bindRun(
+        Object.freeze({
+          runId: catalog.id,
+          journal,
+          lease: Object.freeze({ ...lease }),
+        }),
+      );
+    }
     journal.recover(catalog.id, lease);
+    if (host.beforeTasks) {
+      let preparation: OrchestrationPolicyEvidence;
+      try {
+        preparation = await bounded(
+          (signal) => host.beforeTasks!(signal),
+          catalog.invocationTimeoutMs,
+          controller.signal,
+        );
+        const checks = evaluateOrchestrationChecks(
+          {
+            revision: preparation.revision,
+            policiesKnown: true,
+            required: preparation.checks.map((check) => check.name),
+            checks: preparation.checks,
+            labels: [],
+          },
+          preparation.revision,
+        );
+        evaluatedChecks += checks.evaluated;
+        if (
+          preparation.state === "passed" &&
+          (!validRevision(preparation.revision) ||
+            !Number.isSafeInteger(preparation.evaluatedScope) ||
+            preparation.evaluatedScope <= 0 ||
+            !preparation.evidence?.trim() ||
+            checks.state !== "passed")
+        )
+          preparation = {
+            ...preparation,
+            state: "blocked",
+            evidence: "Signal intake lacks non-vacuous evidence",
+          };
+      } catch {
+        preparation = {
+          state: "unknown",
+          revision: "",
+          evaluatedScope: 0,
+          checks: [],
+          evidence:
+            "Signal intake interrupted; retained reservations require reconciliation",
+        };
+      }
+      const preparationKey = `run-preparation:${digest(catalog.id)}`;
+      const previous = journal.readHostRecord(preparationKey);
+      if (
+        !journal.compareAndSwapHostRecord(
+          catalog.id,
+          lease,
+          preparationKey,
+          previous.version,
+          { outcome: preparation },
+          { kind: "run-preparation-outcome" },
+        )
+      )
+        throw new Error("Run preparation evidence changed concurrently");
+      followUps.push(preparation);
+    }
     for (
       let round = 0;
       round < catalog.maxRounds && !controller.signal.aborted;
       round++
     ) {
+      await reconcileCompleted();
+      catalog = journal.catalog(catalog.id);
       const states = journal.states(catalog.id);
       const selected: {
         task: OrchestrationTask;
@@ -681,17 +1173,21 @@ export async function runMultiProjectOrchestrationPass(options: {
         break;
     }
     if (leaseError) throw leaseError;
+    await reconcileCompleted();
     const tasks = journal.states(catalog.id);
     return {
       runId: catalog.id,
       tasks,
       dispatched,
       evaluatedChecks,
-      status: tasks.every((t) => t.status === "completed")
-        ? "completed"
-        : tasks.some((t) => ["needs-input", "unknown"].includes(t.status))
-          ? "needs-input"
-          : "pending",
+      ...(host.afterTask ? { followUps } : {}),
+      status: followUps.some((outcome) => outcome.state !== "passed")
+        ? "needs-input"
+        : tasks.every((t) => t.status === "completed")
+          ? "completed"
+          : tasks.some((t) => ["needs-input", "unknown"].includes(t.status))
+            ? "needs-input"
+            : "pending",
     };
   } finally {
     clearInterval(heartbeat);

@@ -21,7 +21,7 @@ No PR, merge, deployment, remote work item, credential change or automation occu
 | `docs/features/cowork-review/spec.md`       | Thin spec and acceptance criteria, persisted before code                      |
 | `docs/features/cowork-review/plan.md`       | Plan and decomposed local tasks                                               |
 | `docs/features/cowork-review/handoff.md`    | This evidence and integration contract                                        |
-| `docs/adr/0032-cowork-review-governance.md` | Proposed architecture decision                                                |
+| `docs/adr/0033-cowork-review-governance.md` | Proposed architecture decision                                                |
 | `.changeset/cowork-review-governance.md`    | Minor feature changeset                                                       |
 
 ## Verified evidence

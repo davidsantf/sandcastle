@@ -49,3 +49,19 @@ tests. Include negative controls for exact source evidence, duplicate hub
 creation, generation transaction rollback, changed replay, stale host fencing,
 acceptance contract mismatch and unavailable framework capabilities. Exercise
 both directions across providers without live remote writes.
+
+## Implemented integration
+
+`MultiProjectCoworkFactory.ts` adapts factory records and publication receipts
+to fenced journal CAS and atomic catalog generations. `MultiProjectCoworkPolicy.ts`
+retains contiguous critic/review history and authorization evidence in that same
+database. `MultiProjectCoworkDemo.ts` composes these adapters through the public
+CLI and executes measured evidence, quality comparison and release observation.
+
+For a later upstream revision, supply an amended trusted mapping with the
+previous required digest as `consumedDigest` and the prior full candidate key as
+`supersedes`. Reconstruct the configured host rather than mutate snapshotted
+routes. The new generation creates a separate task; the prior intent/PR stays
+unchanged. Revalidate the retained source and destination before every effect.
+Root signal-preparation failures also retain fenced outcome/events while
+independent tasks can complete. See `../cowork-integration/review.md`.

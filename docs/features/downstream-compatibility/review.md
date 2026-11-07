@@ -1,6 +1,9 @@
 # Journal integration evidence
 
-This is a verified foundation, not completion of automatic propagation.
+The historical foundation evidence below is now complemented by completed
+factory/policy integration. Final composed evidence, including both provider
+directions, SQLite process-exit recovery and immutable supersession, is in
+`../cowork-integration/review.md`.
 
 ## Implemented
 
@@ -79,12 +82,14 @@ session discovery, a POSIX path expectation, and Claude subagent file copies).
 Those unrelated areas were not changed. The targeted Copilot suite passes;
 this is not a claim that the full provider suite passes on Windows.
 
-## Remaining boundary
+## Final integration boundary
 
 Generic journal records are host-owned JSON, not authorization. A concrete
-factory adapter must validate completed publication receipts, independently
+factory adapter validates completed publication receipts, independently
 verified upstream revision/contract evidence, configured rules, lineage,
 budgets, approved destinations and exact downstream acceptance before append.
 Issue-backed registration, fenced critics/governance,
-measured quality loops and release observation are still being integrated.
+measured quality loops and release observation are integrated in the public
+composed host. Exact configured native transport and telemetry mappings,
+installed framework identity and independent attestations remain site-owned.
 No live hub write, coding/framework run, merge or deployment was performed.

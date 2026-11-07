@@ -695,12 +695,14 @@ const orchestrationCommand = Command.make(
   {
     config: Options.text("config").pipe(Options.optional),
     demo: Options.text("demo").pipe(Options.optional),
+    coworkDemo: Options.text("cowork-demo").pipe(Options.optional),
   },
-  ({ config, demo }) =>
+  ({ config, demo, coworkDemo }) =>
     Effect.tryPromise(async () => {
       const result = await runMultiProjectEntrypoint({
         config: Option.getOrUndefined(config),
         demoDirectory: Option.getOrUndefined(demo),
+        coworkDemoDirectory: Option.getOrUndefined(coworkDemo),
       });
       console.log(JSON.stringify(result, null, 2));
       if (result.status !== "completed") process.exitCode = 2;
