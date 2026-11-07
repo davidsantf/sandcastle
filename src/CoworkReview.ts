@@ -449,6 +449,8 @@ export async function runCoworkStageCritic(
       receipt.intent !== request.intent ||
       receipt.revision !== request.revision ||
       receipt.artifact !== request.artifact ||
+      !receipt.critic ||
+      Object.keys(receipt.critic).sort().join(",") !== "family,id" ||
       receipt.critic.id !== route.model.id ||
       receipt.critic.family !== route.model.family ||
       !["passed", "blocked", "unknown"].includes(receipt.state) ||

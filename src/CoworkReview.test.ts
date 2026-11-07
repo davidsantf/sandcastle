@@ -271,6 +271,13 @@ describe("staged review evidence, not worker approval", () => {
       for (const bad of [
         { artifact: "a".repeat(64) },
         { findings: ["blocking-signature"] },
+        {
+          critic: {
+            id: "critic-model",
+            family: "critic-family",
+            approved: true,
+          },
+        },
       ]) {
         expect(
           (
