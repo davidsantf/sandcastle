@@ -82,6 +82,28 @@ repair attempts 3 (maximum 3), per-capability deadline 300 seconds (maximum
 one hour). Overrides are catalog fields `maxConcurrency`, `maxRounds`,
 `maxRepairAttempts`, and `invocationTimeoutMs`.
 
+### Host records and catalog generations
+
+`MultiProjectJournal` now upgrades schema 1 to schema 2 transactionally.
+It provides `readHostRecord(key)` and
+`compareAndSwapHostRecord(run, lease, key, expectedVersion, value, event)`.
+Namespaced digest keys are global within the shared database; events retain
+run context. Only trusted host adapters receive leases. Records contain bounded
+plain JSON, not credentials or worker-supplied executable capabilities.
+
+`appendCatalogTasks(run, lease, tasks, cause)` appends immutable catalog deltas
+and initial task state/events atomically. `cause` is
+`{recordKey, recordVersion, recordDigest}`, bound to retained host evidence.
+The same cause replays once; changed content conflicts. `catalog(run)` resolves
+the active generation while keeping original configured content immutable.
+The scheduler resolves this active generation automatically on restart.
+
+These are integration primitives, not automatic impact authorization. A factory
+adapter must independently validate source/contract evidence, completed hub
+publication, configured rules and budgets before append. Automatic propagation
+and issue-to-PR registration are not yet wired in this foundation;
+see `docs/features/downstream-compatibility/`.
+
 Example trusted module:
 
 ```javascript

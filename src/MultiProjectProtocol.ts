@@ -257,6 +257,9 @@ export const parseWorkerReceipt = (
   value: unknown,
 ): OrchestrationWorkerReceipt => workerReceiptSchema.parse(value);
 
+export const parseOrchestrationTasks = (value: unknown): OrchestrationTask[] =>
+  catalogSchema.shape.tasks.element.array().min(1).max(100).parse(value);
+
 export const parseOrchestrationCatalog = (
   value: unknown,
 ): OrchestrationCatalog => {
@@ -325,15 +328,13 @@ export const parseOrchestrationCatalog = (
     for (const dep of task.dependsOn) {
       if (!tasks.has(dep)) throw new Error(`unknown dependency: ${dep}`);
     }
-    for (const task of catalog.tasks) {
-      const producer = catalog.tasks.find(
-        (other) =>
-          other.projectId === task.projectId &&
-          other.branch.toLowerCase() === task.baseBranch.toLowerCase(),
-      );
-      if (producer && !task.dependsOn.includes(taskKey(producer)))
-        throw new Error("a task base branch requires its producer dependency");
-    }
+    const producer = catalog.tasks.find(
+      (other) =>
+        other.projectId === task.projectId &&
+        other.branch.toLowerCase() === task.baseBranch.toLowerCase(),
+    );
+    if (producer && !task.dependsOn.includes(taskKey(producer)))
+      throw new Error("a task base branch requires its producer dependency");
     for (const contract of task.requiresContracts) {
       if (
         !task.dependsOn.includes(contract.task) ||

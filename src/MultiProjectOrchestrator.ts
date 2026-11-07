@@ -142,7 +142,7 @@ export async function runMultiProjectOrchestrationPass(options: {
   now?: () => number;
 }): Promise<MultiProjectPassResult> {
   const parsed = parseOrchestrationCatalog(options.catalog);
-  const catalog = {
+  let catalog = {
     ...parsed,
     projects: parsed.projects.map((project) => ({
       ...project,
@@ -603,6 +603,7 @@ export async function runMultiProjectOrchestrationPass(options: {
 
   try {
     journal.initialize(catalog, lease);
+    catalog = journal.catalog(catalog.id);
     journal.recover(catalog.id, lease);
     for (
       let round = 0;

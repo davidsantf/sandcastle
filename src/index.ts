@@ -1,6 +1,12 @@
 export { run } from "./run.js";
 export { MultiProjectJournal } from "./MultiProjectJournal.js";
-export type { OrchestrationLease } from "./MultiProjectJournal.js";
+export type {
+  OrchestrationLease,
+  OrchestrationHostRecord,
+  OrchestrationHostEvent,
+  OrchestrationCatalogCause,
+  OrchestrationCatalogGeneration,
+} from "./MultiProjectJournal.js";
 export { runMultiProjectOrchestrationPass } from "./MultiProjectOrchestrator.js";
 export type {
   MultiProjectHost,
