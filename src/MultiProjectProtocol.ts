@@ -16,13 +16,13 @@ export interface OrchestrationProject {
   repositoryRoot: string;
   mode: "individual" | "integrated";
   hub:
-    | { kind: "github"; repository: string; pullRequest: number }
+    | { kind: "github"; repository: string; pullRequest?: number }
     | {
         kind: "ado";
         organization: string;
         project: string;
         repository: string;
-        pullRequest: number;
+        pullRequest?: number;
       };
 }
 
@@ -180,7 +180,7 @@ const hubSchema = z.discriminatedUnion("kind", [
     .object({
       kind: z.literal("github"),
       repository: z.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/),
-      pullRequest: z.number().int().positive(),
+      pullRequest: z.number().int().positive().optional(),
     })
     .strict(),
   z
@@ -189,7 +189,7 @@ const hubSchema = z.discriminatedUnion("kind", [
       organization: z.string().regex(/^[A-Za-z0-9_-]+$/),
       project: z.string().min(1).max(200),
       repository: z.string().min(1).max(200),
-      pullRequest: z.number().int().positive(),
+      pullRequest: z.number().int().positive().optional(),
     })
     .strict(),
 ]);
@@ -211,7 +211,6 @@ const catalogSchema = z
           })
           .strict(),
       )
-      .min(1)
       .max(100),
     tasks: z
       .array(
@@ -240,7 +239,6 @@ const catalogSchema = z
           })
           .strict(),
       )
-      .min(1)
       .max(1_000),
     maxConcurrency: z.number().int().min(1).max(16).default(2),
     maxRounds: z.number().int().min(1).max(100).default(30),
@@ -342,7 +340,9 @@ export const parseOrchestrationCatalog = (
       throw new Error("source item provider must match the configured project");
     const changeRequestKey = task.sourceItem
       ? `${task.projectId}:item:${task.sourceItem.provider}:${task.sourceItem.id}`
-      : `${task.projectId}:${task.pullRequest ?? project.hub.pullRequest}`;
+      : (task.pullRequest ?? project.hub.pullRequest)
+        ? `${task.projectId}:${task.pullRequest ?? project.hub.pullRequest}`
+        : `${task.projectId}:unregistered:${task.id}`;
     if (pullRequests.has(changeRequestKey))
       throw new Error("task change requests must be distinct");
     pullRequests.add(changeRequestKey);
