@@ -18,6 +18,7 @@ import {
   createOrchestrationNativeAcceptance,
   createOrchestrationNativeSetup,
   createOrchestrationNativeTick,
+  createOrchestrationProposalTask,
   type OrchestrationNativeConfiguration,
   type OrchestrationIntakeFocusEvaluator,
   type OrchestrationNativeTickContext,
@@ -154,6 +155,34 @@ function context(configuration = config()) {
   return { configuration, store, signal: signal(), operations };
 }
 describe("native service intake integration", () => {
+  it.each(["team", "iteration", "query"] as const)(
+    "blocks unverified native %s scope before polling or effects",
+    async (scope) => {
+      const configuration = config();
+      configuration.focus = {
+        ...configuration.focus,
+        [scope]: "selected-scope",
+      };
+      const ctx = context(configuration),
+        transport = vi.fn(),
+        planner = vi.fn(),
+        dispatch = vi.fn();
+      const perform = vi.spyOn(ctx.operations, "perform");
+      const tick = createOrchestrationNativeTick({
+        evaluateFocus,
+        planner,
+        dispatch,
+        transport: () => transport,
+      });
+      expect((await tick(ctx)).diagnostics.join()).toContain(
+        "mapping is unverified",
+      );
+      expect(transport).not.toHaveBeenCalled();
+      expect(planner).not.toHaveBeenCalled();
+      expect(dispatch).not.toHaveBeenCalled();
+      expect(perform).not.toHaveBeenCalled();
+    },
+  );
   it("uses the actual canonical SQLite store, replays polling, and invokes planner once", async () => {
     const ctx = context();
     const planner = vi.fn(async () => artifacts);
@@ -282,6 +311,33 @@ describe("native service intake integration", () => {
   });
 });
 describe("concrete native setup controls", () => {
+  it.each(["team", "iteration", "query"] as const)(
+    "blocks configured planner %s scope without reflecting selection as evidence",
+    async (scope) => {
+      const configuration = config();
+      configuration.focus = {
+        ...configuration.focus,
+        [scope]: "selected-scope",
+      };
+      const sandbox = vi.fn(() => noSandbox()),
+        evaluate = vi.fn(evaluateFocus);
+      const configured = createConfiguredDevsquadProposalPlanner({
+        configuration,
+        evaluateFocus: evaluate,
+        tasks: [task],
+        sandbox,
+      });
+      await expect(
+        configured.plan(item(), configuration, signal()),
+      ).rejects.toThrow("mapping is unverified");
+      expect(
+        (await configured.preflight(signal())).missingCapabilities.join(),
+      ).toContain("mapping is unverified");
+      expect(evaluate).not.toHaveBeenCalled();
+      expect(sandbox).not.toHaveBeenCalled();
+      expect(run).not.toHaveBeenCalled();
+    },
+  );
   it("verifies actual definition bytes and rejects changed definitions", async () => {
     const root = folder(),
       definition =
@@ -337,11 +393,63 @@ describe("concrete native setup controls", () => {
     const readiness = await configured.preflight(signal());
     expect(readiness.executionReady).toBe(false);
     expect(readiness.diagnostics.join()).toContain("independent executed");
-    await expect(
-      configured.plan(item(), configuration, signal()),
-    ).rejects.toThrow("execution is blocked");
+    expect(readiness.missingCapabilities.join()).toContain("Backend lacks");
+    expect(readiness.missingConfiguration.join()).toContain("Installed");
+    const unboundPlan = configured.plan;
+    await expect(unboundPlan(item(), configuration, signal())).rejects.toThrow(
+      "execution is blocked",
+    );
     expect(sandbox).not.toHaveBeenCalled();
     expect(run).not.toHaveBeenCalled();
+  });
+  it("binds task identity to template, source and configuration without inventing scope", () => {
+    const first = createOrchestrationProposalTask(task, item(), 1);
+    expect(createOrchestrationProposalTask(task, item(), 1)).toEqual(first);
+    expect(
+      createOrchestrationProposalTask(
+        { ...task, brief: "Changed trusted instructions" },
+        item(),
+        1,
+      ).branch,
+    ).not.toBe(first.branch);
+    expect(
+      createOrchestrationProposalTask(task, { ...item(), id: "2" }, 1).branch,
+    ).not.toBe(first.branch);
+    expect(createOrchestrationProposalTask(task, item(), 2).branch).not.toBe(
+      first.branch,
+    );
+    expect(first.scopes).toEqual(task.scopes);
+    expect(first.acceptance).toEqual(task.acceptance);
+    expect(first).not.toHaveProperty("pullRequest");
+    expect(() =>
+      createOrchestrationProposalTask({ ...task, pullRequest: 44 }, item(), 1),
+    ).toThrow("borrow");
+    expect(() =>
+      createOrchestrationProposalTask(
+        { ...task, dependsOn: ["api:other"] },
+        item(),
+        1,
+      ),
+    ).toThrow("dependencies");
+    expect(() =>
+      createOrchestrationProposalTask(
+        {
+          ...task,
+          requiresContracts: [{ task: "api:other", name: "contract" }],
+        },
+        item(),
+        1,
+      ),
+    ).toThrow("dependencies");
+  });
+  it("rejects ambiguous project templates before any native probe", () => {
+    expect(() =>
+      createConfiguredDevsquadProposalPlanner({
+        configuration: config(),
+        evaluateFocus,
+        tasks: [task, { ...task, id: "second" }],
+      }),
+    ).toThrow("one trusted");
   });
   it("runs trusted acceptance argv and reports actual nonzero process failure", async () => {
     const checks = createOrchestrationNativeAcceptance({

@@ -80,6 +80,14 @@ const pollStateSchema = z.strictObject({
   retryAt: z.number(),
   diagnostic: z.string().optional(),
 });
+const nativeScopeDiagnostic = (
+  focus: OrchestrationNativeConfiguration["focus"],
+) =>
+  focus.team !== undefined ||
+  focus.iteration !== undefined ||
+  focus.query !== undefined
+    ? "Native source/item team, iteration and query mapping is unverified; scoped polling, planning and dispatch are blocked"
+    : undefined;
 
 export function createOrchestrationNativeTick(options: {
   evaluateFocus: OrchestrationIntakeFocusEvaluator;
@@ -108,16 +116,13 @@ export function createOrchestrationNativeTick(options: {
       now,
     });
     const diagnostics: string[] = [];
-    const scope = {
-      team: configuration.focus.team,
-      iteration: configuration.focus.iteration,
-      query: configuration.focus.query,
-    };
+    const unsupportedScope = nativeScopeDiagnostic(configuration.focus);
+    if (unsupportedScope)
+      return { proposals: queue.list(), diagnostics: [unsupportedScope] };
     const allowed = (projectId: string, action: OrchestrationIntakeAction) =>
       options.evaluateFocus(configuration.focus, {
         projectId,
         action,
-        ...scope,
       });
     const adapters = new Map<
       string,
@@ -236,7 +241,6 @@ export function createOrchestrationNativeTick(options: {
             intent: { proposal: proposal.id },
             projectId: item.projectId,
             action: "investigate",
-            ...scope,
           },
           (s) =>
             queue.plan(
@@ -259,7 +263,6 @@ export function createOrchestrationNativeTick(options: {
             id: `proposal:${proposal.id}:dispatch`,
             projectId: item.projectId,
             action: "implement",
-            ...scope,
             intent: {
               proposalDigest: proposal.digest,
               sourceRevision: proposal.sourceRevision,
@@ -435,10 +438,11 @@ export function createOrchestrationNativeSetup(options: {
       return null;
     const metadata = await stat(canonical);
     if (!metadata.isFile() || metadata.size > 256_000) return null;
-    const body = await readFile(canonical, "utf8");
+    const bytes = await readFile(canonical);
+    const body = bytes.toString("utf8");
     if (
-      Buffer.byteLength(body) > 256_000 ||
-      createHash("sha256").update(body).digest("hex") !==
+      bytes.length > 256_000 ||
+      createHash("sha256").update(bytes).digest("hex") !==
         definition.definitionDigest
     )
       return null;
@@ -552,6 +556,41 @@ export function createOrchestrationNativeSetup(options: {
   };
 }
 
+/** Derives a fresh task without borrowing change-request or dependency authority. */
+export function createOrchestrationProposalTask(
+  template: OrchestrationTask,
+  item: OrchestrationDiscoveredItem,
+  configurationRevision: number,
+): OrchestrationTask {
+  const parsed = parseOrchestrationTasks([template])[0]!;
+  z.number().int().positive().parse(configurationRevision);
+  if (parsed.projectId !== item.projectId)
+    throw new Error("Proposal template project binding mismatch");
+  if (parsed.sourceItem || parsed.pullRequest !== undefined)
+    throw new Error(
+      "Proposal templates cannot borrow existing source/change-request authority",
+    );
+  if (parsed.dependsOn.length || parsed.requiresContracts.length)
+    throw new Error(
+      "Proposal templates cannot contain unresolved task dependencies; register dependencies through the canonical lifecycle",
+    );
+  const suffix = digest({
+    template: parsed,
+    sourceId: item.sourceId,
+    projectId: item.projectId,
+    itemId: item.id,
+    sourceRevision: item.revision,
+    configurationRevision,
+  }).slice(0, 20);
+  return parseOrchestrationTasks([
+    {
+      ...parsed,
+      id: `proposal-${suffix}`,
+      branch: `${parsed.branch}/${suffix}`,
+    },
+  ])[0]!;
+}
+
 /** Data-only setup for the existing executor; never invents task or backend authority. */
 export function createConfiguredDevsquadProposalPlanner(options: {
   configuration: WorkspaceConfiguration;
@@ -565,7 +604,11 @@ export function createConfiguredDevsquadProposalPlanner(options: {
     : [];
   if (new Set(tasks.map((t) => t.projectId)).size !== tasks.length)
     throw new Error("Provide one trusted proposal task template per project");
-  if (tasks.some((t) => t.dependsOn.length))
+  if (tasks.some((t) => t.sourceItem || t.pullRequest !== undefined))
+    throw new Error(
+      "Proposal templates cannot borrow existing source/change-request authority",
+    );
+  if (tasks.some((t) => t.dependsOn.length || t.requiresContracts.length))
     throw new Error(
       "Proposal templates cannot contain unresolved task dependencies; register dependencies through the canonical lifecycle",
     );
@@ -583,15 +626,11 @@ export function createConfiguredDevsquadProposalPlanner(options: {
       const template = tasks.find((t) => t.projectId === item.projectId);
       if (!template)
         throw new Error("No trusted task/acceptance template registered");
-      const suffix = digest([item.sourceId, item.id, item.revision]).slice(
-        0,
-        20,
+      return createOrchestrationProposalTask(
+        template,
+        item,
+        configuration.revision,
       );
-      return {
-        ...template,
-        id: `proposal-${suffix}`,
-        branch: `${template.branch}/${suffix}`,
-      };
     },
     project: (projectId) => {
       const project = configuration.projects.find((p) => p.id === projectId);
@@ -610,6 +649,8 @@ export function createConfiguredDevsquadProposalPlanner(options: {
     signal: AbortSignal,
   ): Promise<OrchestrationNativeReadiness> => {
     const readiness = await setup.preflight(signal);
+    const unsupportedScope = nativeScopeDiagnostic(configuration.focus);
+    if (unsupportedScope) readiness.missingCapabilities.push(unsupportedScope);
     if (!options.sandbox)
       readiness.missingConfiguration.push(
         "No explicitly registered execution backend",
@@ -639,12 +680,14 @@ export function createConfiguredDevsquadProposalPlanner(options: {
         throw new OrchestrationProposalBlockedError(
           "Planner configuration changed; recreate the configured planner",
         );
+      const unsupportedScope = nativeScopeDiagnostic(
+        currentConfiguration.focus,
+      );
+      if (unsupportedScope)
+        throw new OrchestrationProposalBlockedError(unsupportedScope);
       const policy = options.evaluateFocus(currentConfiguration.focus, {
         projectId: item.projectId,
         action: "investigate",
-        team: currentConfiguration.focus.team,
-        iteration: currentConfiguration.focus.iteration,
-        query: currentConfiguration.focus.query,
       });
       if (!policy.allowed)
         throw new OrchestrationProposalBlockedError(

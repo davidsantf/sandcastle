@@ -236,4 +236,100 @@ describe("bounded explicit native discovery", () => {
       createOrchestrationDiscoveryAdapter(ado, transport).poll(null, signal()),
     ).rejects.toThrow("access");
   });
+  it("rejects a repository or item identity mismatch during exact refresh", async () => {
+    const observed = (
+      await createOrchestrationDiscoveryAdapter(source(), github()).poll(
+        null,
+        signal(),
+      )
+    ).items[0]!;
+    for (const response of [
+      issue(2),
+      { ...issue(), html_url: "https://github.com/foreign/repo/issues/1" },
+    ]) {
+      const adapter = createOrchestrationDiscoveryAdapter(
+        source(),
+        async () => ({ status: 200, body: response }),
+      );
+      await expect(adapter.refresh(observed, signal())).rejects.toThrow(
+        "invalid",
+      );
+    }
+  });
+  it("keeps revisions stable when feedback ordering changes", async () => {
+    let reversed = false;
+    const comments = [
+      { id: 1, body: "First", updated_at: issue().updated_at },
+      { id: 2, body: "Second", updated_at: issue().updated_at },
+    ];
+    const adapter = createOrchestrationDiscoveryAdapter(
+      source(),
+      async ({ url }) => ({
+        status: 200,
+        body: url.includes("/issues?")
+          ? [issue()]
+          : url.includes("/comments?")
+            ? reversed
+              ? [...comments].reverse()
+              : comments
+            : [],
+      }),
+    );
+    const first = (await adapter.poll(null, signal())).items[0]!;
+    reversed = true;
+    expect((await adapter.poll(null, signal())).items[0]!.revision).toBe(
+      first.revision,
+    );
+  });
+  it("checks ADO project membership before following a dependency outside the selected item", async () => {
+    const ado = source({
+      hub: {
+        kind: "ado",
+        organization: "org",
+        project: "proj",
+        repository: "repo",
+      },
+      selector: { optedInLabel: "opt-in" },
+      includeReviewFeedback: false,
+    });
+    const transport = vi.fn<OrchestrationDiscoveryTransport>(
+      async ({ method, body }) => {
+        if (method === "POST")
+          return {
+            status: 200,
+            body: {
+              workItems: JSON.stringify(body).includes("[System.Id] = 2")
+                ? []
+                : [{ id: 1 }],
+            },
+          };
+        return {
+          status: 200,
+          body: {
+            id: 1,
+            rev: 1,
+            fields: {
+              "System.TeamProject": "proj",
+              "System.Tags": "opt-in",
+            },
+            relations: [
+              {
+                rel: "System.LinkTypes.Dependency-Forward",
+                url: "https://dev.azure.com/org/_apis/wit/workItems/2",
+              },
+            ],
+          },
+        };
+      },
+    );
+    await expect(
+      createOrchestrationDiscoveryAdapter(ado, transport).poll(null, signal()),
+    ).rejects.toThrow("access");
+    expect(
+      transport.mock.calls.some(
+        ([request]) =>
+          request.method === "GET" && request.url.includes("workitems/2"),
+      ),
+    ).toBe(false);
+  });
 });
