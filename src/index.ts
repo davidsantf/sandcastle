@@ -1,4 +1,144 @@
 export { run } from "./run.js";
+export { MultiProjectJournal } from "./MultiProjectJournal.js";
+export type {
+  OrchestrationLease,
+  OrchestrationHostRecord,
+  OrchestrationHostEvent,
+  OrchestrationCatalogCause,
+  OrchestrationCatalogGeneration,
+} from "./MultiProjectJournal.js";
+export { runMultiProjectOrchestrationPass } from "./MultiProjectOrchestrator.js";
+export type {
+  MultiProjectHost,
+  MultiProjectPassResult,
+  OrchestrationValidationEvidence,
+  OrchestrationHostRunContext,
+  OrchestrationPolicyEvidence,
+} from "./MultiProjectOrchestrator.js";
+export {
+  parseOrchestrationCatalog,
+  evaluateOrchestrationChecks,
+  taskKey,
+} from "./MultiProjectProtocol.js";
+export type {
+  OrchestrationCatalog,
+  OrchestrationProject,
+  OrchestrationTask,
+  OrchestrationTaskState,
+  OrchestrationStage,
+  OrchestrationCheck,
+  OrchestrationHubEvidence,
+  OrchestrationWorkerRequest,
+  OrchestrationWorkerReceipt,
+} from "./MultiProjectProtocol.js";
+export {
+  createGitHubOrchestrationHub,
+  createAdoOrchestrationHub,
+  createAdoReadTransport,
+  githubCliTransport,
+} from "./MultiProjectHubs.js";
+export type { OrchestrationHubTransport } from "./MultiProjectHubs.js";
+export {
+  createSandcastleOrchestrationWorker,
+  createDevsquadOrchestrationWorker,
+  buildMultiProjectWorkerPrompt,
+  resolveOrchestrationGitRevision,
+} from "./MultiProjectWorker.js";
+export type { DevsquadPhaseCapability } from "./MultiProjectWorker.js";
+export { runMultiProjectDemo } from "./MultiProjectDemo.js";
+export { runMultiProjectCoworkDemo } from "./MultiProjectCoworkDemo.js";
+export { runMultiProjectEntrypoint } from "./MultiProjectEntrypoint.js";
+export type { MultiProjectHostConfiguration } from "./MultiProjectEntrypoint.js";
+export { createMultiProjectSandcastleHost } from "./MultiProjectHostFactory.js";
+export { createCoworkOrchestrationHost } from "./MultiProjectCoworkPolicy.js";
+export type {
+  CoworkOrchestrationClassification,
+  CoworkOrchestrationProducerEvidence,
+  CoworkOrchestrationHostOptions,
+} from "./MultiProjectCoworkPolicy.js";
+export {
+  createCoworkJournalStore,
+  createCoworkOrchestrationFactory,
+} from "./MultiProjectCoworkFactory.js";
+export type {
+  CoworkCompatibilityRoute,
+  CoworkChangeRequestReceipt,
+  CoworkOrchestrationFactoryOptions,
+} from "./MultiProjectCoworkFactory.js";
+export {
+  selectCoworkCritic,
+  runCoworkReview,
+  runCoworkStageCritic,
+} from "./CoworkReview.js";
+export * from "./CoworkReviewContract.js";
+export { evaluateCoworkInstructions } from "./CoworkGovernance.js";
+export * from "./CoworkGovernanceContract.js";
+export { evaluateCoworkDependencies } from "./CoworkGovernanceDependencies.js";
+export type {
+  CoworkDependencyRole,
+  CoworkDependencyFile,
+  CoworkDependencyViolation,
+  CoworkDependencyResult,
+  CoworkDependencyPolicy,
+} from "./CoworkGovernanceDependencies.js";
+export * from "./CoworkFactoryContract.js";
+export {
+  evaluateCoworkSignal,
+  intakeCoworkSignal,
+  proposeCoworkItem,
+  normalizeCoworkItem,
+  publishCoworkItem,
+  reconcileCoworkItem,
+} from "./CoworkFactory.js";
+export type {
+  CoworkSignalDecision,
+  CoworkNativeItem,
+  CoworkItemHost,
+  CoworkPublicationResult,
+} from "./CoworkFactory.js";
+export { createCoworkNativeItemHost } from "./CoworkNativeItems.js";
+export type { CoworkNativeItemTransport } from "./CoworkNativeItems.js";
+export {
+  evaluateCoworkImpact,
+  persistCoworkImpact,
+  coworkCompatibilityTask,
+} from "./CoworkFactoryImpact.js";
+export type {
+  CoworkContractChange,
+  CoworkConsumerMapping,
+  CoworkImpactHost,
+  CoworkImpactResult,
+  CoworkCompatibilityTask,
+} from "./CoworkFactoryImpact.js";
+export * from "./CoworkMeasuredLoops.js";
+export { runCoworkEvidencePipeline } from "./CoworkMeasuredLoopsExecution.js";
+export type {
+  CoworkMaterialStage,
+  CoworkStageEvidenceRequest,
+  CoworkStageEvidenceReceipt,
+  CoworkIsolatedMeasurementRequest,
+  CoworkEvidenceExecutionHost,
+} from "./CoworkMeasuredLoopsExecution.js";
+export { runCoworkQualityComparison } from "./CoworkMeasuredLoopsComparison.js";
+export type {
+  CoworkQualityComparison,
+  CoworkQualityHost,
+} from "./CoworkMeasuredLoopsComparison.js";
+export {
+  createCoworkReleaseProvider,
+  evaluateCoworkRelease,
+  observeCoworkRelease,
+  coworkReleaseRecurrenceCandidate,
+} from "./CoworkFactoryRelease.js";
+export type {
+  CoworkReleaseRegistration,
+  CoworkReleaseObservation,
+  CoworkReleaseRequest,
+  CoworkReleaseProvider,
+  CoworkReleaseReadTransport,
+  CoworkReleaseResult,
+} from "./CoworkFactoryRelease.js";
+export { runCoworkFactoryLocalExample } from "./CoworkFactoryExample.js";
 export type {
   RunOptions,
   RunResult,

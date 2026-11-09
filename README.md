@@ -63,6 +63,39 @@ await run({
 });
 ```
 
+## Multi-project DevSquad orchestration
+
+`sandcastle orchestrate` coordinates independent and integrated GitHub/ADO
+projects through specify, plan, decompose, implement, verify, and review. The
+host owns authorization and acceptance; workers cannot approve themselves,
+merge, deploy, or mutate hubs. A transactional SQLite journal retains artifacts,
+exclusive reservations, fencing, and unknown outcomes across restarts.
+
+Requires Node 22.13+ for this feature. Try the offline scripted-worker demo:
+
+```powershell
+sandcastle orchestrate --demo .\.sandcastle\orchestration-demo
+```
+
+Run it again with the same directory to resume without redispatch. For real
+workers, use `sandcastle orchestrate --config <trusted-host-module>` with explicit
+authorization, validation, sandbox, and native GitHub/ADO evidence adapters.
+Use `createDevsquadOrchestrationWorker()` as the host's `execute` capability
+to select installed named DevSquad phase agents through Copilot CLI `--agent`.
+Unavailable or unattested framework capabilities do not fall back to generic
+workers. The offline demo does not execute DevSquad.
+See [setup, authority boundaries, and recovery](docs/agents/multi-project-orchestration.md).
+Cowork composition adds diverse critics, governed instruction/component checks,
+durable signal-to-item scheduling, and downstream compatibility tasks. A verified
+contract change in A can create a GitHub/ADO item in B and dispatch B's agent;
+its later PR is separately authorized and registered without changing its intent.
+Run `sandcastle orchestrate --cowork-demo .\.sandcastle\cowork-demo` for the
+composed offline fixture, including executed negative controls, quantitative
+quality gates, and synthetic read-only first-ring evidence.
+See [Cowork configuration](docs/agents/cowork-orchestration.md).
+External item/PR creation requires configured host authorization. Push, merge,
+deployment and recurring automation are not automatic.
+
 ## Persistent DevSquad/ADO workflow checkpoints
 
 Host coordinators can persist offline resume state and serialize local workflow

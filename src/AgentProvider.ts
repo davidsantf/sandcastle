@@ -1100,6 +1100,8 @@ const parseCopilotStreamLine = (line: string): ParsedStreamEvent[] => {
 
 /** Options for the GitHub Copilot CLI agent provider. */
 export interface CopilotOptions {
+  /** Installed custom agent selected using the CLI's --agent flag. */
+  readonly agent?: string;
   /** Reasoning effort level. Maps to the CLI's --effort flag. */
   readonly effort?: "low" | "medium" | "high";
   /** Environment variables injected by this agent provider. */
@@ -1109,44 +1111,55 @@ export interface CopilotOptions {
 export const copilot = (
   model: string,
   options?: CopilotOptions,
-): AgentProvider => ({
-  name: "copilot",
-  env: options?.env ?? {},
-  captureSessions: false,
+): AgentProvider => {
+  if (
+    options?.agent !== undefined &&
+    !/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,199}$/.test(options.agent)
+  )
+    throw new Error("invalid Copilot custom agent name");
+  return {
+    name: "copilot",
+    env: options?.env ?? {},
+    captureSessions: false,
 
-  // Copilot CLI does expose `--resume <id>`, but its session state is indexed by
-  // a SQLite database alongside the JSONL files in ~/.copilot/session-state/, so
-  // transferring a single session file between host and sandbox is not enough to
-  // make resume work (see ADR 0016). Until the round-trip is verified end-to-end,
-  // copilot is non-resumable: captureSessions is false, there is no sessionStorage,
-  // and resumeSession is ignored here — like cursor, pi, and opencode.
-  buildPrintCommand({
-    prompt,
-    dangerouslySkipPermissions,
-  }: AgentCommandOptions): PrintCommand {
-    assertCopilotPrintPromptFitsArgv(prompt);
-    const allowAll = dangerouslySkipPermissions ? " --allow-all-tools" : "";
-    const effortFlag = options?.effort ? ` --effort ${options.effort}` : "";
-    return {
-      command: `copilot -p ${shellEscape(prompt)} --output-format json --model ${shellEscape(model)}${allowAll}${effortFlag}`,
-    };
-  },
+    // Copilot CLI does expose `--resume <id>`, but its session state is indexed by
+    // a SQLite database alongside the JSONL files in ~/.copilot/session-state/, so
+    // transferring a single session file between host and sandbox is not enough to
+    // make resume work (see ADR 0016). Until the round-trip is verified end-to-end,
+    // copilot is non-resumable: captureSessions is false, there is no sessionStorage,
+    // and resumeSession is ignored here — like cursor, pi, and opencode.
+    buildPrintCommand({
+      prompt,
+      dangerouslySkipPermissions,
+    }: AgentCommandOptions): PrintCommand {
+      assertCopilotPrintPromptFitsArgv(prompt);
+      const allowAll = dangerouslySkipPermissions ? " --allow-all-tools" : "";
+      const effortFlag = options?.effort ? ` --effort ${options.effort}` : "";
+      const agentFlag = options?.agent
+        ? ` --agent ${shellEscape(options.agent)}`
+        : "";
+      return {
+        command: `copilot -p ${shellEscape(prompt)} --output-format json --model ${shellEscape(model)}${allowAll}${effortFlag}${agentFlag}`,
+      };
+    },
 
-  buildInteractiveArgs({ prompt }: AgentCommandOptions): string[] {
-    const args = ["copilot", "--model", model];
-    // Seed the interactive session with `-i`/`--interactive`, NOT `-p`. The
-    // `-p`/`--prompt` flag runs the prompt programmatically and exits after
-    // completion; since interactive() attaches these args to the real TTY,
-    // `-p` would print-and-exit instead of launching the TUI. `-i` starts an
-    // interactive session and auto-executes the prompt without exiting.
-    if (prompt) args.push("-i", prompt);
-    return args;
-  },
+    buildInteractiveArgs({ prompt }: AgentCommandOptions): string[] {
+      const args = ["copilot", "--model", model];
+      if (options?.agent) args.push("--agent", options.agent);
+      // Seed the interactive session with `-i`/`--interactive`, NOT `-p`. The
+      // `-p`/`--prompt` flag runs the prompt programmatically and exits after
+      // completion; since interactive() attaches these args to the real TTY,
+      // `-p` would print-and-exit instead of launching the TUI. `-i` starts an
+      // interactive session and auto-executes the prompt without exiting.
+      if (prompt) args.push("-i", prompt);
+      return args;
+    },
 
-  parseStreamLine(line: string): ParsedStreamEvent[] {
-    return parseCopilotStreamLine(line);
-  },
-});
+    parseStreamLine(line: string): ParsedStreamEvent[] {
+      return parseCopilotStreamLine(line);
+    },
+  };
+};
 
 // ---------------------------------------------------------------------------
 // Claude Code agent provider
