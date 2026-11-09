@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   createOrchestrationDiscoveryAdapter,
+  getOrchestrationNativeScopeReadiness,
   orchestrationDiscoverySourceSchema,
   type OrchestrationDiscoverySource,
   type OrchestrationDiscoveryTransport,
+  type OrchestrationDiscoveryScope,
 } from "./OrchestrationDiscovery.js";
 
 const signal = () => new AbortController().signal;
@@ -31,6 +33,255 @@ const github = (items = [issue()]) =>
     status: 200,
     body: url.includes("/issues?") ? items : [],
   }));
+const projectId = "11111111-1111-4111-8111-111111111111";
+const teamId = "22222222-2222-4222-8222-222222222222";
+const savedQuery = "33333333-3333-4333-8333-333333333333";
+const adoSource = () =>
+  source({
+    id: "ado",
+    hub: {
+      kind: "ado",
+      organization: "org",
+      project: "proj",
+      repository: "repo",
+    },
+    selector: { optedInLabel: "opt-in" },
+    maxPages: 1,
+    includeDependencies: false,
+    includeReviewFeedback: false,
+  });
+function scopedAdo() {
+  const state = {
+    iteration: "proj\\Sprint 1",
+    area: "proj\\API\\Child",
+    teamName: "API Team",
+    teamProject: projectId,
+    settingsField: "System.AreaPath",
+    settingsArea: "proj\\API",
+    includeChildren: true,
+    queryType: "flat",
+    queryProject: projectId,
+    queryItems: [10],
+    projectMembers: [10],
+    itemProject: "proj",
+  };
+  const transport = vi.fn<OrchestrationDiscoveryTransport>(
+    async ({ url, method }) => {
+      let body: unknown;
+      if (url.includes("/_apis/git/repositories/"))
+        body = {
+          id: "repository",
+          name: "repo",
+          project: { id: projectId, name: "proj" },
+        };
+      else if (url.includes("/_apis/projects/"))
+        body = {
+          id: teamId,
+          name: state.teamName,
+          url: `https://dev.azure.com/org/_apis/projects/${state.teamProject}/teams/${teamId}`,
+        };
+      else if (url.includes("/teamfieldvalues"))
+        body = {
+          field: { referenceName: state.settingsField },
+          url: `https://dev.azure.com/org/${projectId}/${teamId}/_apis/work/teamsettings/teamfieldvalues`,
+          values: [
+            {
+              value: state.settingsArea,
+              includeChildren: state.includeChildren,
+            },
+          ],
+        };
+      else if (url.includes("/_apis/wit/queries/"))
+        body = {
+          id: savedQuery,
+          queryType: state.queryType,
+          url: `https://dev.azure.com/org/${state.queryProject}/_apis/wit/queries/${savedQuery}`,
+        };
+      else if (url.includes(`/_apis/wit/wiql/${savedQuery}`))
+        body = {
+          queryType: state.queryType,
+          workItems: state.queryItems.map((id) => ({ id })),
+        };
+      else if (method === "POST")
+        body = { workItems: state.projectMembers.map((id) => ({ id })) };
+      else
+        body = {
+          id: 10,
+          rev: 2,
+          fields: {
+            "System.Title": "Scoped ADO work",
+            "System.Description": "Untrusted item",
+            "System.Tags": "opt-in",
+            "System.TeamProject": state.itemProject,
+            "System.IterationPath": state.iteration,
+            "System.AreaPath": state.area,
+            "System.ChangedDate": issue().updated_at,
+          },
+          relations: [],
+        };
+      return { status: 200, body };
+    },
+  );
+  return { state, transport };
+}
+describe("independently mapped ADO scope", () => {
+  it("reports per-source representability without treating it as verified item evidence", () => {
+    const readiness = getOrchestrationNativeScopeReadiness({
+      discovery: [source(), adoSource()],
+      focus: {
+        team: "API Team",
+        iteration: "proj\\Sprint 1",
+        query: savedQuery,
+      },
+    });
+    expect(readiness.sources.map((value) => value.supported)).toEqual([
+      false,
+      true,
+    ]);
+    expect(readiness.hasSupportedSource).toBe(true);
+    for (const focus of [
+      { query: "SELECT * FROM WorkItems" },
+      { iteration: "Sprint 1" },
+    ])
+      expect(
+        getOrchestrationNativeScopeReadiness({
+          discovery: [adoSource()],
+          focus,
+        }).hasSupportedSource,
+      ).toBe(false);
+  });
+  it("intersects native iteration, team areas, saved-query membership, project and opt-in", async () => {
+    const { transport } = scopedAdo();
+    const focus = {
+      team: "API Team",
+      iteration: "proj\\Sprint 1",
+      query: savedQuery,
+    };
+    const adapter = createOrchestrationDiscoveryAdapter(
+      adoSource(),
+      transport,
+      focus,
+    );
+    const item = (await adapter.poll(null, signal())).items[0]!;
+    expect(item.scope).toEqual(focus);
+    const queries = transport.mock.calls
+      .filter(([request]) => request.method === "POST")
+      .map(([request]) => JSON.stringify(request.body));
+    for (const query of queries) {
+      expect(query).toContain("[System.TeamProject] = 'proj'");
+      expect(query).toContain("[System.IterationPath] = 'proj\\\\Sprint 1'");
+      expect(query).toContain("[System.AreaPath] UNDER 'proj\\\\API'");
+      expect(query).toContain("[System.Id] IN (10)");
+    }
+    expect(queries[0]).toContain("[System.Tags] CONTAINS 'opt-in'");
+    expect(
+      transport.mock.calls.some(([request]) =>
+        request.url.includes(`/queries/${savedQuery}?$expand=clauses&`),
+      ),
+    ).toBe(true);
+    expect(
+      transport.mock.calls.some(([request]) =>
+        request.url.includes(`/${teamId}/_apis/wit/wiql/${savedQuery}`),
+      ),
+    ).toBe(true);
+    expect((await adapter.refresh(item, signal())).revision).toBe(
+      item.revision,
+    );
+    expect(
+      transport.mock.calls.filter(([request]) =>
+        request.url.includes("/teamfieldvalues"),
+      ),
+    ).toHaveLength(2);
+  });
+  it.each([
+    [
+      "iteration mismatch",
+      { iteration: "proj\\Sprint 2" },
+      { iteration: "proj\\Sprint 1" },
+    ],
+    ["iteration missing", { iteration: "" }, { iteration: "proj\\Sprint 1" }],
+    ["team mismatch", { teamName: "Different Team" }, { team: "API Team" }],
+    [
+      "foreign team project",
+      { teamProject: "44444444-4444-4444-8444-444444444444" },
+      { team: "API Team" },
+    ],
+    ["foreign team area", { settingsArea: "other\\API" }, { team: "API Team" }],
+    [
+      "wrong team field",
+      { settingsField: "System.IterationPath" },
+      { team: "API Team" },
+    ],
+    ["area boundary", { area: "proj\\API2" }, { team: "API Team" }],
+    ["descendants excluded", { includeChildren: false }, { team: "API Team" }],
+    ["missing area", { area: "" }, { team: "API Team" }],
+    ["query nonmember", { queryItems: [11] }, { query: savedQuery }],
+    [
+      "foreign query project",
+      { queryProject: "44444444-4444-4444-8444-444444444444" },
+      { query: savedQuery },
+    ],
+    ["non-flat query", { queryType: "tree" }, { query: savedQuery }],
+  ] satisfies [
+    string,
+    Partial<ReturnType<typeof scopedAdo>["state"]>,
+    OrchestrationDiscoveryScope,
+  ][])(
+    "rejects %s without returning an observation",
+    async (_name, changes, focus) => {
+      const { state, transport } = scopedAdo();
+      Object.assign(state, changes);
+      await expect(
+        createOrchestrationDiscoveryAdapter(adoSource(), transport, focus).poll(
+          null,
+          signal(),
+        ),
+      ).rejects.toThrow("scope");
+    },
+  );
+  it("never fetches a foreign-project query member's details and bounds complete query membership", async () => {
+    const { state, transport } = scopedAdo();
+    state.projectMembers = [];
+    expect(
+      (
+        await createOrchestrationDiscoveryAdapter(adoSource(), transport, {
+          query: savedQuery,
+        }).poll(null, signal())
+      ).items,
+    ).toEqual([]);
+    expect(
+      transport.mock.calls.some(([request]) =>
+        request.url.includes("/workitems/"),
+      ),
+    ).toBe(false);
+    state.projectMembers = [10];
+    state.queryItems = Array.from({ length: 101 }, (_, index) => index + 1);
+    await expect(
+      createOrchestrationDiscoveryAdapter(adoSource(), transport, {
+        query: savedQuery,
+      }).poll(null, signal()),
+    ).rejects.toThrow("incomplete");
+    expect(
+      transport.mock.calls.some(([request]) =>
+        request.url.includes("/workitems/"),
+      ),
+    ).toBe(false);
+  });
+  it("rechecks native membership on refresh rather than trusting persisted scope claims", async () => {
+    const { state, transport } = scopedAdo();
+    const adapter = createOrchestrationDiscoveryAdapter(
+      adoSource(),
+      transport,
+      { team: "API Team", query: savedQuery },
+    );
+    const item = (await adapter.poll(null, signal())).items[0]!;
+    state.queryItems = [];
+    await expect(adapter.refresh(item, signal())).rejects.toThrow("scope");
+    state.queryItems = [10];
+    state.area = "proj\\Outside";
+    await expect(adapter.refresh(item, signal())).rejects.toThrow("scope");
+  });
+});
 describe("bounded explicit native discovery", () => {
   it("requires an assignee or opt-in label, not mere access", () => {
     expect(() => source({ selector: {} as never })).toThrow();

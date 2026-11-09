@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { digest } from "./MultiProjectProtocol.js";
-import type { OrchestrationDiscoveredItem } from "./OrchestrationDiscovery.js";
+import {
+  orchestrationDiscoveryScopeFactsSchema,
+  type OrchestrationDiscoveredItem,
+} from "./OrchestrationDiscovery.js";
 import type { WorkspaceStore } from "./OrchestrationWorkspaceContract.js";
 
 /** Structurally compatible with the canonical, service-fenced WorkspaceStore. */
@@ -52,6 +55,7 @@ const itemSchema = z.object({
   revision: z.string().regex(/^[a-f0-9]{64}$/),
   feedback: z.array(z.unknown()),
   dependencies: z.array(z.unknown()),
+  scope: orchestrationDiscoveryScopeFactsSchema.optional(),
 });
 const proposalSchema = z.strictObject({
   id: z.string().regex(/^[a-f0-9]{64}$/),

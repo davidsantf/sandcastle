@@ -22,12 +22,14 @@ import type {
 } from "./OrchestrationWorkspaceContract.js";
 import {
   createOrchestrationDiscoveryAdapter,
+  getOrchestrationNativeScopeReadiness,
   OrchestrationDiscoveryError,
   type OrchestrationDiscoveryCursor,
   type OrchestrationDiscoverySource,
   type OrchestrationDiscoveryTransport,
   type OrchestrationDiscoveredItem,
 } from "./OrchestrationDiscovery.js";
+export { getOrchestrationNativeScopeReadiness } from "./OrchestrationDiscovery.js";
 import {
   createOrchestrationProposalQueue,
   OrchestrationProposalBlockedError,
@@ -81,14 +83,26 @@ const pollStateSchema = z.strictObject({
   retryAt: z.number(),
   diagnostic: z.string().optional(),
 });
-const nativeScopeDiagnostic = (
-  focus: OrchestrationNativeConfiguration["focus"],
-) =>
+const hasNativeScope = (focus: OrchestrationNativeConfiguration["focus"]) =>
   focus.team !== undefined ||
   focus.iteration !== undefined ||
-  focus.query !== undefined
-    ? "Native source/item team, iteration and query mapping is unverified; scoped polling, planning and dispatch are blocked"
-    : undefined;
+  focus.query !== undefined;
+const nativeScopeKey = (focus: OrchestrationNativeConfiguration["focus"]) =>
+  Object.fromEntries(
+    (["team", "iteration", "query"] as const).flatMap((key) =>
+      focus[key] === undefined ? [] : [[key, focus[key]]],
+    ),
+  );
+// Authorize only preparatory, provider-filtered reads here; full item policy uses native facts.
+const nativeReadFocus = (focus: OrchestrationNativeConfiguration["focus"]) => {
+  const {
+    team: _team,
+    iteration: _iteration,
+    query: _query,
+    ...policy
+  } = focus;
+  return policy;
+};
 
 export function createOrchestrationNativeTick(options: {
   evaluateFocus: OrchestrationIntakeFocusEvaluator;
@@ -117,18 +131,21 @@ export function createOrchestrationNativeTick(options: {
       now,
     });
     const diagnostics: string[] = [];
-    const unsupportedScope = nativeScopeDiagnostic(configuration.focus);
-    if (unsupportedScope)
-      return { proposals: queue.list(), diagnostics: [unsupportedScope] };
-    const allowed = (projectId: string, action: OrchestrationIntakeAction) =>
+    const scopeReadiness = getOrchestrationNativeScopeReadiness(configuration);
+    const allowed = (
+      item: OrchestrationDiscoveredItem,
+      action: OrchestrationIntakeAction,
+    ) =>
       options.evaluateFocus(configuration.focus, {
-        projectId,
+        projectId: item.projectId,
         action,
+        ...item.scope,
       });
     const adapters = new Map<
       string,
       ReturnType<typeof createOrchestrationDiscoveryAdapter>
     >();
+    const pollKeys = new Map<string, string>();
     const retained = queue.list();
     const observationKey = (
       item: OrchestrationDiscoveredItem,
@@ -150,6 +167,19 @@ export function createOrchestrationNativeTick(options: {
       retained.map(({ proposal }) => proposal.id),
     );
     let admittedObservations = 0;
+    const retainObservation = (item: OrchestrationDiscoveredItem) => {
+      const identity = observationKey(item, configuration.revision);
+      if (retainedObservations.has(identity)) return true;
+      if (admittedObservations >= configuration.focus.budgets.maxItems)
+        return false;
+      const proposal = queue.ingest(item, configuration.revision);
+      if (!retainedProposals.has(proposal.id)) {
+        admittedObservations++;
+        retainedProposals.add(proposal.id);
+      }
+      retainedObservations.add(identity);
+      return true;
+    };
     const prioritized = prioritizeOrchestrationProjects(
       configuration.focus,
       configuration.discovery.map((source) => source.projectId),
@@ -163,7 +193,20 @@ export function createOrchestrationNativeTick(options: {
     );
     for (const source of sources) {
       signal.throwIfAborted();
-      const policy = allowed(source.projectId, "discover");
+      const readiness = scopeReadiness.sources.find(
+        (value) => value.sourceId === source.id,
+      )!;
+      if (!readiness.supported) {
+        diagnostics.push(...readiness.diagnostics);
+        continue;
+      }
+      const policy = options.evaluateFocus(
+        nativeReadFocus(configuration.focus),
+        {
+          projectId: source.projectId,
+          action: "discover",
+        },
+      );
       if (!policy.allowed) {
         diagnostics.push(`Source ${source.id}: ${policy.reason}`);
         continue;
@@ -171,9 +214,18 @@ export function createOrchestrationNativeTick(options: {
       const adapter = createOrchestrationDiscoveryAdapter(
         source,
         options.transport?.(source),
+        configuration.focus,
       );
-      adapters.set(source.id, adapter);
-      const key = `intake:source:${digest(JSON.stringify([configuration.id, source]))}`;
+      if (!hasNativeScope(configuration.focus))
+        adapters.set(source.id, adapter);
+      const key = `intake:source:${digest(
+        JSON.stringify(
+          hasNativeScope(configuration.focus)
+            ? [configuration.id, source, nativeScopeKey(configuration.focus)]
+            : [configuration.id, source],
+        ),
+      )}`;
+      pollKeys.set(source.id, key);
       const stored = store.read(key);
       const state =
         stored.value === null
@@ -221,18 +273,12 @@ export function createOrchestrationNativeTick(options: {
         const batch = await adapter.poll(state.cursor, signal);
         let complete = true;
         for (const item of batch.items) {
-          const identity = observationKey(item, configuration.revision);
-          if (retainedObservations.has(identity)) continue;
-          if (admittedObservations >= configuration.focus.budgets.maxItems) {
+          const policy = allowed(item, "discover");
+          if (!policy.allowed) throw new OrchestrationDiscoveryError("scope");
+          if (!retainObservation(item)) {
             complete = false;
             break;
           }
-          const proposal = queue.ingest(item, configuration.revision);
-          if (!retainedProposals.has(proposal.id)) {
-            admittedObservations++;
-            retainedProposals.add(proposal.id);
-          }
-          retainedObservations.add(identity);
         }
         const diagnostic = complete
           ? ""
@@ -244,6 +290,7 @@ export function createOrchestrationNativeTick(options: {
           retryAt: 0,
           diagnostic,
         });
+        adapters.set(source.id, adapter);
         if (diagnostic) diagnostics.push(`Source ${source.id}: ${diagnostic}`);
       } catch (error) {
         const diagnostic =
@@ -278,8 +325,57 @@ export function createOrchestrationNativeTick(options: {
     for (const { item, proposal } of proposals) {
       signal.throwIfAborted();
       if (!adapters.has(item.sourceId)) continue;
+      let verified = item;
+      if (
+        hasNativeScope(configuration.focus) &&
+        (proposal.status === "observed" || proposal.status === "approved")
+      ) {
+        try {
+          verified = await adapters.get(item.sourceId)!.refresh(item, signal);
+        } catch (error) {
+          signal.throwIfAborted();
+          if (
+            error instanceof OrchestrationDiscoveryError &&
+            error.code === "rate-limit"
+          ) {
+            adapters.delete(item.sourceId);
+            const key = pollKeys.get(item.sourceId)!;
+            const stored = store.read(key),
+              state = pollStateSchema.parse(stored.value);
+            if (
+              !store.compareAndSwap(
+                key,
+                stored.version,
+                {
+                  ...state,
+                  failures: state.failures + 1,
+                  retryAt: now() + error.retryAfterMs,
+                  diagnostic: error.message,
+                },
+                {
+                  kind: "intake-refresh-rate-limited",
+                  at: new Date(now()).toISOString(),
+                },
+              )
+            )
+              throw new Error("Native scope refresh backoff ownership changed");
+          }
+          diagnostics.push(
+            `Proposal ${proposal.id}: current native scope/source verification failed before effects`,
+          );
+          continue;
+        }
+        if (verified.revision !== item.revision) {
+          diagnostics.push(
+            retainObservation(verified)
+              ? `Proposal ${proposal.id}: native source changed; review the new observation`
+              : `Proposal ${proposal.id}: revised observation deferred by intake budget`,
+          );
+          continue;
+        }
+      }
       if (proposal.status === "observed") {
-        const policy = allowed(item.projectId, "investigate");
+        const policy = allowed(verified, "investigate");
         if (!policy.allowed || !options.planner) {
           diagnostics.push(
             `Proposal ${proposal.id}: ${
@@ -296,6 +392,7 @@ export function createOrchestrationNativeTick(options: {
             intent: { proposal: proposal.id },
             projectId: item.projectId,
             action: "investigate",
+            ...verified.scope,
           },
           (s) =>
             queue.plan(
@@ -308,7 +405,7 @@ export function createOrchestrationNativeTick(options: {
         else if (result.value.diagnostic)
           diagnostics.push(result.value.diagnostic);
       } else if (proposal.status === "approved" && options.dispatch) {
-        const policy = allowed(item.projectId, "implement");
+        const policy = allowed(verified, "implement");
         if (!policy.allowed) {
           diagnostics.push(`Proposal ${proposal.id}: ${policy.reason}`);
           continue;
@@ -318,6 +415,7 @@ export function createOrchestrationNativeTick(options: {
             id: `proposal:${proposal.id}:dispatch`,
             projectId: item.projectId,
             action: "implement",
+            ...verified.scope,
             intent: {
               proposalDigest: proposal.digest,
               sourceRevision: proposal.sourceRevision,
@@ -331,7 +429,7 @@ export function createOrchestrationNativeTick(options: {
                 configurationRevision: configuration.revision,
               },
               {
-                authorize: () => allowed(item.projectId, "implement").allowed,
+                authorize: () => allowed(verified, "implement").allowed,
                 refresh: (work, abort) =>
                   adapters.get(work.sourceId)!.refresh(work, abort),
                 dispatch: (work, approved, abort) =>
@@ -652,6 +750,9 @@ export function createConfiguredDevsquadProposalPlanner(options: {
   evaluateFocus: OrchestrationIntakeFocusEvaluator;
   tasks?: OrchestrationTask[];
   sandbox?: (request: OrchestrationWorkerRequest) => SandboxProvider;
+  transport?: (
+    source: OrchestrationDiscoverySource,
+  ) => OrchestrationDiscoveryTransport | undefined;
 }) {
   const configuration = structuredClone(options.configuration);
   const tasks = options.tasks?.length
@@ -704,8 +805,9 @@ export function createConfiguredDevsquadProposalPlanner(options: {
     signal: AbortSignal,
   ): Promise<OrchestrationNativeReadiness> => {
     const readiness = await setup.preflight(signal);
-    const unsupportedScope = nativeScopeDiagnostic(configuration.focus);
-    if (unsupportedScope) readiness.missingCapabilities.push(unsupportedScope);
+    readiness.missingCapabilities.push(
+      ...getOrchestrationNativeScopeReadiness(configuration).diagnostics,
+    );
     if (!options.sandbox)
       readiness.missingConfiguration.push(
         "No explicitly registered execution backend",
@@ -735,14 +837,55 @@ export function createConfiguredDevsquadProposalPlanner(options: {
         throw new OrchestrationProposalBlockedError(
           "Planner configuration changed; recreate the configured planner",
         );
-      const unsupportedScope = nativeScopeDiagnostic(
-        currentConfiguration.focus,
-      );
-      if (unsupportedScope)
-        throw new OrchestrationProposalBlockedError(unsupportedScope);
+      let verified = item;
+      if (hasNativeScope(currentConfiguration.focus)) {
+        const source = currentConfiguration.discovery.find(
+          (value) =>
+            value.id === item.sourceId && value.projectId === item.projectId,
+        );
+        const scoped =
+          source &&
+          getOrchestrationNativeScopeReadiness({
+            focus: currentConfiguration.focus,
+            discovery: [source],
+          }).sources[0];
+        if (!source || !scoped?.supported)
+          throw new OrchestrationProposalBlockedError(
+            scoped?.diagnostics.join("; ") ??
+              "No registered native source for scoped proposal",
+          );
+        const readPolicy = options.evaluateFocus(
+          nativeReadFocus(currentConfiguration.focus),
+          {
+            projectId: item.projectId,
+            action: "discover",
+          },
+        );
+        if (!readPolicy.allowed)
+          throw new OrchestrationProposalBlockedError(
+            `Native scope read denied: ${readPolicy.reason}`,
+          );
+        try {
+          verified = await createOrchestrationDiscoveryAdapter(
+            source,
+            options.transport?.(source),
+            currentConfiguration.focus,
+          ).refresh(item, signal);
+        } catch {
+          signal.throwIfAborted();
+          throw new OrchestrationProposalBlockedError(
+            "Current native scope/source verification failed before planning",
+          );
+        }
+        if (verified.revision !== item.revision)
+          throw new OrchestrationProposalBlockedError(
+            "Native source changed; retain and review a new observation before planning",
+          );
+      }
       const policy = options.evaluateFocus(currentConfiguration.focus, {
         projectId: item.projectId,
         action: "investigate",
+        ...verified.scope,
       });
       if (!policy.allowed)
         throw new OrchestrationProposalBlockedError(

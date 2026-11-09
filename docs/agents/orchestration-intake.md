@@ -81,13 +81,55 @@ uses the existing `gh` account. For ADO, register
 `createOrchestrationAdoReadTransport({kind:"bearer"|"pat",token})` from the existing
 trusted host credential context. The token stays in that transport closure.
 There is deliberately no credential lookup from work item text or catalog data.
-Native sources/items currently supply no independently verified team, iteration
-or query facts. If any of those optional focus selectors is configured, native
-polling, planning and dispatch fail closed **before any transport or worker
-call** with an explicit unverified-mapping diagnostic. A configured focus value
-is a restriction, never evidence that a discovered target satisfies it. Supporting
-these selectors requires a real native source/item mapping; that capability gap
-is separate from missing backend execution identity.
+A configured focus value is a restriction, never evidence that a discovered
+target satisfies it. Supported ADO mappings use independent native reads:
+
+| Focus selector | Supported ADO representation and evidence                                                                                                                                                                                                                                                      |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `iteration`    | Full native path, for example `proj\Sprint 1`; exact `System.IterationPath` equality, not a short sprint name or a configured-value echo.                                                                                                                                                      |
+| `team`         | Exact team name or GUID resolved through the project Teams API; verified project/team resource identities, native `System.AreaPath` team field settings, and the item's actual area. Descendants count only when native `includeChildren` is true, at a path boundary.                         |
+| `query`        | Exact saved flat-query GUID. Project-bound metadata is requested with `$expand=clauses` to obtain `queryType`; the native query-by-ID result must contain the item. The verified team ID supplies query context when team focus is selected; otherwise native project-default context applies. |
+
+Query membership is bounded to `min(1000, maxPages * 100)` results, requesting one
+extra row and rejecting overflow rather than treating truncated evidence as
+complete. Raw WIQL/freeform query focus, query names/paths, tree/link queries,
+foreign metadata identities, non-area team fields, and missing facts remain
+unsupported or blocked. Native team settings are bounded to 100 area values.
+No returned resource URLs are followed. Query results supply IDs only; primary
+work-item detail reads still require project-scoped WIQL membership and the
+configured assignee/opt-in selector. Query membership cannot authorize another
+project's item or broaden its trusted task scope.
+
+Preparatory reads require focused-project, mode and explicit `discover` grants;
+native project/iteration/team-area/query intersections constrain WIQL before
+item details are fetched. The full focus evaluator then receives only actual
+verified item facts. Facts are retained in the source snapshot/revision.
+Planning and dispatch refresh scope before operation admission, and execution
+refreshes again through the revision-bound queue. Missing/mismatched facts
+produce no planner, worker, dispatch or mutation reservation. Scope changes use
+separate durable poll cursors; changing a restriction cannot skip an earlier
+page. Revisions discovered during refresh obey the same per-pass intake budget.
+
+GitHub sources still have no supported native team/iteration/query mapping in
+this registration format; these selectors fail before transport or worker
+calls. This is separate from the backend execution-identity gap.
+`getOrchestrationNativeScopeReadiness({focus, discovery})`, exported by Discovery
+and re-exported by NativeHost, reports per-source `{sourceId, projectId,
+supported, diagnostics}` plus aggregate `hasSupportedSource` and `diagnostics`.
+It reports **static representability, not verified evidence or live access**.
+Hosts must not reject a supported ADO source just because another source is
+unsupported. `createOrchestrationDiscoveryAdapter(source, transport, focus)`
+accepts the optional third scope argument; pass it to both polling and direct
+refresh. The configured planner also accepts the same host-only `transport`
+factory as the native tick when it must independently refresh ADO facts.
+
+These mappings follow the official read-only APIs:
+[Teams Get](https://learn.microsoft.com/en-us/rest/api/azure/devops/core/teams/get?view=azure-devops-rest-7.1),
+[Team field values](https://learn.microsoft.com/en-us/rest/api/azure/devops/work/teamfieldvalues/get?view=azure-devops-rest-7.1),
+[Query metadata](https://learn.microsoft.com/en-us/rest/api/azure/devops/wit/queries/get?view=azure-devops-rest-7.1),
+and [Query by ID](https://learn.microsoft.com/en-us/rest/api/azure/devops/wit/wiql/query-by-id?view=azure-devops-rest-7.1).
+The existing credential must already permit those reads; missing access is a
+diagnostic, not a reason to create a credential or broaden permissions.
 ADO work discovery uses the project **name**, exact identity unique name/ID rather
 than ambiguous display names, and semicolon-delimited exact tags. Dependency
 targets must pass a project-scoped WIQL membership check before their detail is
@@ -313,6 +355,14 @@ The intake-budget followup passed 38 tests across the native-host, proposal and
 shared-focus suites plus type checking, including multi-pass partial-page replay,
 new/revised/configuration observation accounting, project priority, and clean
 Observe-only admission without model effects.
+The native-scope followup passed 77 tests across Discovery, NativeHost, Proposal
+and Focus plus type checking. It covers matching native ADO facts, absent and
+mismatching facts, exact area boundaries, native team/project/query identities,
+bounded query overflow, query metadata expansion and selected-team context,
+scope refresh and persistent rate-limit backoff before model/dispatch reservations, and zero-read denial without
+a discover grant. These are deterministic fixture tests with canonical-store
+integration, **not live ADO validation**. No ADO work items, queries, tickets,
+PRs or other live resources were written.
 
 Central CLI/public exports, service/focus composition, full product integration
 and README linking are owned by the core integration session. This slice is not

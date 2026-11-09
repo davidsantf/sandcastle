@@ -24,7 +24,12 @@ import {
   type OrchestrationNativeTickContext,
 } from "./OrchestrationNativeHost.js";
 import { createOrchestrationProposalQueue } from "./OrchestrationProposal.js";
-import type { OrchestrationDiscoveredItem } from "./OrchestrationDiscovery.js";
+import {
+  createOrchestrationDiscoveryAdapter,
+  type OrchestrationDiscoveredItem,
+  type OrchestrationDiscoveryTransport,
+} from "./OrchestrationDiscovery.js";
+import { evaluateOrchestrationFocus } from "./OrchestrationFocus.js";
 import type { WorkspaceConfiguration } from "./OrchestrationWorkspaceContract.js";
 
 vi.mock("./run.js", () => ({ run: vi.fn() }));
@@ -155,7 +160,238 @@ function context(configuration = config()) {
   };
   return { configuration, store, signal: signal(), operations };
 }
+function scopedNative() {
+  const configuration = config();
+  const hub = {
+    kind: "ado" as const,
+    organization: "org",
+    project: "proj",
+    repository: "repo",
+  };
+  configuration.projects[0]!.hub = hub;
+  configuration.discovery[0] = {
+    ...configuration.discovery[0]!,
+    id: "ado",
+    hub,
+  };
+  const projectId = "11111111-1111-4111-8111-111111111111";
+  const teamId = "22222222-2222-4222-8222-222222222222";
+  const query = "33333333-3333-4333-8333-333333333333";
+  configuration.focus = {
+    ...configuration.focus,
+    team: "API Team",
+    iteration: "proj\\Sprint 1",
+    query,
+  };
+  const state = {
+    iteration: "proj\\Sprint 1",
+    area: "proj\\API\\Child",
+    team: "API Team",
+    queryItems: [10],
+    itemReads: 0,
+  };
+  const transport = vi.fn<OrchestrationDiscoveryTransport>(
+    async ({ url, method }) => {
+      let body: unknown;
+      if (url.includes("/_apis/git/repositories/"))
+        body = { name: "repo", project: { id: projectId, name: "proj" } };
+      else if (url.includes("/_apis/projects/"))
+        body = {
+          id: teamId,
+          name: state.team,
+          url: `https://dev.azure.com/org/_apis/projects/${projectId}/teams/${teamId}`,
+        };
+      else if (url.includes("/teamfieldvalues"))
+        body = {
+          field: { referenceName: "System.AreaPath" },
+          url: `https://dev.azure.com/org/${projectId}/${teamId}/_apis/work/teamsettings/teamfieldvalues`,
+          values: [{ value: "proj\\API", includeChildren: true }],
+        };
+      else if (url.includes("/_apis/wit/queries/"))
+        body = {
+          id: query,
+          queryType: "flat",
+          url: `https://dev.azure.com/org/${projectId}/_apis/wit/queries/${query}`,
+        };
+      else if (url.includes(`/_apis/wit/wiql/${query}`))
+        body = {
+          queryType: "flat",
+          workItems: state.queryItems.map((id) => ({ id })),
+        };
+      else if (method === "POST") body = { workItems: [{ id: 10 }] };
+      else {
+        state.itemReads++;
+        body = {
+          id: 10,
+          rev: 2,
+          fields: {
+            "System.Title": "Native scoped work",
+            "System.Description": "No authority in hub text",
+            "System.AssignedTo": { uniqueName: "owner" },
+            "System.TeamProject": "proj",
+            "System.IterationPath": state.iteration,
+            "System.AreaPath": state.area,
+            "System.ChangedDate": item().updatedAt,
+          },
+          relations: [],
+        };
+      }
+      return { status: 200, body };
+    },
+  );
+  return { configuration, state, transport };
+}
 describe("native service intake integration", () => {
+  it("admits matching native facts through exact focus policy and persists them across queue reads", async () => {
+    const { configuration, transport } = scopedNative();
+    const ctx = context(configuration),
+      planner = vi.fn(async () => artifacts);
+    const perform = vi.spyOn(ctx.operations, "perform");
+    const result = await createOrchestrationNativeTick({
+      evaluateFocus: evaluateOrchestrationFocus,
+      planner,
+      transport: () => transport,
+    })(ctx);
+    expect(result.diagnostics).toEqual([]);
+    expect(planner).toHaveBeenCalledOnce();
+    const scope = {
+      team: "API Team",
+      iteration: "proj\\Sprint 1",
+      query: configuration.focus.query,
+    };
+    expect(result.proposals[0]?.item.scope).toEqual(scope);
+    expect(result.proposals[0]?.proposal.source.scope).toEqual(scope);
+    expect(perform.mock.calls[0]?.[0]).toMatchObject({
+      action: "investigate",
+      ...scope,
+    });
+  });
+  it.each([
+    ["iteration mismatch", { iteration: "proj\\Sprint 2" }],
+    ["iteration absent", { iteration: "" }],
+    ["team mismatch", { team: "Different Team" }],
+    ["area outside team", { area: "proj\\API2" }],
+    ["query nonmember", { queryItems: [] }],
+  ])("rejects %s before planning or reservations", async (_name, changes) => {
+    const { configuration, state, transport } = scopedNative();
+    Object.assign(state, changes);
+    const ctx = context(configuration),
+      planner = vi.fn(),
+      dispatch = vi.fn();
+    const perform = vi.spyOn(ctx.operations, "perform");
+    const result = await createOrchestrationNativeTick({
+      evaluateFocus: evaluateOrchestrationFocus,
+      planner,
+      dispatch,
+      transport: () => transport,
+    })(ctx);
+    expect(result.proposals).toEqual([]);
+    expect(result.diagnostics.join()).toContain("scope");
+    expect(planner).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(perform).not.toHaveBeenCalled();
+  });
+  it("does not bypass missing discover grants for native scope metadata reads", async () => {
+    const { configuration, transport } = scopedNative();
+    configuration.focus.permissions = [
+      { projectId: "api", action: "investigate" },
+    ];
+    const ctx = context(configuration),
+      planner = vi.fn();
+    await createOrchestrationNativeTick({
+      evaluateFocus: evaluateOrchestrationFocus,
+      planner,
+      transport: () => transport,
+    })(ctx);
+    expect(transport).not.toHaveBeenCalled();
+    expect(planner).not.toHaveBeenCalled();
+  });
+  it("refreshes native facts before model admission even after a successful scoped poll", async () => {
+    const { configuration, state, transport } = scopedNative();
+    const ctx = context(configuration),
+      planner = vi.fn();
+    const perform = vi.spyOn(ctx.operations, "perform");
+    const changing: OrchestrationDiscoveryTransport = async (
+      request,
+      abort,
+    ) => {
+      if (state.itemReads === 1) state.iteration = "proj\\Different";
+      return transport(request, abort);
+    };
+    const result = await createOrchestrationNativeTick({
+      evaluateFocus: evaluateOrchestrationFocus,
+      planner,
+      transport: () => changing,
+    })(ctx);
+    expect(result.proposals).toHaveLength(1);
+    expect(result.diagnostics.join()).toContain(
+      "verification failed before effects",
+    );
+    expect(planner).not.toHaveBeenCalled();
+    expect(perform).not.toHaveBeenCalled();
+  });
+  it("persists scope-refresh rate limits and performs no further reads during backoff", async () => {
+    const { configuration, state, transport } = scopedNative();
+    const ctx = context(configuration),
+      planner = vi.fn();
+    const throttled = vi.fn<OrchestrationDiscoveryTransport>(
+      async (request, abort) =>
+        state.itemReads > 0
+          ? { status: 429, body: null, retryAfterMs: 60_000 }
+          : transport(request, abort),
+    );
+    const tick = createOrchestrationNativeTick({
+      evaluateFocus: evaluateOrchestrationFocus,
+      planner,
+      transport: () => throttled,
+    });
+    await tick(ctx);
+    const count = throttled.mock.calls.length;
+    expect(
+      ctx.store
+        .events()
+        .some((event) => event.kind === "intake-refresh-rate-limited"),
+    ).toBe(true);
+    await tick(ctx);
+    expect(throttled.mock.calls).toHaveLength(count);
+    expect(planner).not.toHaveBeenCalled();
+  });
+  it("refreshes approved scope before dispatch reservation and preserves approval without effect", async () => {
+    const { configuration, state, transport } = scopedNative();
+    configuration.focus.mode = "execute";
+    configuration.focus.permissions.push({
+      projectId: "api",
+      action: "implement",
+    });
+    const ctx = context(configuration);
+    const planned = await createOrchestrationNativeTick({
+      evaluateFocus: evaluateOrchestrationFocus,
+      planner: async () => artifacts,
+      transport: () => transport,
+    })(ctx);
+    const proposal = planned.proposals[0]!.proposal;
+    createOrchestrationProposalQueue({
+      store: ctx.store,
+      namespace: configuration.id,
+    }).review({
+      proposalId: proposal.id,
+      proposalDigest: proposal.digest!,
+      sourceRevision: proposal.sourceRevision,
+      configurationRevision: configuration.revision,
+      decision: "approve",
+    });
+    state.area = "proj\\Outside";
+    const perform = vi.spyOn(ctx.operations, "perform"),
+      dispatch = vi.fn();
+    const result = await createOrchestrationNativeTick({
+      evaluateFocus: evaluateOrchestrationFocus,
+      dispatch,
+      transport: () => transport,
+    })(ctx);
+    expect(result.proposals[0]?.proposal.status).toBe("approved");
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(perform).not.toHaveBeenCalled();
+  });
   it("retains an observed item without investigate-denied diagnostics or effect reservations", async () => {
     const configuration = config();
     configuration.focus.mode = "observe";
@@ -475,6 +711,30 @@ describe("native service intake integration", () => {
   });
 });
 describe("concrete native setup controls", () => {
+  it("refreshes configured-planner scope instead of trusting a persisted matching snapshot", async () => {
+    const { configuration, state, transport } = scopedNative();
+    const observed = (
+      await createOrchestrationDiscoveryAdapter(
+        configuration.discovery[0]!,
+        transport,
+        configuration.focus,
+      ).poll(null, signal())
+    ).items[0]!;
+    state.queryItems = [];
+    const sandbox = vi.fn(() => noSandbox());
+    const configured = createConfiguredDevsquadProposalPlanner({
+      configuration,
+      evaluateFocus: evaluateOrchestrationFocus,
+      tasks: [task],
+      sandbox,
+      transport: () => transport,
+    });
+    await expect(
+      configured.plan(observed, configuration, signal()),
+    ).rejects.toThrow("Current native scope/source verification failed");
+    expect(sandbox).not.toHaveBeenCalled();
+    expect(run).not.toHaveBeenCalled();
+  });
   it.each(["team", "iteration", "query"] as const)(
     "blocks configured planner %s scope without reflecting selection as evidence",
     async (scope) => {

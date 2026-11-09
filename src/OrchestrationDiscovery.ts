@@ -4,11 +4,71 @@ import { digest } from "./MultiProjectProtocol.js";
 import {
   workspaceDiscoverySourceSchema,
   type WorkspaceDiscoverySource,
+  type WorkspaceFocus,
 } from "./OrchestrationWorkspaceContract.js";
 
 export const orchestrationDiscoverySourceSchema =
   workspaceDiscoverySourceSchema;
 export type OrchestrationDiscoverySource = WorkspaceDiscoverySource;
+export type OrchestrationDiscoveryScope = Pick<
+  WorkspaceFocus,
+  "team" | "iteration" | "query"
+>;
+const queryId =
+  /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+export const orchestrationDiscoveryScopeFactsSchema = z.strictObject({
+  team: z.string().min(1).max(200).optional(),
+  iteration: z.string().min(1).max(200).optional(),
+  query: z.string().regex(queryId).optional(),
+});
+export type OrchestrationDiscoveryScopeFacts = z.infer<
+  typeof orchestrationDiscoveryScopeFactsSchema
+>;
+const sourceScopeReadiness = (
+  source: OrchestrationDiscoverySource,
+  focus: OrchestrationDiscoveryScope,
+) => {
+  const diagnostics: string[] = [];
+  for (const selector of ["team", "iteration", "query"] as const) {
+    if (focus[selector] === undefined) continue;
+    if (source.hub.kind === "github")
+      diagnostics.push(
+        `Source ${source.id}: Native GitHub ${selector} mapping is unverified/unsupported`,
+      );
+    else if (selector === "query" && !queryId.test(focus.query!))
+      diagnostics.push(
+        `Source ${source.id}: ADO query scope requires an exact saved flat-query GUID`,
+      );
+    else if (
+      selector === "iteration" &&
+      focus.iteration !== source.hub.project &&
+      !focus.iteration!.startsWith(`${source.hub.project}\\`)
+    )
+      diagnostics.push(
+        `Source ${source.id}: ADO iteration scope requires a full native project iteration path`,
+      );
+  }
+  return {
+    sourceId: source.id,
+    projectId: source.projectId,
+    supported: diagnostics.length === 0,
+    diagnostics,
+  };
+};
+/** Static representability only; item facts still require native reads and matching. */
+export function getOrchestrationNativeScopeReadiness(configuration: {
+  focus: OrchestrationDiscoveryScope;
+  discovery: OrchestrationDiscoverySource[];
+}) {
+  const sources = configuration.discovery.map((source) =>
+    sourceScopeReadiness(source, configuration.focus),
+  );
+  return {
+    sources,
+    hasSupportedSource: sources.some((source) => source.supported),
+    diagnostics: sources.flatMap((source) => source.diagnostics),
+  };
+}
 export interface OrchestrationDiscoveredItem {
   sourceId: string;
   projectId: string;
@@ -21,6 +81,7 @@ export interface OrchestrationDiscoveredItem {
   revision: string;
   feedback: unknown[];
   dependencies: unknown[];
+  scope?: OrchestrationDiscoveryScopeFacts;
 }
 export interface OrchestrationDiscoveryCursor {
   page: number;
@@ -49,7 +110,9 @@ export class OrchestrationDiscoveryError extends Error {
       | "rate-limit"
       | "incomplete"
       | "invalid"
-      | "transport",
+      | "transport"
+      | "scope"
+      | "unsupported",
     readonly retryAfterMs = 60_000,
   ) {
     super(`Native discovery ${code}; source cursor was not advanced`);
@@ -237,8 +300,16 @@ export function createOrchestrationAdoReadTransport(credential: {
 export function createOrchestrationDiscoveryAdapter(
   input: OrchestrationDiscoverySource,
   transport?: OrchestrationDiscoveryTransport,
+  focus: OrchestrationDiscoveryScope = {},
 ) {
   const source = orchestrationDiscoverySourceSchema.parse(input);
+  if (!sourceScopeReadiness(source, focus).supported)
+    throw new OrchestrationDiscoveryError("unsupported");
+  const selectedScope: OrchestrationDiscoveryScope = Object.fromEntries(
+    (["team", "iteration", "query"] as const).flatMap((key) =>
+      focus[key] === undefined ? [] : [[key, focus[key]]],
+    ),
+  );
   const native =
     transport ??
     (source.hub.kind === "github"
@@ -383,19 +454,190 @@ export function createOrchestrationDiscoveryAdapter(
     return { ...snapshot, revision: digest(JSON.stringify(snapshot)) };
   };
   const quote = (v: string) => `'${v.replaceAll("'", "''")}'`;
-  const verifyAdoProject = async (id: number, signal: AbortSignal) => {
+  const adoSelector =
+    "assignedTo" in source.selector
+      ? `[System.AssignedTo] = ${quote(source.selector.assignedTo)}`
+      : `[System.Tags] CONTAINS ${quote(source.selector.optedInLabel)}`;
+  type AdoScope = {
+    clauses: string[];
+    team?: {
+      id: string;
+      identity: string;
+      areas: { value: string; includeChildren: boolean }[];
+    };
+    query?: { identity: string; items: Set<number> };
+  };
+  const resolveAdoScope = async (signal: AbortSignal): Promise<AdoScope> => {
+    const resolved: AdoScope = { clauses: [] };
+    if (hub.kind !== "ado") return resolved;
+    if (selectedScope.iteration !== undefined)
+      resolved.clauses.push(
+        `[System.IterationPath] = ${quote(selectedScope.iteration)}`,
+      );
+    if (selectedScope.team === undefined && selectedScope.query === undefined)
+      return resolved;
+    const repository = obj(
+      await request(
+        `${base}/_apis/git/repositories/${encodeURIComponent(hub.repository)}?api-version=7.1`,
+        signal,
+      ),
+    );
+    const project = obj(repository.project);
+    if (
+      ![repository.name, repository.id].some(
+        (value) =>
+          typeof value === "string" &&
+          value.toLowerCase() === hub.repository.toLowerCase(),
+      ) ||
+      text(project.name, 200) !== hub.project ||
+      !queryId.test(text(project.id, 200))
+    )
+      throw new OrchestrationDiscoveryError("invalid");
+    const projectNames = [text(project.name, 200), text(project.id, 200)];
+    const matchesUrl = (value: unknown, paths: string[]) => {
+      const url = new URL(safeUrl(value));
+      return (
+        url.origin === "https://dev.azure.com" &&
+        paths.some((path) => url.pathname.toLowerCase() === path.toLowerCase())
+      );
+    };
+    if (selectedScope.team !== undefined) {
+      const team = obj(
+        await request(
+          `https://dev.azure.com/${hub.organization}/_apis/projects/${encodeURIComponent(hub.project)}/teams/${encodeURIComponent(selectedScope.team)}?api-version=7.1`,
+          signal,
+        ),
+      );
+      const teamId = text(team.id, 200),
+        teamName = text(team.name, 200);
+      const identity = [teamId, teamName].find(
+        (value) => value === selectedScope.team,
+      );
+      if (
+        !identity ||
+        !queryId.test(teamId) ||
+        !matchesUrl(
+          team.url,
+          projectNames.map(
+            (name) =>
+              `/${hub.organization}/_apis/projects/${encodeURIComponent(name)}/teams/${teamId}`,
+          ),
+        )
+      )
+        throw new OrchestrationDiscoveryError("scope");
+      const settings = obj(
+        await request(
+          `${base}/${encodeURIComponent(teamId)}/_apis/work/teamsettings/teamfieldvalues?api-version=7.1`,
+          signal,
+        ),
+      );
+      if (
+        obj(settings.field).referenceName !== "System.AreaPath" ||
+        !matchesUrl(
+          settings.url,
+          projectNames.map(
+            (name) =>
+              `/${hub.organization}/${encodeURIComponent(name)}/${teamId}/_apis/work/teamsettings/teamfieldvalues`,
+          ),
+        )
+      )
+        throw new OrchestrationDiscoveryError("scope");
+      const areas = z
+        .array(
+          z.object({
+            value: z.string().min(1).max(2_000),
+            includeChildren: z.boolean(),
+          }),
+        )
+        .min(1)
+        .max(100)
+        .parse(settings.values);
+      if (
+        areas.some(
+          (area) =>
+            area.value !== hub.project &&
+            !area.value.startsWith(`${hub.project}\\`),
+        )
+      )
+        throw new OrchestrationDiscoveryError("scope");
+      resolved.team = { id: teamId, identity, areas };
+      resolved.clauses.push(
+        `(${areas
+          .map(
+            (area) =>
+              `[System.AreaPath] ${area.includeChildren ? "UNDER" : "="} ${quote(area.value)}`,
+          )
+          .join(" OR ")})`,
+      );
+    }
+    if (selectedScope.query !== undefined) {
+      const query = obj(
+        await request(
+          `${base}/_apis/wit/queries/${selectedScope.query}?$expand=clauses&api-version=7.1`,
+          signal,
+        ),
+      );
+      const identity = text(query.id, 200);
+      if (
+        identity !== selectedScope.query ||
+        query.queryType !== "flat" ||
+        query.isDeleted === true ||
+        query.isFolder === true ||
+        !matchesUrl(
+          query.url,
+          projectNames.map(
+            (name) =>
+              `/${hub.organization}/${encodeURIComponent(name)}/_apis/wit/queries/${identity}`,
+          ),
+        )
+      )
+        throw new OrchestrationDiscoveryError("scope");
+      const limit = Math.min(1_000, source.maxPages * 100);
+      const result = obj(
+        await request(
+          `${base}${resolved.team ? `/${encodeURIComponent(resolved.team.id)}` : ""}/_apis/wit/wiql/${identity}?$top=${limit + 1}&api-version=7.1`,
+          signal,
+        ),
+      );
+      if (result.queryType !== "flat")
+        throw new OrchestrationDiscoveryError("unsupported");
+      const items = z
+        .array(record)
+        .max(limit + 1)
+        .parse(result.workItems);
+      if (items.length > limit)
+        throw new OrchestrationDiscoveryError("incomplete");
+      const ids = new Set(items.map((item) => positive(item.id)));
+      resolved.query = { identity, items: ids };
+      resolved.clauses.push(
+        ids.size ? `[System.Id] IN (${[...ids].join(",")})` : "[System.Id] = 0",
+      );
+    }
+    return resolved;
+  };
+  const verifyAdoProject = async (
+    id: number,
+    signal: AbortSignal,
+    clauses: string[] = [],
+  ) => {
     if (hub.kind !== "ado") throw new OrchestrationDiscoveryError("invalid");
     const result = obj(
       await request(`${base}/_apis/wit/wiql?$top=1&api-version=7.1`, signal, {
-        query: `SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = ${quote(hub.project)} AND [System.Id] = ${id}`,
+        query: `SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = ${quote(hub.project)} AND [System.Id] = ${id}${clauses.map((clause) => ` AND ${clause}`).join("")}`,
       }),
     );
     const matches = rows(result.workItems);
     if (matches.length !== 1 || matches[0]!.id !== id)
       throw new OrchestrationDiscoveryError("access");
   };
-  const observeAdo = async (id: number, signal: AbortSignal) => {
-    await verifyAdoProject(id, signal);
+  const observeAdo = async (
+    id: number,
+    signal: AbortSignal,
+    scoped: AdoScope,
+  ) => {
+    if (scoped.query && !scoped.query.items.has(id))
+      throw new OrchestrationDiscoveryError("scope");
+    await verifyAdoProject(id, signal, [...scoped.clauses, adoSelector]);
     const item = obj(
       await request(
         `${base}/_apis/wit/workitems/${id}?$expand=relations&api-version=7.1`,
@@ -432,6 +674,26 @@ export function createOrchestrationDiscoveryAdapter(
         hub.project.toLowerCase()
     )
       throw new OrchestrationDiscoveryError("invalid");
+    const scope: OrchestrationDiscoveryScopeFacts = {};
+    if (selectedScope.iteration !== undefined) {
+      const iteration = text(fields["System.IterationPath"], 200);
+      if (iteration !== selectedScope.iteration)
+        throw new OrchestrationDiscoveryError("scope");
+      scope.iteration = iteration;
+    }
+    if (scoped.team) {
+      const area = text(fields["System.AreaPath"], 2_000);
+      if (
+        !scoped.team.areas.some(
+          (value) =>
+            area === value.value ||
+            (value.includeChildren && area.startsWith(`${value.value}\\`)),
+        )
+      )
+        throw new OrchestrationDiscoveryError("scope");
+      scope.team = scoped.team.identity;
+    }
+    if (scoped.query) scope.query = scoped.query.identity;
     const relations = rows(item.relations ?? []);
     const dependencies: unknown[] = [];
     const feedback: unknown[] = [];
@@ -562,6 +824,7 @@ export function createOrchestrationDiscoveryAdapter(
       itemRevision: positive(item.rev),
       feedback: stableEvidence(feedback),
       dependencies: stableEvidence(dependencies),
+      ...(Object.keys(scope).length ? { scope } : {}),
     };
     return { ...snapshot, revision: digest(JSON.stringify(snapshot)) };
   };
@@ -575,7 +838,11 @@ export function createOrchestrationDiscoveryAdapter(
       )
         throw new OrchestrationDiscoveryError("invalid");
       if (hub.kind === "ado")
-        return observeAdo(positive(Number(item.id)), signal);
+        return observeAdo(
+          positive(Number(item.id)),
+          signal,
+          await resolveAdoScope(signal),
+        );
       const value = obj(await request(`${base}/issues/${item.id}`, signal));
       if (positive(value.number) !== positive(Number(item.id)))
         throw new OrchestrationDiscoveryError("invalid");
@@ -679,16 +946,13 @@ export function createOrchestrationDiscoveryAdapter(
               : { page: 1, afterId: 0, cycle: cursor.cycle + 1 },
         };
       }
-      const selector =
-        "assignedTo" in source.selector
-          ? `[System.AssignedTo] = ${quote(source.selector.assignedTo)}`
-          : `[System.Tags] CONTAINS ${quote(source.selector.optedInLabel)}`;
+      const scoped = await resolveAdoScope(signal);
       const result = obj(
         await request(
           `${base}/_apis/wit/wiql?$top=${source.pageSize}&api-version=7.1`,
           signal,
           {
-            query: `SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = ${quote(hub.project)} AND ${selector} AND [System.Id] > ${cursor.afterId} ORDER BY [System.Id] ASC`,
+            query: `SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = ${quote(hub.project)} AND ${adoSelector}${scoped.clauses.map((clause) => ` AND ${clause}`).join("")} AND [System.Id] > ${cursor.afterId} ORDER BY [System.Id] ASC`,
           },
         ),
       );
@@ -700,7 +964,7 @@ export function createOrchestrationDiscoveryAdapter(
       for (const item of batch) {
         const id = positive(item.id);
         if (id <= afterId) throw new OrchestrationDiscoveryError("invalid");
-        const observed = await observeAdo(id, signal);
+        const observed = await observeAdo(id, signal, scoped);
         items.push(observed);
         afterId = id;
       }
