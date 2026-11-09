@@ -418,6 +418,42 @@ verification, publication and completion despite the separately passing toy
 check. The local raw logs, fixture repositories and journal evidence are retained
 as session artifacts, not published as repository content.
 
+### Shipped default launch validation: incomplete
+
+The subsequent production-path check stopped **before model launch** on this
+Windows host. The shipped public native runtime cannot express the bounds used
+above through its existing configuration. A dry-run of the actual public
+`copilot("auto",{agent:"devsquad:devsquad.implement"})` provider produced:
+
+```text
+copilot -p 'Disposable local-only toy task' --output-format json --model 'auto' --agent 'devsquad:devsquad.implement'
+```
+
+It has no credit ceiling, continuation limit, tool allowlist/denial or MCP
+disable flags. `CopilotOptions` exposes only agent, effort and environment;
+the strict workspace runtime schema rejects attempted credit/tool/MCP control
+fields. The built-in dispatcher selects `noSandbox()` and constructs the
+provider with only the registered agent/model. The native capability resolver
+requires `runtime.command === "copilot"`, so a command containing extra flags or
+a wrapper is not a supported configuration workaround.
+
+`COPILOT_ALLOW_ALL=false` removes blanket approval; it does not establish a
+tool deny policy, disable configured MCPs or impose a credit ceiling.
+Focus/service runtime limits and the worker's idle/completion timers are not
+equivalent to native budget enforcement or guaranteed termination of the
+no-sandbox child process tree. Existing user-level permissions cannot be
+assumed to deny all external effects. Changing user permissions, credentials or
+global configuration was not authorized.
+
+Consequently, no unbounded default invocation, alternate transport, new model
+session or permission mutation was performed for this follow-up. **The default
+Windows launch path, including its shell quoting and output parsing, remains
+unverified; the earlier real-edit result validates only the explicitly described
+bounded transport seam.** Supporting an equivalent bounded launch in the shipped
+native path requires production execution-control support rather than a missing
+user configuration value. This check does not change strict-default trust,
+trusted-local labeling, admission evidence or unavailable-proof gates.
+
 ## Verification scope
 
 The later user-authorized trusted-local policy is documented in

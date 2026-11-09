@@ -217,3 +217,22 @@ states unchanged and the successful implementation still needs-input.
 See [detailed execution boundaries and measured results](../../agents/orchestration-intake.md#actual-local-implementation-through-the-native-lifecycle).
 No live ADO destination, target rollout, remote writes, pushes, PRs, runtime
 installation, credential changes or startup registration were involved.
+
+### Remaining default-launch verification marker
+
+**Incomplete: shipped default Windows launch has not been safely exercised.**
+The follow-up checked actual public command generation and rejected runtime
+configuration fields before effects. The default provider emits no credit cap,
+continuation bound, file-tool policy or MCP-disable controls; the strict native
+runtime schema exposes none, and the capability resolver accepts only the plain
+`copilot` command, not extra arguments or a wrapper. Native dispatch hardcodes
+the no-sandbox backend. `COPILOT_ALLOW_ALL=false` and service/idle timers do not
+establish the required bounds or revoke inherited permissions.
+
+No new model session was launched and no validation-only transport was
+substituted. The earlier real-edit/core/acceptance evidence remains valid within
+its documented seam, but is not promoted to default-launch evidence.
+Production launch controls are the concrete missing capability; shell quoting,
+plugin invocation and parsing through the unmodified Windows transport remain
+unverified. No trust, review, critical-change or publication gate was weakened.
+See [exact default-launch blocker](../../agents/orchestration-intake.md#shipped-default-launch-validation-incomplete).
