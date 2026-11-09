@@ -23,6 +23,39 @@ afterEach(async () => {
 });
 
 describe("user-local service lifecycle", () => {
+  it("starts with inactive project grants but never dispatches their effects", async () => {
+    const configuration = localServiceConfiguration();
+    configuration.focus.permissions.push({
+      projectId: "inactive",
+      action: "discover",
+    });
+    let effects = 0;
+    const result = await runLocalOrchestrationPass({
+      configuration,
+      store: memoryServiceStore(),
+      tick: async ({ operations }) => {
+        expect(
+          await operations.perform(
+            {
+              id: "inactive-project",
+              intent: {},
+              projectId: "inactive",
+              action: "discover",
+            },
+            async () => effects++,
+          ),
+        ).toMatchObject({
+          state: "blocked",
+          diagnostic: "outside-focus: host handoff required",
+        });
+      },
+    });
+    expect(result.state).toBe("stopped");
+    expect(result.passes).toBe(1);
+    expect(result.operations).toEqual({ reserved: 0, completed: 0 });
+    expect(effects).toBe(0);
+  });
+
   it("actually polls, shares ownership with manual passes, and stops gracefully", async () => {
     const configuration = localServiceConfiguration();
     const store = memoryServiceStore();
@@ -390,6 +423,10 @@ describe("user-local service lifecycle", () => {
     release();
     await stopped;
     expect(handle.status().state).toBe("blocked");
-    expect(handle.status().diagnostic).toContain("release-unacknowledged");
+    expect(handle.status().diagnostic).toContain(
+      "failure-evidence-unacknowledged",
+    );
+    expect(handle.status().failureEvidence).toBe("unacknowledged");
+    expect(handle.status().lastFailure?.phase).toBe("release");
   });
 });

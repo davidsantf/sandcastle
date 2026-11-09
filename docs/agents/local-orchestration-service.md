@@ -80,7 +80,10 @@ discovery. Observe admits only discovery; Propose additionally admits
 investigation; Execute can admit implementation/publication/downstream work only
 with its independent exact grant. Team, iteration, and query selectors require
 matching known facts; absent facts do not match. Out-of-focus work produces a
-handoff diagnostic, never a cross-project grant. Priorities order known projects
+handoff diagnostic, never a cross-project grant. Snapshots retain exact grants
+for registered but currently inactive projects; those grants cannot bypass the
+active project focus. The shared configuration parser validates registration.
+Priorities order known projects
 deterministically. Goals and acceptance artifacts belong to the host's proposal
 and task evidence, not a second service backlog.
 
@@ -119,6 +122,24 @@ operation evidence, and aggregate completed/unsettled counts. Adapters' exceptio
 strings, prompts, credentials, command output, and operation payloads are not
 included. Only exact IDs' digests are exposed. A UI may poll this local projection
 for safe notifications; no remote notification transport is installed.
+
+Failed runs additionally commit a `service-failed` event and latest
+`service-failure/<workspace-digest>` record through the captured owner fence.
+`readLocalOrchestrationFailure(store,workspaceId)` returns that bounded record
+offline. The record includes only schema version, owner/pass IDs, configuration
+revision, an allowlisted phase/cause, and timestamp. Error prose, stack traces,
+paths, unknown error codes, and adapter payloads are never copied. Fixed causes
+distinguish timeout, access denial, dependency/storage unavailability, ownership
+loss, cancellation, and configuration/callback/settlement/control/release failure.
+Error-property getters are not executed while classifying a thrown value.
+
+`status().lastFailure` retains the cause across a healthy restart; compare its
+owner ID with the current owner before treating it as this process's failure.
+`status().failureEvidence` is `none`, `acknowledged`, or `unacknowledged`. If the
+journal is unavailable or ownership has already changed, failure persistence
+cannot be claimed: status remains blocked with an explicit unacknowledged
+diagnostic and the offline reader returns only the last actually retained cause.
+CLI diagnostics use fixed cause-specific guidance rather than exception text.
 
 At-most-once dispatch can omit an effect: the service accounts an active slot
 before its permanent per-effect reservation, then invokes the callback only after
@@ -180,7 +201,7 @@ provider/agent execution have not been performed by the local fixture tests.
 ## Verified local evidence
 
 On Windows with Node 22.18, the focused service/focus/operations/control suite plus
-the shared workspace-store regression suite passed **32 tests**; one
+the shared workspace-store regression suite passed **44 tests**; one
 POSIX-permission-specific test was correctly skipped on Windows.
 `npm run typecheck` also passed. All service fixtures use the real
 `OrchestrationWorkspaceStore` (in-memory SQLite for unit cases and a disk-backed

@@ -72,7 +72,7 @@ export function snapshotOrchestrationFocus(
       (grant) =>
         !grant ||
         typeof grant.projectId !== "string" ||
-        !copy.projectIds.includes(grant.projectId) ||
+        !grant.projectId ||
         !orchestrationActions.includes(grant.action),
     ) ||
     (["team", "iteration", "query"] as const).some(

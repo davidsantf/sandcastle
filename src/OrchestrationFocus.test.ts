@@ -16,6 +16,35 @@ export const focusFixture = (): OrchestrationFocus => ({
 });
 
 describe("host focus policy", () => {
+  it("retains inactive project grants without authorizing out-of-focus effects", () => {
+    for (const mode of ["observe", "propose", "execute"] as const) {
+      const focus = snapshotOrchestrationFocus({
+        ...focusFixture(),
+        mode,
+        projectIds: ["app"],
+        permissions: [{ projectId: "api", action: "discover" }],
+      });
+      expect(focus.permissions).toEqual([
+        { projectId: "api", action: "discover" },
+      ]);
+      expect(
+        evaluateOrchestrationFocus(focus, {
+          projectId: "api",
+          action: "discover",
+        }),
+      ).toEqual({
+        allowed: false,
+        reason: "outside-focus: host handoff required",
+      });
+    }
+    expect(() =>
+      snapshotOrchestrationFocus({
+        ...focusFixture(),
+        permissions: [{ projectId: "", action: "discover" }],
+      }),
+    ).toThrow("invalid-orchestration-focus");
+  });
+
   it("requires exact grants even for read-only access and keeps modes separate", () => {
     const focus = focusFixture();
     expect(

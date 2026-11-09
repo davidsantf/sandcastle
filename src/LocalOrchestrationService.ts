@@ -40,7 +40,145 @@ export interface LocalOrchestrationServiceStatus {
   focus: OrchestrationFocus;
   operations: { reserved: number; completed: number };
   evidence: OrchestrationOperationEvidence[];
+  lastFailure: LocalOrchestrationFailure | null;
+  failureEvidence: "none" | "acknowledged" | "unacknowledged";
 }
+
+const failurePhases = [
+  "configuration",
+  "admission",
+  "tick",
+  "settlement",
+  "control",
+  "release",
+] as const;
+type FailurePhase = (typeof failurePhases)[number];
+const failureClassifications = [
+  "configuration-invalid",
+  "admission-rejected",
+  "host-callback-failed",
+  "settlement-unacknowledged",
+  "control-unacknowledged",
+  "ownership-release-unacknowledged",
+  "ownership-lost",
+  "timeout",
+  "access-denied",
+  "dependency-unavailable",
+  "storage-unavailable",
+  "cancelled",
+] as const;
+type FailureClassification = (typeof failureClassifications)[number];
+
+export interface LocalOrchestrationFailure {
+  schemaVersion: 1;
+  ownerId: string;
+  passId: string | null;
+  configurationRevision: number;
+  phase: FailurePhase;
+  classification: FailureClassification;
+  at: string;
+}
+
+const failureKey = (workspaceId: string) =>
+  `service-failure/${orchestrationServiceDigest(workspaceId)}`;
+
+export function readLocalOrchestrationFailure(
+  store: ServiceWorkspaceStore,
+  workspaceId: string,
+): LocalOrchestrationFailure | null {
+  const value = store.read(failureKey(workspaceId)).value;
+  if (value === null) return null;
+  if (
+    !value ||
+    typeof value !== "object" ||
+    !("schemaVersion" in value) ||
+    value.schemaVersion !== 1 ||
+    !("ownerId" in value) ||
+    typeof value.ownerId !== "string" ||
+    !/^[a-f0-9-]{36}$/.test(value.ownerId) ||
+    !("passId" in value) ||
+    (value.passId !== null &&
+      (typeof value.passId !== "string" ||
+        !/^[a-f0-9-]{36}$/.test(value.passId))) ||
+    !("configurationRevision" in value) ||
+    typeof value.configurationRevision !== "number" ||
+    !Number.isSafeInteger(value.configurationRevision) ||
+    value.configurationRevision < 1 ||
+    !("phase" in value) ||
+    !failurePhases.some((phase) => phase === value.phase) ||
+    !("classification" in value) ||
+    !failureClassifications.some(
+      (classification) => classification === value.classification,
+    ) ||
+    !("at" in value) ||
+    typeof value.at !== "string" ||
+    value.at.length > 40 ||
+    !Number.isFinite(Date.parse(value.at)) ||
+    Object.keys(value).length !== 7
+  )
+    throw new Error(
+      "invalid-service-failure-evidence: inspect canonical journal",
+    );
+  return structuredClone(value) as LocalOrchestrationFailure;
+}
+
+function classifyFailure(
+  phase: FailurePhase,
+  error: unknown,
+): FailureClassification {
+  try {
+    if (error && typeof error === "object") {
+      const code: unknown = Object.getOwnPropertyDescriptor(
+        error,
+        "code",
+      )?.value;
+      const name: unknown = Object.getOwnPropertyDescriptor(
+        error,
+        "name",
+      )?.value;
+      const message: unknown = Object.getOwnPropertyDescriptor(
+        error,
+        "message",
+      )?.value;
+      if (code === "ETIMEDOUT") return "timeout";
+      if (code === "EACCES" || code === "EPERM") return "access-denied";
+      if (code === "ENOENT" || code === "ECONNREFUSED" || code === "ECONNRESET")
+        return "dependency-unavailable";
+      if (
+        code === "ENOSPC" ||
+        code === "SQLITE_BUSY" ||
+        code === "SQLITE_FULL" ||
+        code === "ERR_SQLITE_ERROR"
+      )
+        return "storage-unavailable";
+      if (code === "ABORT_ERR" || name === "AbortError") return "cancelled";
+      if (
+        message === "workspace ownership guard is stale" ||
+        message === "service-control-conflict-or-ownership-lost"
+      )
+        return "ownership-lost";
+    }
+  } catch {
+    // Error objects are untrusted; even descriptor/prototype traps add no evidence.
+  }
+  return {
+    configuration: "configuration-invalid",
+    admission: "admission-rejected",
+    tick: "host-callback-failed",
+    settlement: "settlement-unacknowledged",
+    control: "control-unacknowledged",
+    release: "ownership-release-unacknowledged",
+  }[phase] as FailureClassification;
+}
+
+const failureGuidance: Record<FailurePhase, string> = {
+  configuration: "validate or migrate trusted host configuration",
+  admission: "inspect ownership, exact grants, and operation budgets",
+  tick: "inspect host dependency availability and canonical operation evidence",
+  settlement: "reconcile unresolved operation evidence before retrying",
+  control: "inspect canonical control state and journal availability",
+  release: "inspect current ownership and canonical journal before restarting",
+};
 
 export interface LocalOrchestrationServiceHandle {
   status(): LocalOrchestrationServiceStatus;
@@ -206,7 +344,41 @@ function start<C extends LocalOrchestrationConfiguration>(
   let active: AbortController | undefined;
   let activeOperations: OrchestrationOperations | undefined;
   let lastEvidence: OrchestrationOperationEvidence[] = [];
+  let lastFailure: LocalOrchestrationFailure | null = null;
+  let failureEvidence: LocalOrchestrationServiceStatus["failureEvidence"] =
+    "none";
+  let currentPassId: string | null = null;
   let wake: (() => void) | undefined;
+
+  function recordFailure(phase: FailurePhase, error: unknown) {
+    lastFailure = {
+      schemaVersion: 1,
+      ownerId: owner.ownerId,
+      passId: currentPassId,
+      configurationRevision: configuration.revision,
+      phase,
+      classification: classifyFailure(phase, error),
+      at: new Date().toISOString(),
+    };
+    diagnostic = `service-${phase}-${lastFailure.classification}: ${failureGuidance[phase]}`;
+    failureEvidence = "unacknowledged";
+    try {
+      const key = failureKey(configuration.id);
+      const current = guarded.read(key);
+      if (
+        guarded.compareAndSwap(key, current.version, lastFailure, {
+          kind: "service-failed",
+          at: lastFailure.at,
+        })
+      ) {
+        failureEvidence = "acknowledged";
+        return;
+      }
+    } catch {
+      // The visible diagnostic must not pretend failed persistence was durable.
+    }
+    diagnostic = `service-failure-evidence-unacknowledged: ${phase}/${lastFailure.classification}; inspect ownership and canonical journal`;
+  }
 
   function writeControl() {
     const record = guarded.read(controlKey);
@@ -229,6 +401,8 @@ function start<C extends LocalOrchestrationConfiguration>(
     wake?.();
   }
   try {
+    lastFailure = readLocalOrchestrationFailure(guarded, configuration.id);
+    if (lastFailure) failureEvidence = "acknowledged";
     const persisted = guarded.read(controlKey).value;
     if (
       persisted &&
@@ -252,13 +426,14 @@ function start<C extends LocalOrchestrationConfiguration>(
     }
     writeControl();
   } catch (error) {
+    recordFailure("control", error);
     guarded.compareAndSwap(
       ownerKey,
       ownerVersion,
       { ...owner, state: "released" },
       event("service-start-failed"),
     );
-    throw error;
+    throw new Error(diagnostic);
   }
   const cancel = () => {
     stopping = true;
@@ -275,6 +450,8 @@ function start<C extends LocalOrchestrationConfiguration>(
     focus: structuredClone(focus),
     operations: readOrchestrationOperationSummary(store, configuration.id),
     evidence: activeOperations?.evidence() ?? structuredClone(lastEvidence),
+    lastFailure: structuredClone(lastFailure),
+    failureEvidence,
   });
   const done = loop();
   return {
@@ -312,9 +489,12 @@ function start<C extends LocalOrchestrationConfiguration>(
   };
 
   async function loop(): Promise<void> {
+    let phase: FailurePhase = "configuration";
     try {
       while (!stopping) {
         if (!paused) {
+          phase = "configuration";
+          currentPassId = null;
           if (options.reloadConfiguration) {
             const latest = snapshot(options.reloadConfiguration());
             if (latest.id !== configuration.id)
@@ -349,6 +529,7 @@ function start<C extends LocalOrchestrationConfiguration>(
               valueDigest: orchestrationServiceDigest(configRecord.value),
             });
           }
+          phase = "admission";
           active = new AbortController();
           const timer = setTimeout(() => {
             diagnostic =
@@ -356,6 +537,7 @@ function start<C extends LocalOrchestrationConfiguration>(
             active?.abort();
           }, focus.budgets.maxRuntimeMs);
           const passId = randomUUID();
+          currentPassId = passId;
           const operations = createOrchestrationOperations({
             workspaceId: configuration.id,
             store: passStore,
@@ -365,6 +547,7 @@ function start<C extends LocalOrchestrationConfiguration>(
           });
           activeOperations = operations;
           state = "running";
+          phase = "tick";
           try {
             await options.tick({
               configuration: freezeOrchestrationValue({
@@ -378,13 +561,23 @@ function start<C extends LocalOrchestrationConfiguration>(
               operations,
             });
           } finally {
-            active.abort();
-            await operations.settle();
-            lastEvidence = operations.evidence();
-            activeOperations = undefined;
-            clearTimeout(timer);
-            active = undefined;
-            writeControl();
+            try {
+              active.abort();
+              await operations.settle();
+              lastEvidence = operations.evidence();
+              activeOperations = undefined;
+              clearTimeout(timer);
+              active = undefined;
+            } catch (error) {
+              phase = "settlement";
+              throw error;
+            }
+            try {
+              writeControl();
+            } catch (error) {
+              phase = "control";
+              throw error;
+            }
           }
           passes++;
           state = paused ? "paused" : "idle";
@@ -403,10 +596,9 @@ function start<C extends LocalOrchestrationConfiguration>(
         });
       }
       state = "stopped";
-    } catch {
+    } catch (error) {
       state = "blocked";
-      diagnostic =
-        "service-pass-failed: inspect canonical journal and host configuration";
+      recordFailure(phase, error);
     } finally {
       stopping = true;
       options.signal?.removeEventListener("abort", cancel);
@@ -420,12 +612,14 @@ function start<C extends LocalOrchestrationConfiguration>(
           )
         ) {
           state = "blocked";
-          diagnostic = "service-ownership-lost: no further effects permitted";
+          recordFailure(
+            "release",
+            new Error("workspace ownership guard is stale"),
+          );
         }
-      } catch {
+      } catch (error) {
         state = "blocked";
-        diagnostic =
-          "service-release-unacknowledged: inspect ownership and canonical journal";
+        recordFailure("release", error);
       }
     }
   }
