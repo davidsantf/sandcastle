@@ -14,6 +14,7 @@ import {
   renameSync,
   unlinkSync,
   writeFileSync,
+  type Stats,
 } from "node:fs";
 import net from "node:net";
 import path from "node:path";
@@ -28,7 +29,7 @@ export type LocalOrchestrationControlCommand =
   | { action: "status" | "pause" | "resume" | "stop" }
   | { action: "focus"; focus: OrchestrationFocus };
 
-function assertPrivate(filename: string): void {
+function assertPrivate(filename: string): Stats {
   const stat = lstatSync(filename);
   if (stat.isSymbolicLink())
     throw new Error("control-path-must-not-be-a-symlink");
@@ -37,7 +38,7 @@ function assertPrivate(filename: string): void {
       throw new Error(
         "control-path-must-be-owner-only: use a private 0700 directory",
       );
-    return;
+    return stat;
   }
   // Read-only ACL inspection: never modify the host's permissions.
   const script = [
@@ -71,6 +72,35 @@ function assertPrivate(filename: string): void {
       "control-path-privacy-unverified: select a current-user-owned directory granting access only to that user, SYSTEM, and Administrators; no ACL changes attempted",
     );
   }
+  return stat;
+}
+
+function sameControlFile(before: Stats, after: Stats): boolean {
+  return (
+    before.dev === after.dev &&
+    before.ino === after.ino &&
+    before.ctimeMs === after.ctimeMs &&
+    before.mtimeMs === after.mtimeMs &&
+    before.size === after.size
+  );
+}
+
+function privateControlFileIfPresent(filename: string): Stats | undefined {
+  try {
+    const verified = assertPrivate(filename);
+    const current = lstatSync(filename, { throwIfNoEntry: false });
+    if (!current) return undefined;
+    if (!sameControlFile(verified, current))
+      throw new Error("control-descriptor-changed-during-privacy-verification");
+    return current;
+  } catch (error) {
+    if (!lstatExists(filename)) return undefined;
+    throw error;
+  }
+}
+
+function isMissing(error: unknown): boolean {
+  return error instanceof Error && "code" in error && error.code === "ENOENT";
 }
 
 function controlFile(directory: string, workspaceId: string): string {
@@ -216,7 +246,7 @@ export async function startLocalOrchestrationControlChannel(
   });
   try {
     if (process.platform !== "win32") chmodSync(endpoint, 0o600);
-    if (lstatExists(descriptor)) assertPrivate(descriptor);
+    privateControlFileIfPresent(descriptor);
     writeFileSync(
       temporary,
       JSON.stringify({ endpoint, secret, ownerId: handle.status().ownerId }),
@@ -240,10 +270,30 @@ export async function startLocalOrchestrationControlChannel(
       while (responses.size) await Promise.allSettled([...responses]);
       for (const socket of sockets) socket.destroy();
       await closed;
-      if (lstatExists(descriptor)) {
-        assertPrivate(descriptor);
-        const current = JSON.parse(readFileSync(descriptor, "utf8"));
-        if (current.ownerId === handle.status().ownerId) unlinkSync(descriptor);
+      const verified = privateControlFileIfPresent(descriptor);
+      if (!verified) return;
+      let current: unknown;
+      try {
+        current = JSON.parse(readFileSync(descriptor, "utf8"));
+      } catch (error) {
+        if (isMissing(error) && !lstatExists(descriptor)) return;
+        throw error;
+      }
+      if (
+        current &&
+        typeof current === "object" &&
+        "ownerId" in current &&
+        current.ownerId === handle.status().ownerId &&
+        "endpoint" in current &&
+        current.endpoint === endpoint
+      ) {
+        const latest = lstatSync(descriptor, { throwIfNoEntry: false });
+        if (!latest || !sameControlFile(verified, latest)) return;
+        try {
+          unlinkSync(descriptor);
+        } catch (error) {
+          if (!isMissing(error) || lstatExists(descriptor)) throw error;
+        }
       }
     },
   };
@@ -254,8 +304,7 @@ function lstatExists(filename: string): boolean {
     lstatSync(filename);
     return true;
   } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT")
-      return false;
+    if (isMissing(error)) return false;
     throw error;
   }
 }

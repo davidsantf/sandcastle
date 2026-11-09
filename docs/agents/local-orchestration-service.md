@@ -185,6 +185,11 @@ same-machine user isolation boundary. If privacy cannot be verified, select an
 already-private user-owned directory or fix permissions explicitly outside the
 service. Do not turn verification off. Channel `close()` drains admitted control
 responses, including a stop response, before disconnecting remaining clients.
+Restart tolerates an old descriptor disappearing during read-only verification
+only when it is now absent; the canonical parent and the new exclusive temporary
+file still require privacy verification. Present replacements and other privacy
+failures remain fail-closed. Close checks owner, endpoint, and file identity before
+removing its descriptor, preserving a successor channel after authenticated stop.
 
 ## Optional login startup
 
@@ -201,7 +206,7 @@ provider/agent execution have not been performed by the local fixture tests.
 ## Verified local evidence
 
 On Windows with Node 22.18, the focused service/focus/operations/control suite plus
-the shared workspace-store regression suite passed **44 tests**; one
+the shared workspace-store regression suite passed **53 tests**; one
 POSIX-permission-specific test was correctly skipped on Windows.
 `npm run typecheck` also passed. All service fixtures use the real
 `OrchestrationWorkspaceStore` (in-memory SQLite for unit cases and a disk-backed
@@ -216,12 +221,14 @@ ownership. Authenticated stop exits the host cleanly. Additional checks execute
 mode/scope/grant rejection, selector matching, immutable snapshots, measurable
 budgets, configuration/focus fencing, pause/reprioritize/resume, safe diagnostics,
 unknown-operation reconciliation, and replay protection beyond 256 settled
-effects.
+effects. Deterministic filesystem interleavings cover descriptor disappearance
+during ACL inspection/read and replacement before/after owner checks, with an
+authenticated successor channel remaining usable after the old channel closes.
 
 Reproduce the slice with:
 
 ```powershell
-npm test -- --run src\OrchestrationFocus.test.ts src\OrchestrationOperations.test.ts src\LocalOrchestrationService.test.ts src\LocalOrchestrationService.process.test.ts src\LocalOrchestrationServiceControl.test.ts src\OrchestrationWorkspace.test.ts
+npm test -- --run src\OrchestrationFocus.test.ts src\OrchestrationOperations.test.ts src\LocalOrchestrationService.test.ts src\LocalOrchestrationServiceFailure.test.ts src\LocalOrchestrationService.process.test.ts src\LocalOrchestrationServiceControl.test.ts src\LocalOrchestrationServiceControlRace.test.ts src\OrchestrationWorkspace.test.ts
 npm run typecheck
 ```
 

@@ -7,3 +7,5 @@ Retain the latest cause across restart, expose offline failure evidence and usef
 CLI diagnostics, and report unacknowledged failure persistence explicitly.
 Accept exact grants for currently inactive projects without authorizing effects
 outside the active focus.
+Handle disappearing old control descriptors during restart without suppressing
+privacy failures or deleting a successor owner's descriptor.
