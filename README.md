@@ -92,6 +92,16 @@ with Execute focus and an explicit implement grant. Implementation receipts are
 not completion: unavailable independent review/critical proof blocks acceptance,
 publication and completion without fabricating evidence.
 
+For bounded native local editing, configure the optional revision-bound
+`runtime.executionControls` **local-files** profile. It propagates credit and
+continuation limits, file-only tools, named MCP disables and a host process
+deadline through planning and implementation; unsupported controls fail closed.
+Omitting it preserves legacy launch behavior, not these bounds. Credit limits
+are soft CLI limits; host process termination is separate. Neither scoped tool
+approvals nor MCP disables isolate host credentials, installed hooks or network.
+See [execution controls and configuration](docs/agents/orchestration-workspace.md#bounded-local-file-execution)
+and [actual shipped Windows launch evidence](docs/agents/orchestration-intake.md#shipped-default-launch-validation-with-explicit-controls).
+
 Try the offline scripted-worker demo:
 
 ```powershell

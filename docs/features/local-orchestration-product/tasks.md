@@ -218,21 +218,61 @@ See [detailed execution boundaries and measured results](../../agents/orchestrat
 No live ADO destination, target rollout, remote writes, pushes, PRs, runtime
 installation, credential changes or startup registration were involved.
 
-### Remaining default-launch verification marker
+### Production controls and default-launch verification
 
-**Incomplete: shipped default Windows launch has not been safely exercised.**
-The follow-up checked actual public command generation and rejected runtime
-configuration fields before effects. The default provider emits no credit cap,
-continuation bound, file-tool policy or MCP-disable controls; the strict native
-runtime schema exposes none, and the capability resolver accepts only the plain
-`copilot` command, not extra arguments or a wrapper. Native dispatch hardcodes
-the no-sandbox backend. `COPILOT_ALLOW_ALL=false` and service/idle timers do not
-establish the required bounds or revoke inherited permissions.
+The historical default-launch marker identified a genuine missing facility,
+not missing user configuration. The authorized repair now adds strict
+`runtime.executionControls` and propagates it through revisioned CLI/runtime,
+all configured proposal phases, native implementation, the real runner/provider
+and shell-free process argv. Legacy omission remains compatible. Actual CLI
+capability checks reject missing flags, unknown control fields, nonliteral scope
+rules and unsupported process backends before effect. Host deadlines and
+cancellation terminate the owned tree; soft CLI credits are not advertised as
+hard financial ceilings. Installed hooks and inherited permissions are not
+silently treated as disabled or isolated.
 
-No new model session was launched and no validation-only transport was
-substituted. The earlier real-edit/core/acceptance evidence remains valid within
-its documented seam, but is not promoted to default-launch evidence.
-Production launch controls are the concrete missing capability; shell quoting,
-plugin invocation and parsing through the unmodified Windows transport remain
-unverified. No trust, review, critical-change or publication gate was weakened.
-See [exact default-launch blocker](../../agents/orchestration-intake.md#shipped-default-launch-validation-incomplete).
+File-only workers cannot run Git. The production host records completed scoped
+model edits only after exact repository/common-directory, root, branch, path and
+symlink checks, using per-command empty hooks/signing settings rather than
+changing persistent Git configuration. This is not a claim that repository hooks,
+acceptance, independent review or publication checks passed.
+
+The exact shipped native path was then exercised on Windows with actual
+authenticated CLI `1.0.106` and installed `devsquad:devsquad.implement`.
+No invoke/provider/sandbox/process override was used; only hub/proposal inputs
+remained labeled fixtures. Each invocation had the configured 30-credit soft
+limit, zero continuations, 240-second hard process deadline, scoped file tools
+and builtin plus explicitly enumerated MCP disables.
+
+Two failed fixtures remain intact: copied installed-hook diagnostics, then a
+correct line rejected by its LF-only assertion. A third fresh fixture declared
+Windows-aware newline acceptance before execution, and the actual model edited
+only `src/value.txt`. The production host recorded commit
+`391322812b2e541639cdb05a9208327bf0b953d5`; independent `node acceptance.mjs`
+returned **baseline 1, implementation 0**. Fresh processes reopened all three
+stores with **zero new launches**. Each retained its actual implementation,
+`needs-input` and `backendAttested:false`; none acquired native acceptance,
+independent critic/critical proof, CI, publication or completion.
+
+The bounded local launch/edit/reopen marker is closed, not the external
+live-provider/independent-proof limitations. No runtime install, remote writes,
+credential/global permission changes or startup registration occurred.
+See [exact production evidence and remaining boundaries](../../agents/orchestration-intake.md#shipped-default-launch-validation-with-explicit-controls).
+
+Final integrated regression: **37 files, 552 passed, 7 skipped** on Windows,
+using the combined orchestration/workspace/service/native/worker/no-sandbox/
+execution-controls selectors with one test worker. The separately filtered
+Copilot provider compatibility run passed **32**, excluding 189 nonmatching
+cases; this is not a claim that every provider/platform suite passed.
+`npm run typecheck`, production build and the Effect-free public declaration
+gate passed.
+
+Behavior-specific negative controls were exercised, not just asserted by test
+names. Temporarily removing builtin MCP disabling made the actual generated-argv
+test fail; restoring it passed. Two real-Git fixtures first demonstrated that
+rename detection hid an unauthorized source deletion from dirty host-commit and
+committed revision checks. Disabling rename detection in scope enumeration
+made both reject the source and retained normal scoped edits. The final passing
+regression includes those cases, exact CLI propagation/configuration CAS,
+unsupported backend/flag/scope denial, real process-tree deadline/cancellation,
+private-hook handling and foreign-repository refusal.

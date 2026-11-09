@@ -1,4 +1,8 @@
 export { run } from "./run.js";
+export {
+  copilotExecutionControlsSchema,
+  type CopilotExecutionControls,
+} from "./CopilotExecutionControls.js";
 export * from "./OrchestrationWorkspaceContract.js";
 export {
   OrchestrationWorkspaceStore,

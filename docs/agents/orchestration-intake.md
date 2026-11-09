@@ -418,41 +418,89 @@ verification, publication and completion despite the separately passing toy
 check. The local raw logs, fixture repositories and journal evidence are retained
 as session artifacts, not published as repository content.
 
-### Shipped default launch validation: incomplete
+### Historical default-launch blocker
 
-The subsequent production-path check stopped **before model launch** on this
-Windows host. The shipped public native runtime cannot express the bounds used
-above through its existing configuration. A dry-run of the actual public
-`copilot("auto",{agent:"devsquad:devsquad.implement"})` provider produced:
+The first default-path preflight stopped before model launch: the shipped runtime
+could not express credit/continuation limits, tool/MCP controls or a hard process
+deadline. Setting `COPILOT_ALLOW_ALL=false`, relying on idle/focus timers or
+putting flags in the command name was not an equivalent supported workaround.
+No unbounded model was launched at that checkpoint. The subsequent
+user-authorized production correction below addresses that concrete missing
+facility; the earlier validation bridge is still not default-path evidence.
 
-```text
-copilot -p 'Disposable local-only toy task' --output-format json --model 'auto' --agent 'devsquad:devsquad.implement'
-```
+### Shipped default launch validation with explicit controls
 
-It has no credit ceiling, continuation limit, tool allowlist/denial or MCP
-disable flags. `CopilotOptions` exposes only agent, effort and environment;
-the strict workspace runtime schema rejects attempted credit/tool/MCP control
-fields. The built-in dispatcher selects `noSandbox()` and constructs the
-provider with only the registered agent/model. The native capability resolver
-requires `runtime.command === "copilot"`, so a command containing extra flags or
-a wrapper is not a supported configuration workaround.
+The revision-bound optional `runtime.executionControls` local-files profile now
+flows through public workspace configuration/CLI, planning, native implementation,
+the real `run`, Copilot provider and the shipped no-sandbox direct runner.
+It generates exact shell-free argv rather than relying on Windows shell quoting.
+Installed CLI help and host process-tree support are checked; unsupported
+controls/backends fail closed rather than silently dropping a bound.
+See [configuration, precise limits and hook caveats](orchestration-workspace.md#bounded-local-file-execution).
+Strict identity remains the default; selecting this profile does not select
+trusted-local or satisfy any stronger-proof gate.
 
-`COPILOT_ALLOW_ALL=false` removes blanket approval; it does not establish a
-tool deny policy, disable configured MCPs or impose a credit ceiling.
-Focus/service runtime limits and the worker's idle/completion timers are not
-equivalent to native budget enforcement or guaranteed termination of the
-no-sandbox child process tree. Existing user-level permissions cannot be
-assumed to deny all external effects. Changing user permissions, credentials or
-global configuration was not authorized.
+On 2026-11-09 the exact public native tick -> built-in dispatcher -> durable core
+-> real run -> Copilot provider -> noSandbox direct process path launched
+installed CLI `1.0.106` and `devsquad:devsquad.implement` from DevSquad `0.12.0`.
+**No invoke, agent, sandbox or process transport was substituted.** Only source
+hub reads and host-authored investigation/specification/plan/proposal approval
+were labeled fixtures. Each separate disposable Git repository had a nonroutable
+push URL, fixture-local Git configuration and no sensitive task input.
 
-Consequently, no unbounded default invocation, alternate transport, new model
-session or permission mutation was performed for this follow-up. **The default
-Windows launch path, including its shell quoting and output parsing, remains
-unverified; the earlier real-edit result validates only the explicitly described
-bounded transport seam.** Supporting an equivalent bounded launch in the shipped
-native path requires production execution-control support rather than a missing
-user configuration value. This check does not change strict-default trust,
-trusted-local labeling, admission evidence or unavailable-proof gates.
+Every invocation used a 30-credit **soft** CLI limit, zero autopilot
+continuations, a 240000ms host process deadline, file-only tools, absolute
+read/write approval for `src/value.txt`, builtin MCP disabling and 54 explicitly
+enumerated configured/plugin MCP names disabled. Custom instructions, updates,
+questions, temp access and account-history sync were off. No runtimes,
+dependencies, credentials, global permissions or startup entries were changed.
+This is not credential/network isolation or independent backend attestation.
+
+Three new exact-production fixtures retained separate journals:
+
+| Attempt | Independent acceptance | Actual result                                                                                                                                                    |
+| ------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| First   | Baseline 1, edited 1   | Model copied an unrelated installed LLMLab hook diagnostic into the scoped file; host committed that actual model edit. Not a passing implementation.            |
+| Second  | Baseline 1, edited 1   | Model wrote the correct target line with CRLF; this fixture's original LF-only assertion failed. Its assertion and failed evidence were preserved.               |
+| Third   | Baseline 1, edited 0   | A new fixture defined LF/CRLF-normalized acceptance **before launch**. Model wrote the exact single target line and one newline; only the approved file changed. |
+
+The successful native session `26d9f581-371a-475c-938f-14a3945fa8c5`
+recorded the actual qualified agent selection and CLI-reported model
+`gpt-6-luna` (requested `auto`); those observations are not independent
+loaded-definition/model proof. The actual model used file read/patch tools.
+The production host independently verified the repository/common directory,
+branch and changed scope and committed the model-origin edit as local fixture
+commit `391322812b2e541639cdb05a9208327bf0b953d5`.
+It did not claim independent acceptance while committing. A separate host
+`node acceptance.mjs` then passed on that retained implementation; the immutable
+baseline had failed the same predefined check. Only `src/value.txt` differed,
+and the retained worktree was clean.
+
+Fresh processes reopened **all three** stores using the public native pass:
+one prior admission per fixture, **zero new model launches**, unchanged
+`needs-input, implementationRecorded:true`, and `backendAttested:false`.
+Failed content checks were not rewritten as passing evidence and no fixture was
+reset/retried. The third is a distinct, newly approved proposal/template fixture.
+Native verification, independent critic/critical approval, CI, publication and
+completion remain blocked; the independently passing toy check does not inject
+missing proof into the lifecycle.
+
+The failed first probe exposed a concrete installed-plugin caveat: LLMLab's
+preToolUse hook added a Python `3.14.3` requirement diagnostic, despite MCP and
+custom-instruction disabling. Installed DevSquad postToolUse hooks also exited
+127 on this host. No hook was disabled or bypassed and no Python setup was
+attempted. The toy file edit did not require LLMLab; the final trusted brief
+explicitly distinguished the accepted file content from environment diagnostics.
+For LLMLab work, select an existing exact supported interpreter (or its explicit
+launcher path) before setup; if none exists, installing one needs separate user
+approval. These hook messages are not evidence of failed Copilot authentication
+or a missing launcher control.
+
+This closes the shipped bounded **local Windows edit/parse/reopen** verification
+gap. It does not establish a full unrestricted DevSquad workflow, independent
+backend identity, live ADO/target rollout, external CI or remote publication.
+Raw local logs, fixture repositories, immutable failure/success evidence and
+journals remain session artifacts, not published repository data.
 
 ## Verification scope
 

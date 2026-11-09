@@ -13,6 +13,9 @@ import {
 } from "./OrchestrationWorkspace.js";
 import { createWorkspaceNativeTick } from "./OrchestrationWorkspaceHost.js";
 import { createWorkspaceNativeDispatcher } from "./OrchestrationNativeDispatch.js";
+import { createConfiguredDevsquadProposalPlanner } from "./OrchestrationNativeHost.js";
+import { evaluateOrchestrationFocus } from "./OrchestrationFocus.js";
+import { noSandbox } from "./sandboxes/no-sandbox.js";
 import { createOrchestrationProposalQueue } from "./OrchestrationProposal.js";
 import {
   createOrchestrationDiscoveryAdapter,
@@ -23,6 +26,11 @@ import { MultiProjectJournal } from "./MultiProjectJournal.js";
 import { type OrchestrationWorkerRequest } from "./MultiProjectProtocol.js";
 import { readOrchestrationOperationSummary } from "./OrchestrationOperations.js";
 import type { WorkspaceFocus } from "./OrchestrationWorkspaceContract.js";
+import type { CopilotExecutionControls } from "./CopilotExecutionControls.js";
+
+const controlledHelp =
+  "--agent --model --max-ai-credits --max-autopilot-continues --available-tools --allow-tool --deny-tool --disable-builtin-mcps --disable-mcp-server --no-custom-instructions --no-auto-update --no-ask-user --disallow-temp-dir --sync-session";
+let nativeHelp = controlledHelp;
 
 vi.mock("./run.js", () => ({ run: vi.fn() }));
 vi.mock("node:child_process", async (original) => {
@@ -33,9 +41,7 @@ vi.mock("node:child_process", async (original) => {
       if (command === "copilot")
         callback(
           null,
-          args[0] === "--version"
-            ? "GitHub Copilot CLI 1.0.106."
-            : "--agent --model",
+          args[0] === "--version" ? "GitHub Copilot CLI 1.0.106." : nativeHelp,
         );
       else actual.execFile(command, args, options, callback);
     }),
@@ -45,6 +51,7 @@ const fixtures: { directory: string; store: OrchestrationWorkspaceStore }[] =
   [];
 afterEach(() => {
   vi.mocked(run).mockReset();
+  nativeHelp = controlledHelp;
   for (const f of fixtures.splice(0)) {
     f.store.close();
     fs.rmSync(f.directory, { recursive: true, force: true });
@@ -74,6 +81,7 @@ async function fixture(
   provider: "github" | "ado" = "github",
   mode: WorkspaceFocus["mode"] = "execute",
   implementationGrant = true,
+  executionControls?: CopilotExecutionControls,
 ) {
   const directory = fs.realpathSync.native(
     fs.mkdtempSync(path.join(os.tmpdir(), "native-dispatch-")),
@@ -191,6 +199,7 @@ async function fixture(
       ...current.runtime,
       executionTrust: "trusted-local",
       phaseDefinitions,
+      ...(executionControls ? { executionControls } : {}),
     },
   }));
   const raw = {
@@ -344,6 +353,99 @@ async function fixture(
   };
 }
 describe("built-in native implementation lifecycle (fixture runner and hub)", () => {
+  const controls: CopilotExecutionControls = {
+    profile: "local-files",
+    maxAiCredits: 30,
+    maxAutopilotContinues: 0,
+    timeoutMs: 2000,
+    disabledMcpServers: ["fixture-server"],
+  };
+  it("keeps the same runtime controls on every configured proposal-planning phase", async () => {
+    const f = await fixture("github", "propose", false, controls);
+    vi.mocked(run).mockImplementation(async (options) => ({
+      branch: JSON.parse(
+        String(options.prompt)
+          .split("Host request (JSON data):\n")[1]!
+          .split("\n\nReturn exactly")[0]!,
+      ).task.branch,
+      iterations: [],
+      stdout: "",
+      commits: [],
+      output: {
+        kind: "completed",
+        artifact: "Fixture substantive planning artifact.",
+        contracts: {},
+        findings: [],
+      },
+    }));
+    const planner = createConfiguredDevsquadProposalPlanner({
+      configuration: f.configuration,
+      tasks: f.configuration.taskTemplates,
+      evaluateFocus: evaluateOrchestrationFocus,
+      sandbox: () => noSandbox(),
+      recordLocalExecution: async () => {},
+      transport: () => f.transport,
+    });
+    expect(
+      (await planner.plan(f.item, f.configuration, signal())).plan,
+    ).toContain("Fixture");
+    expect(run).toHaveBeenCalledTimes(3);
+    for (const [options] of vi.mocked(run).mock.calls) {
+      const command = options.agent.buildPrintCommand({
+        prompt: "fixture",
+        dangerouslySkipPermissions: true,
+      });
+      expect(command.process).toMatchObject({
+        file: "copilot",
+        timeoutMs: 2000,
+        scopedFiles: ["src"],
+      });
+      expect(command.process!.args.join("\0")).toContain(
+        "--disable-mcp-server\0fixture-server",
+      );
+      expect(command.process!.args).not.toContain("--allow-all-tools");
+    }
+  });
+  it("propagates revisioned runtime controls through public native tick to actual provider argv", async () => {
+    const f = await fixture("github", "execute", true, controls);
+    await f.pass();
+    expect(run).toHaveBeenCalledOnce();
+    const launch = vi.mocked(run).mock.calls[0]![0];
+    const process = launch.agent.buildPrintCommand({
+      prompt: "fixture",
+      dangerouslySkipPermissions: true,
+    }).process;
+    expect(process).toMatchObject({
+      file: "copilot",
+      timeoutMs: 2000,
+      scopedFiles: ["src"],
+    });
+    expect(process!.args.join("\0")).toContain("--max-ai-credits\0" + "30");
+    expect(process!.args.join("\0")).toContain(
+      "--disable-mcp-server\0fixture-server",
+    );
+    expect(launch.agent.env).toMatchObject({ COPILOT_ALLOW_ALL: "false" });
+    const record = f.store
+      .events()
+      .find((event) => event.kind === "trusted-local-launch-admitted")!;
+    expect(f.store.read(record.key).value).toHaveProperty(
+      "executionControlsDigest",
+    );
+  });
+  it("blocks unsupported native control flags before operation/launch reservation", async () => {
+    const f = await fixture("github", "execute", true, controls);
+    nativeHelp = "--agent --model";
+    const { result } = await f.pass();
+    expect(result!.status).toBe("blocked");
+    expect(result!.diagnostics.join()).toContain("execution-control flags");
+    expect(run).not.toHaveBeenCalled();
+    expect(
+      f.store
+        .events()
+        .some((event) => event.kind === "trusted-local-launch-reserved"),
+    ).toBe(false);
+    expect(result!.lifecycles).toEqual([]);
+  });
   it.each(["github", "ado"] as const)(
     "dispatches an approved %s proposal through the real lifecycle, not publication",
     async (provider) => {

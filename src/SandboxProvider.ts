@@ -195,6 +195,19 @@ export interface IsolatedSandboxProvider {
 export interface NoSandboxHandle {
   /** Absolute path to the worktree on the host. */
   readonly worktreePath: string;
+  /** Shell-free, bounded host process support. Never fall back to a shell. */
+  execFile?(
+    file: string,
+    args: readonly string[],
+    options: {
+      cwd?: string;
+      onLine?: (line: string) => void;
+      stdin?: string;
+      signal: AbortSignal;
+      timeoutMs: number;
+      scopedFiles?: readonly string[];
+    },
+  ): Promise<ExecResult>;
   /**
    * Execute a command on the host.
    *

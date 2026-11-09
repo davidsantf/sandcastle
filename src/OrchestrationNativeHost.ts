@@ -3,6 +3,12 @@ import { createHash } from "node:crypto";
 import { readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
+import { assertDirectProcessSupport } from "./sandboxes/no-sandbox.js";
+import {
+  copilotControlledFlags,
+  copilotExecutionControlsSchema,
+  type CopilotExecutionControls,
+} from "./CopilotExecutionControls.js";
 import {
   digest,
   humanStop,
@@ -580,10 +586,18 @@ export function createOrchestrationNativeSetup(options: {
   command: string;
   phaseDefinitions: OrchestrationNativePhaseDefinition[];
   executionTrust?: "independent-backend" | "trusted-local";
+  executionControls?: CopilotExecutionControls;
 }) {
   const definitions = structuredClone(options.phaseDefinitions);
   const command = options.command;
   const executionTrust = options.executionTrust ?? "independent-backend";
+  const executionControls = options.executionControls
+    ? copilotExecutionControlsSchema.parse(options.executionControls)
+    : undefined;
+  const controlsSupported = async (signal: AbortSignal) => {
+    const help = await probeCommand(command, ["--help"], signal);
+    return copilotControlledFlags.every((flag) => help.includes(flag));
+  };
   const resolveDefinition = async (
     stage: DevsquadPhaseCapability["stage"],
   ): Promise<DevsquadPhaseCapability | null> => {
@@ -637,12 +651,22 @@ export function createOrchestrationNativeSetup(options: {
   };
   return {
     executionTrust,
+    executionControls,
     async preflight(
       signal: AbortSignal,
     ): Promise<OrchestrationNativeReadiness> {
       signal.throwIfAborted();
       const missingConfiguration: string[] = [],
         missingCapabilities: string[] = [];
+      if (executionControls) {
+        try {
+          await assertDirectProcessSupport();
+        } catch {
+          missingCapabilities.push(
+            "Host lacks required direct process-tree termination support",
+          );
+        }
+      }
       const runtime: OrchestrationNativeReadiness["runtime"] = {
         provider: "copilot",
         version: null,
@@ -666,6 +690,13 @@ export function createOrchestrationNativeSetup(options: {
           if (!runtime.namedAgentFlag || !runtime.modelFlag)
             missingCapabilities.push(
               "Installed Copilot CLI lacks required named-agent/model flags",
+            );
+          if (
+            executionControls &&
+            !copilotControlledFlags.every((flag) => help.includes(flag))
+          )
+            missingCapabilities.push(
+              "Installed Copilot CLI lacks required local-files execution-control flags",
             );
         } catch {
           signal.throwIfAborted();
@@ -723,6 +754,8 @@ export function createOrchestrationNativeSetup(options: {
     ) {
       signal.throwIfAborted();
       if (request.stage === "verify" || command !== "copilot") return null;
+      if (executionControls) await assertDirectProcessSupport();
+      if (executionControls && !(await controlsSupported(signal))) return null;
       return resolveDefinition(request.stage);
     },
     async authorizeCapability(
@@ -739,6 +772,11 @@ export function createOrchestrationNativeSetup(options: {
       )
         return false;
       const current = await resolveDefinition(request.stage);
+      if (
+        executionControls &&
+        !(await controlsSupported(signal ?? new AbortController().signal))
+      )
+        return false;
       return current !== null && digest(current) === digest(capability);
     },
     async attestExecution() {

@@ -55,6 +55,15 @@ and normal repository policy. This expansion is separate from that merge.
    invocations; stale lanes do not block unrelated recovery. Preserve unresolved
    file-scope holds and old configuration evidence. A native admission or local
    implementation is never fabricated review, acceptance, CI or publication.
+10. Explicit revision-bound native execution controls propagate from workspace
+    CLI/runtime through proposal and implementation workers to the actual process.
+    The supported local-files profile carries soft credit/continuation limits,
+    literal file-tool approvals, builtin/named MCP disables and a separate hard
+    process deadline/cancellation path. Unsupported controls, scopes or process
+    facilities fail closed, never fall back to an uncontrolled shell. Omission
+    preserves legacy behavior, not equivalent bounds. Installed hooks, saved
+    permissions and host credentials/network are not OS-isolated. Host-origin
+    scoped local commits do not satisfy acceptance, repository checks or review.
 
 ## Non-regression and verification
 

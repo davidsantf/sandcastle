@@ -1,6 +1,10 @@
 import path from "node:path";
 import { z } from "zod";
 import {
+  assertCopilotFileScopes,
+  copilotExecutionControlsSchema,
+} from "./CopilotExecutionControls.js";
+import {
   parseOrchestrationCatalog,
   type OrchestrationProject,
   type OrchestrationTask,
@@ -139,6 +143,7 @@ export interface WorkspaceConfiguration {
     model: string;
     command: string;
     executionTrust?: "independent-backend" | "trusted-local";
+    executionControls?: import("./CopilotExecutionControls.js").CopilotExecutionControls;
     phaseDefinitions: z.infer<typeof workspacePhaseDefinitionSchema>[];
   };
   pollIntervalMs: number;
@@ -174,6 +179,7 @@ export const workspaceConfigurationSchema = z.strictObject({
       .max(1000)
       .refine((value) => !/[\u0000-\u001f]/.test(value), "invalid executable"),
     executionTrust: z.enum(["independent-backend", "trusted-local"]).optional(),
+    executionControls: copilotExecutionControlsSchema.optional(),
     phaseDefinitions: z
       .array(workspacePhaseDefinitionSchema)
       .max(6)
@@ -195,6 +201,9 @@ export function parseWorkspaceConfiguration(
       "task templates cannot register source items or change requests",
     );
   config.taskTemplates = catalog.tasks;
+  if (config.runtime.executionControls)
+    for (const task of config.taskTemplates)
+      assertCopilotFileScopes(task.scopes);
   const ids = new Set(config.projects.map((project) => project.id));
   const unique = (values: string[], label: string) => {
     if (new Set(values).size !== values.length)

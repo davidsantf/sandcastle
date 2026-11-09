@@ -17,3 +17,9 @@ through public run/service commands using the existing fenced core lifecycle.
 Retain atomic admission, recoverable pre-invocation checkpoints, uncertain
 invocations and unresolved file-scope holds without granting publication or
 fabricating independent review and acceptance evidence.
+Add opt-in revision-bound native local-file execution controls with soft CLI
+credit/continuation bounds, scoped tool approvals, configured/builtin MCP
+disables and shell-free hard process deadlines/tree cancellation. Reject
+unsupported controls instead of falling back to an uncontrolled launch.
+Allow the host to record exact scoped local model edits without granting
+publication or claiming independent acceptance, review or sandbox isolation.

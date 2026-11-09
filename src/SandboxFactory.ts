@@ -43,6 +43,7 @@ export interface SandboxService {
       cwd?: string;
       sudo?: boolean;
       stdin?: string;
+      process?: import("./AgentProvider.js").PrintCommand["process"];
     },
   ) => Effect.Effect<ExecResult, ExecError>;
 
@@ -101,7 +102,20 @@ export const makeSandboxFromHandle = (
 ): SandboxService => ({
   exec: (command, options) =>
     Effect.tryPromise({
-      try: () => handle.exec(command, options),
+      try: (signal) => {
+        if (options?.process) {
+          if (!("execFile" in handle) || !handle.execFile)
+            throw new Error(
+              "Sandbox does not support bounded direct process execution",
+            );
+          return handle.execFile(options.process.file, options.process.args, {
+            ...options,
+            ...options.process,
+            signal,
+          });
+        }
+        return handle.exec(command, options);
+      },
       catch: (e) =>
         new ExecError({
           command,

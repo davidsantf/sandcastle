@@ -97,7 +97,8 @@ its verified producer-change and cause-bound task append gates.
 
 `runtime` accepts `framework: "devsquad"`, `command`, `agent`, `model`, and
 `phaseDefinitions`, plus optional `executionTrust` (`independent-backend`, the
-default when omitted, or `trusted-local`). Each phase binds `stage`, `agentName`, absolute
+default when omitted, or `trusted-local`), and optional `executionControls`
+described below. Each phase binds `stage`, `agentName`, absolute
 `definitionPath`, SHA256 `definitionDigest`, and `model: {id,family}`.
 Installed definition checks are not backend execution identity evidence.
 
@@ -153,6 +154,79 @@ bound to its immutable observed identity and revision; untrusted source text
 cannot choose commands or broaden scopes. Remove with `task-template-remove`.
 Use one template per project; unresolved task/contract prerequisites cannot be
 renamed into discovered tasks and require the verified core lifecycle.
+
+### Bounded local-file execution
+
+The optional `runtime.executionControls` is trusted, revision-bound configuration,
+never a field inferred from a discovered issue or worker receipt. It applies to
+configured proposal phases and approved implementation/repair workers through
+the public native run/service paths. Changing it changes the configuration
+revision and invalidates earlier proposal approvals. It does not opt into
+trusted-local mode, change focus, grant implement permission or authorize
+publication. Omitting it preserves the legacy launch; focus runtime limits and
+idle timers alone do not provide equivalent execution controls.
+
+After stopping any active service, edit the existing runtime with CAS:
+
+```powershell
+$configuration = sandcastle orchestrate workspace list --database C:\work\orchestration.sqlite | ConvertFrom-Json
+$configuration.runtime | Add-Member -NotePropertyName executionControls -NotePropertyValue @{
+  profile = "local-files"
+  maxAiCredits = 30
+  maxAutopilotContinues = 0
+  timeoutMs = 240000
+  disabledMcpServers = @("github", "ado")
+} -Force
+$configuration.runtime | ConvertTo-Json -Depth 20 | Set-Content C:\work\runtime.json
+sandcastle orchestrate workspace runtime --database C:\work\orchestration.sqlite --revision $configuration.revision --file C:\work\runtime.json
+```
+
+Replace the example MCP names with **every configured/plugin MCP name to disable
+in your installation**. Names are identifiers, not credentials or URLs; builtin
+MCPs are disabled separately. The host does not silently infer or rewrite global
+MCP configuration. Only the `local-files` profile and its documented fields are
+accepted. Credit limits are integers 30-10000; continuation limits 0-100; process
+deadlines 1000-3600000 milliseconds. Duplicate MCP names, unknown controls and
+nonliteral/root/escaping task scopes are rejected. Roots or scopes that cannot
+be represented as literal native tool approvals are refused before launch.
+
+The generated process uses shell-free argv with the registered qualified agent
+name and model, `--max-ai-credits`, `--max-autopilot-continues`, file-only
+`view/read_file/apply_patch`, denied shell/URL/memory, builtin/name-specific MCP
+disables, no custom instructions/updates/questions/temp access and session sync
+off. Absolute read/write rules are derived from the canonical isolated worktree
+and trusted task scopes; symlink scopes are refused. Broad automatic approval
+environment switches and LLMLab automatic setup are disabled for this profile.
+Unsupported native flags or process facilities fail before worker launch; an
+unsupported sandbox cannot silently fall back to a shell. Interactive launches
+are unsupported with this profile.
+
+The CLI credit limit is **soft**, checked after responses, so a response can
+overshoot it. It is not a hard financial ceiling. The separate host deadline
+terminates the owned process tree (Windows `taskkill /PID ... /T /F`, or a POSIX
+process group); cancellation follows the same cleanup path. Missing termination
+support fails closed. A canceled, timed-out or unacknowledged invocation retains
+an unknown outcome and cannot be automatically replayed.
+
+These are CLI/tool approvals, **not an OS sandbox, revocation of previously
+saved permissions, credential isolation or network isolation**. Installed plugin
+hooks remain active even with custom instructions and MCPs disabled, may execute
+their own host processes and can add diagnostics to the model context. Trust the
+installed CLI/plugins; do not assume this profile disables hooks. Unmet runtime
+setup requires separate authorized setup, not an automatic installation. The
+local verification below did not install Python or other runtimes.
+
+Because file-only workers cannot run Git, after a completed implement/fix receipt
+the host may commit actual scoped edits on the exact owned repository/worktree/
+branch. It verifies all changed paths (including both sides of renames) and
+symlink ancestry, uses per-command
+empty-hook/signing/author overrides, and requires a clean result. This runs no
+repository commit hooks and is **not proof that those checks passed**. It changes
+no persistent Git/permission settings and grants no remote publication.
+Acceptance and independent review remain separate host gates. Out-of-scope
+changes or uncertain commits retain an unknown outcome rather than success.
+
+See [actual default Windows launch and fixture boundaries](orchestration-intake.md#shipped-default-launch-validation-with-explicit-controls).
 
 ## Polling and local control
 

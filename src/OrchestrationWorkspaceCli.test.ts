@@ -42,6 +42,57 @@ const invoke = (database: string, command: string, ...args: string[]) => {
 };
 
 describe("compiled workspace CLI", () => {
+  it("persists validated execution controls by exact runtime revision without broadening focus", () => {
+    const directory = fs.mkdtempSync(
+      path.join(os.tmpdir(), "workspace-controls-"),
+    );
+    try {
+      const database = path.join(directory, "state.sqlite");
+      const initial = invoke(database, "init");
+      const runtime = initial.runtime as Record<string, unknown>;
+      const executionControls = {
+        profile: "local-files",
+        maxAiCredits: 30,
+        maxAutopilotContinues: 0,
+        timeoutMs: 240000,
+        disabledMcpServers: ["fixture-server"],
+      };
+      const file = path.join(directory, "runtime.json");
+      fs.writeFileSync(file, JSON.stringify({ ...runtime, executionControls }));
+      const updated = invoke(
+        database,
+        "runtime",
+        "--revision",
+        "1",
+        "--file",
+        file,
+      );
+      expect(updated.runtime).toHaveProperty(
+        "executionControls",
+        executionControls,
+      );
+      expect(updated.focus).toMatchObject({ mode: "observe", permissions: [] });
+      expect(() =>
+        invoke(database, "runtime", "--revision", "1", "--file", file),
+      ).toThrow();
+      fs.writeFileSync(
+        file,
+        JSON.stringify({
+          ...runtime,
+          executionControls: {
+            ...executionControls,
+            availableTools: ["shell"],
+          },
+        }),
+      );
+      expect(() =>
+        invoke(database, "runtime", "--revision", "2", "--file", file),
+      ).toThrow();
+      expect(invoke(database, "list")).toHaveProperty("revision", 2);
+    } finally {
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
   it("persists trusted-local only by explicit revisioned runtime edit without granting permissions", () => {
     const directory = fs.mkdtempSync(
       path.join(os.tmpdir(), "workspace-trust-"),
