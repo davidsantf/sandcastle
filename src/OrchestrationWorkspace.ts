@@ -110,6 +110,9 @@ export class OrchestrationWorkspaceStore implements WorkspaceStore {
   close() {
     this.db.close();
   }
+  guards(): readonly WorkspaceStoreGuard[] {
+    return [];
+  }
   read(key: string) {
     validKey(key);
     const row = this.db
@@ -230,6 +233,7 @@ export class OrchestrationWorkspaceStore implements WorkspaceStore {
       return Object.freeze({ ...guard });
     });
     return {
+      guards: () => captured.map((guard) => ({ ...guard })),
       read: (key) => this.read(key),
       compareAndSwap: (key, version, value, event) =>
         this.write(captured, key, version, value, event),

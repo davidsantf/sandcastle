@@ -17,8 +17,10 @@ source text or install startup artifacts. Report missing backend identity as
 blocked in strict mode; installed definition hashes alone do not prove execution.
 An explicit trusted local configuration may select `runtime.executionTrust:
 "trusted-local"`: record host launch provenance without calling it backend
-attestation. This mode runs proposal workers on the host without credential/network
-isolation. It does not register native implementation dispatch or satisfy
+attestation. This mode runs proposal and approved implementation workers on the host without credential/network
+isolation. Built-in native dispatch requires an exact approved proposal, trusted
+template, current source/configuration, Execute focus and implement permission.
+It admits the existing fenced core lifecycle, but does not satisfy
 independent critic, critical approval, verification or publication gates.
 Use `workspace run` for a bounded native pass or `workspace start` for attached
 polling. Inspect `workspace status` and `lastPass.result`, not just endpoint

@@ -43,9 +43,18 @@ and normal repository policy. This expansion is separate from that merge.
    trusted-local mode trusts installed CLI agent/model selection, labels host
    provenance honestly and atomically retains invocation/request/configuration
    launch evidence. It does not fabricate backend attestation, provide OS
-   isolation, register native implementation dispatch or satisfy stronger-proof
+   isolation or satisfy stronger-proof
    review/critical/publication gates. Lost evidence, canceled or uncertain
    invocations are not automatically replayed.
+9. Public native run/service paths dispatch approved issue-backed work through
+   the real existing core without a hand-authored authority module. Require exact
+   proposal digest/source/configuration approval, trusted task template, current
+   Execute focus and implement permission. Atomically retain admission and
+   recovery index; fence core writes with workspace ownership/configuration on the
+   same database. Recover pre-invocation crashes without repeating unknown
+   invocations; stale lanes do not block unrelated recovery. Preserve unresolved
+   file-scope holds and old configuration evidence. A native admission or local
+   implementation is never fabricated review, acceptance, CI or publication.
 
 ## Non-regression and verification
 

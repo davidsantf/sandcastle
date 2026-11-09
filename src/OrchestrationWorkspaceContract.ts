@@ -303,6 +303,8 @@ export interface WorkspaceEvent {
   valueDigest: string;
 }
 export interface WorkspaceStore {
+  /** Captured host guards, for atomic mutations in the same SQLite journal. */
+  guards?(): readonly WorkspaceStoreGuard[];
   read(key: string): { version: number; value: unknown | null };
   compareAndSwap(
     key: string,

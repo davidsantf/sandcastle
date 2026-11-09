@@ -12,3 +12,8 @@ retaining host-owned change-request registration and fail-closed verification.
 Add opt-in trusted-local proposal execution with atomic, fenced host launch
 provenance and explicit no-sandbox warnings, without claiming backend attestation
 or weakening independent review and publication gates.
+Register approved, revision/source/configuration-bound native implementation
+through public run/service commands using the existing fenced core lifecycle.
+Retain atomic admission, recoverable pre-invocation checkpoints, uncertain
+invocations and unresolved file-scope holds without granting publication or
+fabricating independent review and acceptance evidence.

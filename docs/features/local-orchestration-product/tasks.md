@@ -100,7 +100,7 @@ and during execution. Temporarily changing the omitted policy default to
 `trusted-local` made the strict-default test fail; the production default was
 restored before the build and final regression.
 
-The native workspace still has no implementation dispatcher. Existing core
+At that intermediate delivery the native workspace had no implementation dispatcher. Existing core
 verification, independent critic, critical-change approval and publication gates
 are unchanged. Trusted-local uses the existing no-sandbox backend, so host
 credentials, environment, filesystem and network are not isolated. No live
@@ -123,3 +123,61 @@ Windows**. Typecheck, production build and Effect-free public declaration gate
 passed. The focused trusted-local suite accounts for 13 passing cases; the
 strict-default mutation intentionally failed its one selected case before
 restoration. All final results above used the restored strict default.
+
+## Automatic implementation continuation
+
+The original automatic-implementation requirement now uses a built-in bridge
+from public `workspace run/start/restart` to the real core lifecycle.
+No dispatch callback or separate hand-authored host module is required.
+It binds exact approved proposal/source/configuration revisions and digest,
+trusted task template, immutable catalog and issue-backed source cause.
+One atomic CAS retains the entire bounded admission/recovery index. Current
+Execute focus, implement permission, native facts/stop labels, installed phase
+definitions and Git root/origin are checked before worker launch.
+
+Every core write checks captured workspace owner/control/configuration guards
+inside its own SQLite transaction, retaining the existing core lease.
+Deterministic cause binding and approved artifact seeding resume known
+pre-invocation checkpoints. Running/uncertain invocations never automatically
+repeat. Historical configuration evidence and native scope holds remain visible;
+stale retained lanes cannot prevent recovery of another ready lane.
+Independent critic/critical proof is unavailable in this built-in path:
+actual local implementation records needs-input, not fabricated acceptance,
+CI, review, publication or completion.
+
+The new fixture suite uses real Git repositories, actual core/service/SQLite,
+both native hub adapters and explicitly labeled model/hub fixtures. It covers
+Observe/Propose denial, missing implement grant, forged/stale approval, source
+stop labels, Git mismatch, configuration mutation between reservation/admission,
+unknown outcomes, independent-lane recovery and scope holds with evidence-backed
+host release. Actual child processes exit at admission/initialize/bind/seed/running;
+restart resumes only pre-invocation work and never repeats uncertain effects.
+Compiled public manual/service commands retain actual lifecycle projections.
+
+Separately, the actual installed DevSquad plugin-qualified named agent completed
+the bounded read-only/local-only no-tools launch probe documented in
+[native intake](../../agents/orchestration-intake.md#actual-installed-named-agent-launch-probe).
+That was one real authenticated model request, not the fixture runner.
+It establishes launch/parsing only, not independent identity, full live
+implementation, ADO access, CI or publication. Strict independent-backend mode
+remains the default; no live hub writes or new publication were performed.
+
+Final continuation verification:
+
+```powershell
+npm run typecheck
+& .\node_modules\.bin\tsup.cmd
+Copy-Item .\src\templates\* .\dist\templates -Recurse -Force
+node .\scripts\check-public-types-effect-free.mjs
+npm test -- --reporter=dot --maxWorkers=1 --testTimeout=60000 MultiProject Cowork OrchestrationWorkspace LocalOrchestration OrchestrationFocus OrchestrationOperations OrchestrationDiscovery OrchestrationProposal OrchestrationNativeHost OrchestrationTrustedLocal OrchestrationNativeDispatch
+```
+
+Result: **35 files passed, 515 tests passed, one POSIX-only test skipped on
+Windows**. Typecheck, production build and public declaration gate passed.
+The new native-dispatch suite contributes 19 cases. Temporarily skipping the
+core transaction's workspace guards made its dedicated test fail as intended;
+guards were restored before the successful rebuilt regression. Assertions are
+outside service callbacks so caught callback failures cannot masquerade as
+passing tests. Initial runtime tests also exposed an order-sensitive task digest
+comparison; expected tasks now use the canonical task parser before comparison,
+preserving exact binding rather than weakening it.

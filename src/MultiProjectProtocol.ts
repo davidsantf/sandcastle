@@ -169,11 +169,17 @@ const sourceItemSchema = z.strictObject({
         !parsed.hash
       );
     }, "credential-free HTTPS item link required"),
-  cause: z.strictObject({
-    recordKey: z.string().regex(/^factory:[a-f0-9]{64}$/),
-    recordVersion: z.number().int().min(2),
-    recordDigest: z.string().regex(/^[a-f0-9]{64}$/),
-  }),
+  cause: z
+    .strictObject({
+      recordKey: z.string().regex(/^(?:factory|native-proposal):[a-f0-9]{64}$/),
+      recordVersion: z.number().int().min(1),
+      recordDigest: z.string().regex(/^[a-f0-9]{64}$/),
+    })
+    .refine(
+      (cause) =>
+        !cause.recordKey.startsWith("factory:") || cause.recordVersion >= 2,
+      "factory source causes require a completed version",
+    ),
 });
 const hubSchema = z.discriminatedUnion("kind", [
   z

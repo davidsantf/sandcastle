@@ -81,6 +81,7 @@ export interface OrchestrationDiscoveredItem {
   revision: string;
   feedback: unknown[];
   dependencies: unknown[];
+  labels?: string[];
   scope?: OrchestrationDiscoveryScopeFacts;
 }
 export interface OrchestrationDiscoveryCursor {
@@ -450,6 +451,9 @@ export function createOrchestrationDiscoveryAdapter(
       updatedAt: timestamp(item.updated_at),
       feedback: stableEvidence(feedback),
       dependencies: stableEvidence(dependencies),
+      labels: rows(item.labels ?? [])
+        .map((label) => text(label.name, 200))
+        .sort(),
     };
     return { ...snapshot, revision: digest(JSON.stringify(snapshot)) };
   };
@@ -824,6 +828,11 @@ export function createOrchestrationDiscoveryAdapter(
       itemRevision: positive(item.rev),
       feedback: stableEvidence(feedback),
       dependencies: stableEvidence(dependencies),
+      labels: text(fields["System.Tags"])
+        .split(";")
+        .map((label) => label.trim())
+        .filter(Boolean)
+        .sort(),
       ...(Object.keys(scope).length ? { scope } : {}),
     };
     return { ...snapshot, revision: digest(JSON.stringify(snapshot)) };

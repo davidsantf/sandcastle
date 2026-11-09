@@ -220,19 +220,20 @@ verification blocks before implementation; changed evidence supersedes approval.
 `dispatching`/`unknown` outcomes suppress automatic repetition after restart.
 Approval is never a publication permission.
 
-**The default native host currently has no available framework dispatch.** Its
-configured planner preflight also remains blocked on the independent identity
-gap below. Supplying a sandbox, valid files, aliases or fabricated callbacks does
-not unlock it. `createOrchestrationNativeTick` accepts a trusted `dispatch` bridge
-for an existing **verified core lifecycle**; absent that bridge it reports an
-explicit diagnostic for approved proposals rather than marking them dispatched.
-The bridge must bind the canonical proposal record/version/digest to the core
-task's source cause, acquire core lifecycle ownership, consume the existing exact
-executor capability/proof/acceptance/receipt contracts, and return a real retained
-receipt. It must not borrow a registered project's unrelated PR. Publication,
-implementation and downstream effects require their separate focus grants.
-This injected route is an integration surface, not evidence that default native
-dispatch is live. No new central journal lifecycle is implemented here.
+The public workspace host now supplies a built-in bridge to the existing core
+lifecycle; users need not invent a dispatch callback. Strict mode remains blocked
+on the independent identity gap below. Explicit trusted-local mode can admit
+approved issue/work-item proposals with current Execute focus, an exact implement
+grant and one trusted configured template. The host binds the proposal
+digest/approval/source/configuration to an immutable core cause, same-database
+ownership, artifact seed and actual local worker. Its retained
+`native-admission:` receipt acknowledges admission, not acceptance or completion.
+Unavailable independent critic/critical proof stops the lifecycle at needs-input.
+No native publication authority or unrelated PR binding is introduced.
+See [built-in implementation and recovery](orchestration-workspace.md#built-in-implementation-and-recovery)
+for crash windows, independent-lane reconciliation and unresolved scope holds.
+The lower-level `createOrchestrationNativeTick` callback remains an embedding seam;
+an injected callback alone is not live execution evidence.
 
 `createOrchestrationNativeAcceptance({checks,timeoutMs})` runs only trusted host
 `executable`/`args` in an absolute configured `cwd`, without a shell or worker-
@@ -320,8 +321,9 @@ Supported integration paths inspected without launching a worker:
 
 This establishes a gap in the **currently integrated evidence paths**, not a
 claim that every possible provider/backend can never expose such evidence.
-No new CLI session was launched to obtain richer output because that would run
-an effectful worker. The smallest external capability needed is backend-owned,
+During that initial read-only preflight no new CLI session was launched.
+The separate bounded named-agent probe below was subsequently authorized.
+The smallest external capability needed for strict mode is backend-owned,
 independently verifiable evidence binding the actual invocation and request
 intent/revision, executed phase/named agent, loaded definition SHA-256, and
 resolved model/family. A trusted host bridge must consume that evidence through
@@ -329,6 +331,32 @@ the existing executor's resolve/authorize/attest controls. Desired identity echo
 by configuration, worker text, a host-generated process receipt, selected-model
 metadata alone, or a zero exit code cannot replace it. Additional configuration
 alone therefore cannot make this default factory execution-ready.
+
+### Actual installed named-agent launch probe
+
+A later bounded, local-only probe used the existing authenticated native
+Copilot CLI `1.0.106` and installed DevSquad plugin `0.12.0`. The real registered
+agent is **`devsquad:devsquad.implement`**, although its file declares
+`name: devsquad.implement`. An unqualified name was rejected before model
+execution; the qualified invocation succeeded.
+
+The probe ran in an empty local artifact directory, not a target repository.
+It requested only an exact toy response marker. All usable tools were denied
+(`--available-tools read_file --deny-tool read_file`); builtin MCPs and each
+configured MCP name were disabled, custom instructions/updates/temp access/
+session sync were off, and `--no-ask-user` was set. Its model was `auto`,
+autopilot continuation budget was zero, and AI credit ceiling was **30**, the
+installed CLI's minimum (a ceiling of 1 was rejected before execution).
+No runtimes or dependencies were installed.
+
+The actual process returned the exact requested
+`<orchestration-probe>devsquad.implement:local-read-only</orchestration-probe>`
+marker and exit 0. Sanitized metadata recorded one user/model request,
+1,848 ms API duration, current model `gpt-6-luna`, zero tool executions and
+zero file changes. No remote writes/publication were requested or observed.
+This proves authentication and actual named-agent launch/parsing, **not**
+independent loaded-definition/model attestation, a full implementation lifecycle,
+live ADO access, acceptance, CI or publication.
 
 ## Verification scope
 

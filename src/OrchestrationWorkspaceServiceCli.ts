@@ -13,7 +13,6 @@ import {
   runLocalOrchestrationPass,
   readLocalOrchestrationFailure,
   type LocalOrchestrationServiceStatus,
-  type LocalOrchestrationTickContext,
 } from "./LocalOrchestrationService.js";
 import {
   startLocalOrchestrationControlChannel,
@@ -26,10 +25,9 @@ import {
   readOrchestrationOperationSummary,
 } from "./OrchestrationOperations.js";
 import { workspaceFocusSchema } from "./OrchestrationWorkspaceContract.js";
+import type { WorkspaceNativeTickContext } from "./OrchestrationNativeDispatch.js";
 
-type WorkspaceTick = (
-  context: LocalOrchestrationTickContext<WorkspaceConfiguration>,
-) => Promise<unknown>;
+type WorkspaceTick = (context: WorkspaceNativeTickContext) => Promise<unknown>;
 const database = Options.text("database");
 const controlDirectory = Options.text("control-directory").pipe(
   Options.optional,
@@ -142,7 +140,8 @@ export function createWorkspaceServiceCommands(tick: WorkspaceTick) {
       const status = await runLocalOrchestrationPass({
         configuration,
         store,
-        tick: tracked,
+        tick: (context) =>
+          tracked({ ...context, journalPath: path.resolve(args.database) }),
       });
       const lastPass = store.read(workspacePassKey(configuration.id)).value;
       if (
@@ -188,7 +187,10 @@ export function createWorkspaceServiceCommands(tick: WorkspaceTick) {
               configuration,
               store,
               tick: async (context) => {
-                const result = await tracked(context);
+                const result = await tracked({
+                  ...context,
+                  journalPath: path.resolve(args.database),
+                });
                 const summary = JSON.stringify(result);
                 if (summary !== lastNotification) {
                   console.log(

@@ -126,7 +126,7 @@ Set the property to `independent-backend` (or omit it) to restore strict policy.
 The edit does not change focus, grant investigate/implement permissions, approve
 a proposal, or authorize publishing. `validate` only probes readiness; it never
 launches a worker. `executionReady` describes configured planning capability,
-not independent backend verification, implementation dispatch or live validation.
+not independent backend verification, proposal approval, implementation success or live validation.
 Readiness includes `executionTrust`, nonblocking `warnings`, and
 `independentBackendVerified: false`.
 
@@ -219,7 +219,7 @@ Review is a trusted local action requiring the current proposal digest, source
 revision and configuration revision. Use `--decision reject` to reject. Stop the
 service before reviewing: review acquires the same exclusive owner as manual
 passes and cannot race live planning. Then restart to observe the new decision.
-Approval is not authority to publish, implement, push, merge or deploy.
+Approval alone is not authority to implement, publish, push, merge or deploy.
 
 Observe performs native read-only intake without model reservations. Propose and
 Execute additionally configure the real named DevSquad planner and inspect its
@@ -227,11 +227,61 @@ preflight before reserving work. The currently installed Copilot backend does no
 supply independently bound execution identity, so strict mode remains blocked
 before effects. Explicit trusted-local mode can run the three proposal phases
 (investigation, specification, plan) through the named CLI worker and persist
-their results for review. **Native workspace implementation dispatch remains
-unregistered in either mode**; approving a proposal does not silently launch an
-implementation. A separately configured trusted host can use the existing core lifecycle through the compatible
+their results for review. With Execute mode, an exact implement grant and one
+trusted template per project, `workspace run/start/restart` automatically binds
+an approved issue/work-item proposal to the existing core lifecycle. No executable
+host module or dispatch callback is needed. Observe/Propose never admit or recover
+implementation workers. Pull requests are not accepted as implementation sources.
+A separately configured trusted host can also use the existing core lifecycle through the compatible
 `orchestrate --config` path, which now shares service/manual exclusion and retains
 workspace worker-dispatch gates after host run binding.
+
+### Built-in implementation and recovery
+
+The host retains proposal digest, approval, exact native source/revision, original
+configuration, trusted template, approved artifacts and immutable single-task
+catalog in one atomic bounded `native-dispatch-index/<workspace-digest>` record.
+Admission is all-or-nothing, including its recovery index. The core cause is
+`native-proposal:<binding-digest>`; deterministic run/task identities prevent
+duplicate admission. Source text cannot choose scopes, commands, branch bases,
+permissions or publication callbacks. Installed plugin definitions can use the
+registered name `devsquad:devsquad.implement` while declaring `devsquad.implement`.
+
+The same SQLite file holds workspace and core events. Every core transaction
+checks the captured workspace owner, control and configuration guards inside
+its write transaction, in addition to the existing core lease. Binding and approved
+artifact seeding are idempotent. Current approval, actual source scope/labels,
+Git root/origin, trust policy and implementation permission are rechecked before
+launch. `needs-human`/`do-not-autofix` labels block work.
+
+`lastPass.result.lifecycles` retains old configurations and actual core task
+states even when discovery/focus is removed. An admission receipt is not a
+completion receipt. After local implementation the built-in host records
+`needs-input`: independent critic/critical-change proof is unavailable, so it
+does not claim acceptance, review, CI, publication or completion.
+The host supplies no native push/PR/merge/deployment authority. The no-sandbox
+worker still has host access: prompt restrictions are not network or credential
+enforcement.
+
+Restart resumes known pre-invocation checkpoints, but a reserved/running
+invocation becomes unknown and is never automatically repeated. Stale retained
+lanes report reconciliation diagnostics without preventing other ready lanes
+from recovery. Queue status, workspace operation reservations and core lifecycle
+state are separate evidence: recovering the core does not rewrite an old
+`dispatching`/`unknown` queue entry or erase its operation reservation.
+Inspect `events`, operation summaries and core events together.
+Use `reconcileOrchestrationOperation` only after releasing the workspace owner
+and obtaining independent evidence; it never retries the same operation ID.
+
+Native unknown and implemented-but-unverified tasks retain file-scope holds,
+including across runs. A trusted host may use `MultiProjectJournal.reconcile`
+only with independent evidence. To abandon a native hold, first establish that
+the worker has settled and that retained branch/worktree changes have been safely
+settled or cleaned up; record that evidence with outcome `abandon`. Worker prose
+or process termination alone is insufficient. Reconciliation does not grant
+publication authority or prove acceptance.
+The admission index is bounded at 200 entries and the store's 1 MiB JSON limit;
+capacity failure is explicit and does not authorize deleting unresolved history.
 
 See [native intake](orchestration-intake.md) for precise supported selector forms,
 provider/version evidence, missing backend fields, verified factory seams,

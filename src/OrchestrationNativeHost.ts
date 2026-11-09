@@ -5,6 +5,7 @@ import path from "node:path";
 import { z } from "zod";
 import {
   digest,
+  humanStop,
   parseOrchestrationTasks,
   type OrchestrationTask,
   type OrchestrationWorkerRequest,
@@ -375,6 +376,12 @@ export function createOrchestrationNativeTick(options: {
           continue;
         }
       }
+      if (humanStop(verified.labels ?? [])) {
+        diagnostics.push(
+          `Proposal ${proposal.id}: native source requires human intervention`,
+        );
+        continue;
+      }
       if (proposal.status === "observed") {
         const policy = allowed(verified, "investigate");
         if (!policy.allowed || !options.planner) {
@@ -611,10 +618,10 @@ export function createOrchestrationNativeSetup(options: {
     const filename = path
       .basename(canonical)
       .replace(/\.agent\.md$|\.md$/i, "");
+    const installedName = declared ?? filename;
     if (
-      declared
-        ? declared !== definition.agentName
-        : filename !== definition.agentName
+      installedName !== definition.agentName &&
+      `devsquad:${installedName}` !== definition.agentName
     )
       return null;
     return {

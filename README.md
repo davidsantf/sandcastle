@@ -83,10 +83,14 @@ See [native intake and live-readiness boundaries](docs/agents/orchestration-inta
 The workspace starts in observe mode with no grants. Setup diagnostics distinguish
 configuration from actual framework execution readiness. Strict backend-attestation
 mode is the default. Explicit `runtime.executionTrust: "trusted-local"` enables
-local proposal workers with durable host launch evidence, trusting the installed
+local proposal and approved implementation workers with durable host launch evidence, trusting the installed
 CLI to honor agent/model selection; it does not claim independent backend proof.
 See the workspace guide before opting in: workers run on the host without
-credential/network isolation, and native implementation dispatch is not registered.
+credential/network isolation. Public `workspace run/start` admits exact approved,
+current-source/configuration-bound proposals to the existing core lifecycle only
+with Execute focus and an explicit implement grant. Implementation receipts are
+not completion: unavailable independent review/critical proof blocks acceptance,
+publication and completion without fabricating evidence.
 
 Try the offline scripted-worker demo:
 

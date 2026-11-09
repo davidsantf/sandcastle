@@ -55,6 +55,7 @@ const itemSchema = z.object({
   revision: z.string().regex(/^[a-f0-9]{64}$/),
   feedback: z.array(z.unknown()),
   dependencies: z.array(z.unknown()),
+  labels: z.array(z.string().max(200)).max(1_000).optional(),
   scope: orchestrationDiscoveryScopeFactsSchema.optional(),
 });
 const proposalSchema = z.strictObject({
@@ -88,6 +89,8 @@ const proposalSchema = z.strictObject({
   dispatchReceipt: z.string().max(8_000).optional(),
 });
 export type OrchestrationProposal = z.infer<typeof proposalSchema>;
+export const parseOrchestrationProposal = (value: unknown) =>
+  proposalSchema.parse(value);
 const entrySchema = z.strictObject({
   key: z.string(),
   item: itemSchema,

@@ -1,4 +1,8 @@
-import type { LocalOrchestrationTickContext } from "./LocalOrchestrationService.js";
+import {
+  createWorkspaceNativeDispatcher,
+  type WorkspaceNativeTickContext,
+} from "./OrchestrationNativeDispatch.js";
+import type { run } from "./run.js";
 import type {
   WorkspaceConfiguration,
   WorkspaceDiscoverySource,
@@ -204,12 +208,19 @@ export function createWorkspaceNativeTick(
     transport?: (
       source: WorkspaceDiscoverySource,
     ) => OrchestrationDiscoveryTransport | undefined;
+    /** Trusted test/embedding seam; public CLI uses the actual installed runner. */
+    invoke?: typeof run;
   } = {},
 ) {
-  return async (
-    context: LocalOrchestrationTickContext<WorkspaceConfiguration>,
-  ) => {
+  return async (context: WorkspaceNativeTickContext) => {
     const { configuration, signal } = context;
+    const transport = options.transport ?? workspaceDiscoveryTransport;
+    const dispatcher = createWorkspaceNativeDispatcher({
+      context,
+      transport,
+      invoke: options.invoke,
+    });
+    const retained = dispatcher.summaries();
     const diagnostics = [
       ...(!configuration.projects.length ? ["No repositories registered"] : []),
       ...(!configuration.focus.projectIds.length
@@ -224,6 +235,7 @@ export function createWorkspaceNativeTick(
         status: "blocked",
         evaluatedSources: 0,
         proposals: [],
+        lifecycles: retained,
         diagnostics,
       };
     const order = prioritizeOrchestrationProjects(
@@ -241,12 +253,12 @@ export function createWorkspaceNativeTick(
         status: "blocked",
         evaluatedSources: 0,
         proposals: [],
+        lifecycles: retained,
         diagnostics: [
           ...diagnostics,
           "No supported discovery source has an active exact discover grant",
         ],
       };
-    const transport = options.transport ?? workspaceDiscoveryTransport;
     const planner = configuredWorkspacePlanner(
       configuration,
       transport,
@@ -258,17 +270,48 @@ export function createWorkspaceNativeTick(
         : await planner.preflight(signal);
     if (readiness && !readiness.executionReady)
       diagnostics.push(...readiness.diagnostics);
+    if (
+      configuration.focus.mode === "execute" &&
+      readiness?.executionReady &&
+      dispatcher.available
+    ) {
+      diagnostics.push(...(await dispatcher.recover(signal)));
+    }
     const tick = createOrchestrationNativeTick({
       evaluateFocus: evaluateOrchestrationFocus,
       transport,
       // Missing capabilities must not consume implementation or planning reservations.
       planner: readiness?.executionReady ? planner.plan : undefined,
+      dispatch:
+        readiness?.executionReady && dispatcher.available
+          ? (item, proposal, _context, signal) =>
+              dispatcher.dispatch(item, proposal, signal)
+          : undefined,
     });
     const result = await tick({
       ...context,
       configuration: { ...configuration, discovery: selected },
     });
     diagnostics.push(...result.diagnostics);
+    if (
+      result.proposals.some(({ proposal }) =>
+        ["unknown", "dispatching", "planning"].includes(proposal.status),
+      )
+    ) {
+      diagnostics.push(
+        "Unresolved proposal outcome retained: inspect canonical operation/lifecycle evidence; automatic dispatch retry is suppressed.",
+      );
+    }
+    const lifecycles = dispatcher.summaries();
+    if (
+      lifecycles.some((run) =>
+        run.tasks.some((task) => task.status !== "completed"),
+      )
+    ) {
+      diagnostics.push(
+        "Native lifecycle is admitted, not complete: inspect retained task state; independent proof, acceptance and publication gates remain enforced.",
+      );
+    }
     return {
       status:
         readiness && !readiness.executionReady
@@ -282,6 +325,7 @@ export function createWorkspaceNativeTick(
         status: proposal.status,
         diagnostic: proposal.diagnostic,
       })),
+      lifecycles,
       diagnostics: [...new Set(diagnostics)],
       ...(readiness ? { readiness } : {}),
     };
