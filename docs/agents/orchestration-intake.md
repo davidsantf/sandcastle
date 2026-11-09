@@ -358,6 +358,66 @@ This proves authentication and actual named-agent launch/parsing, **not**
 independent loaded-definition/model attestation, a full implementation lifecycle,
 live ADO access, acceptance, CI or publication.
 
+### Actual local implementation through the native lifecycle
+
+A subsequent authorized check on 2026-11-09 used a disposable local Git
+repository, the actual installed `devsquad:devsquad.implement` agent and existing
+authenticated Copilot CLI `1.0.106`. The hub source, issue, investigation,
+specification, plan and approved proposal were **labeled fixtures authored by the
+validation host**, not live GitHub/ADO data or model-generated planning.
+The exact proposal/source/configuration approval and trusted template admitted
+one actual implementation via exported `createWorkspaceNativeTick`,
+`runLocalOrchestrationPass`, the built-in dispatcher and durable core.
+
+The trusted `invoke` seam called the **real `run`**, preserving its isolated Git
+worktree, worker prompt, Copilot stream parser, structured output schema and
+branch/commit collection. A validation-only process transport replaced its
+generated shell command with a shell-free native argv launcher. This distinction
+matters: this check proves the public dispatcher/core and actual model edit
+under those controls, **not the unmodified default launcher or an unrestricted
+DevSquad workflow**. The production runner does not acquire these validation
+controls merely by selecting trusted-local.
+
+The launcher allowed native file tools only, with absolute read/write approval
+for the one worktree file `src/value.txt`. The successful invocation used only
+`view` and `apply_patch`. Shell, URL, memory and delegation tools were unavailable
+or denied; builtin and configured MCP servers, custom instructions, updates,
+temporary-directory access, account-history sync and interactive questions were
+disabled. Each invocation had a 30-credit ceiling (the CLI minimum), zero
+autopilot continuations and a 240-second process timeout. These are CLI controls,
+not OS credential/network isolation. Git setup used a fixture-local
+`GIT_CONFIG_GLOBAL`; the fixture's push URL was non-routable. No installation,
+credential change, live target write, push, PR or startup registration occurred.
+
+Three separate fixtures retained their own journals; no uncertain invocation was
+retried or erased:
+
+| Attempt | Actual result                                                                                                                                                  | Retained lifecycle                     |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| Initial | Real model read the toy file but reported `file-edit-tool-unavailable`; the allowlist omitted native `apply_patch`, so no edit occurred                        | `unknown`, no implementation recorded  |
+| Second  | Real `apply_patch` changed the file, but the host's exact LF check rejected Windows CRLF checkout bytes; no host commit was made                               | `unknown`, preserved dirty worktree    |
+| Third   | Fixture-local `core.autocrlf=false` supplied explicit LF checkout semantics; the real model changed only the intended file and returned its structured receipt | `needs-input`, implementation recorded |
+
+The third CLI session exited 0 (reported `premiumRequests:1`, 6,639 ms API
+duration, current model `gpt-6-luna`), with one successful read and one
+successful patch. The **host**, not the model, checked exact bytes/file scope and
+committed the actual model-origin edit on the derived feature branch. Its local
+commit was `7b26651b918669da6ebc27847de06958552a935a`. An independent host
+`node acceptance.mjs` then passed its exact-content assertion on that branch;
+the same check exited 1 on the unchanged baseline and 0 on the implementation.
+Only `src/value.txt` differed from the baseline. This is measured local toy
+acceptance, not native phase-critic, CI or remote policy evidence.
+
+A separate fresh process reopened all three canonical databases and ran the
+public native pass again: **zero model invocations**, one retained launch
+admission per fixture, unchanged `unknown` states for the first two, and
+`needs-input` with `implementationRecorded:true` for the third. The third's
+admission receipt and trusted-local evidence remained `backendAttested:false`.
+Unavailable independent critic/critical approval proof still blocked lifecycle
+verification, publication and completion despite the separately passing toy
+check. The local raw logs, fixture repositories and journal evidence are retained
+as session artifacts, not published as repository content.
+
 ## Verification scope
 
 The later user-authorized trusted-local policy is documented in

@@ -181,3 +181,39 @@ outside service callbacks so caught callback failures cannot masquerade as
 passing tests. Initial runtime tests also exposed an order-sensitive task digest
 comparison; expected tasks now use the canonical task parser before comparison,
 preserving exact binding rather than weakening it.
+
+## Actual local implementation execution evidence
+
+The follow-up authorized bounded model-driven editing, not just another launch
+marker. A disposable local Git fixture exercised the exported native tick,
+same-journal service/core admission, exact approved proposal and narrow trusted
+template with the actual installed `devsquad:devsquad.implement` agent.
+Fixture hub/proposal/planning artifacts remained explicitly labeled; the
+implementation was a real authenticated Copilot session, not the test runner.
+
+The real `run`, worker prompt, stream parser, structured receipt and branch/commit
+collection were preserved. A validation-only trusted invocation bridge supplied
+shell-free bounded native argv with exact-file write approval, no model shell/
+MCP/delegation/publication tools, 30-credit ceiling, zero continuations and a
+240-second process timeout. This verifies that constrained integration, not the
+unmodified default process launcher, backend identity or an unrestricted
+DevSquad workflow. No production trust or proof gate changed.
+
+The successful invocation made one actual `apply_patch` edit, changing only
+`src/value.txt` to the required exact content. The host committed the
+model-origin change as local fixture commit
+`7b26651b918669da6ebc27847de06958552a935a` and independently ran
+`node acceptance.mjs`: **baseline exit 1, implemented exit 0**. The durable lifecycle correctly retained
+**needs-input, implementationRecorded:true**, with independent critic/critical
+proof, native verification, CI and publication still unavailable.
+
+Two earlier fixtures exposed validation setup errors: the missing native editor
+tool name, then Windows CRLF checkout bytes against an exact LF assertion.
+Their unknown outcomes were preserved rather than retried. The final fixture
+used explicit fixture-local LF checkout configuration, not a weakened assertion.
+A fresh process reopened all three databases and ran the native pass: **zero
+additional model invocations**, one retained launch per fixture, the two unknown
+states unchanged and the successful implementation still needs-input.
+See [detailed execution boundaries and measured results](../../agents/orchestration-intake.md#actual-local-implementation-through-the-native-lifecycle).
+No live ADO destination, target rollout, remote writes, pushes, PRs, runtime
+installation, credential changes or startup registration were involved.
