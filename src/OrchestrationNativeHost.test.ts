@@ -156,6 +156,169 @@ function context(configuration = config()) {
   return { configuration, store, signal: signal(), operations };
 }
 describe("native service intake integration", () => {
+  it("retains an observed item without investigate-denied diagnostics or effect reservations", async () => {
+    const configuration = config();
+    configuration.focus.mode = "observe";
+    const ctx = context(configuration),
+      planner = vi.fn();
+    const perform = vi.spyOn(ctx.operations, "perform");
+    const tick = createOrchestrationNativeTick({
+      evaluateFocus,
+      planner,
+      transport: () => async () => ({
+        status: 200,
+        body: [
+          {
+            number: 1,
+            html_url: item().url,
+            title: item().title,
+            body: item().body,
+            state: "open",
+            updated_at: item().updatedAt,
+            assignees: [{ login: "owner" }],
+          },
+        ],
+      }),
+    });
+    const result = await tick(ctx);
+    expect(result.proposals[0]?.proposal.status).toBe("observed");
+    expect(result.diagnostics).toEqual([]);
+    expect(planner).not.toHaveBeenCalled();
+    expect(perform).not.toHaveBeenCalled();
+  });
+  it("replays a partial page across passes without charging retained observations or skipping the remainder", async () => {
+    const configuration = config();
+    configuration.focus.mode = "observe";
+    configuration.focus.budgets.maxItems = 2;
+    const ctx = context(configuration);
+    const transport = vi.fn(async () => ({
+      status: 200,
+      body: [1, 2, 3].map((number) => ({
+        number,
+        html_url: `https://github.com/org/api/issues/${number}`,
+        title: item().title,
+        body: item().body,
+        state: "open",
+        updated_at: item().updatedAt,
+        assignees: [{ login: "owner" }],
+      })),
+    }));
+    const options = { evaluateFocus, transport: () => transport };
+    const first = await createOrchestrationNativeTick(options)(ctx);
+    expect(first.proposals.map(({ item }) => item.id)).toEqual(["1", "2"]);
+    expect(first.diagnostics.join()).toContain("budget exhausted");
+    const sourceKey = `intake:source:${digest(JSON.stringify([configuration.id, configuration.discovery[0]]))}`;
+    expect(ctx.store.read(sourceKey).value).toMatchObject({
+      cursor: null,
+      failures: 0,
+    });
+    const restarted = createOrchestrationNativeTick(options);
+    const second = await restarted(ctx);
+    expect(second.proposals.map(({ item }) => item.id)).toEqual([
+      "1",
+      "2",
+      "3",
+    ]);
+    expect(second.diagnostics).toEqual([]);
+    expect(ctx.store.read(sourceKey).value).toMatchObject({
+      cursor: { page: 1, cycle: 1 },
+    });
+    await restarted(ctx);
+    expect(
+      ctx.store.events().filter((event) => event.kind === "intake-observed"),
+    ).toHaveLength(3);
+    expect(transport).toHaveBeenCalledTimes(3);
+  });
+  it("charges revised and new-configuration observations while skipping retained exact revisions", async () => {
+    const configuration = config();
+    configuration.focus.mode = "observe";
+    configuration.focus.budgets.maxItems = 1;
+    const ctx = context(configuration);
+    let body = item().body;
+    const options = {
+      evaluateFocus,
+      transport: () => async () => ({
+        status: 200,
+        body: [
+          {
+            number: 1,
+            html_url: item().url,
+            title: item().title,
+            body,
+            state: "open",
+            updated_at: item().updatedAt,
+            assignees: [{ login: "owner" }],
+          },
+        ],
+      }),
+    };
+    await createOrchestrationNativeTick(options)(ctx);
+    body = "Changed reviewable source content";
+    expect(
+      (await createOrchestrationNativeTick(options)(ctx)).proposals,
+    ).toHaveLength(2);
+    configuration.revision = 2;
+    const changed = await createOrchestrationNativeTick(options)(ctx);
+    expect(changed.proposals).toHaveLength(3);
+    expect(changed.proposals.at(-1)?.proposal.configurationRevision).toBe(2);
+    await createOrchestrationNativeTick(options)(ctx);
+    expect(
+      ctx.store.events().filter((event) => event.kind === "intake-observed"),
+    ).toHaveLength(3);
+  });
+  it("admits higher-priority project sources first within one global observation budget", async () => {
+    const configuration = config();
+    configuration.focus.mode = "observe";
+    configuration.focus.budgets.maxItems = 1;
+    configuration.focus.projectIds.push("web");
+    configuration.focus.priorities = { api: 1, web: 20 };
+    configuration.focus.permissions.push({
+      projectId: "web",
+      action: "discover",
+    });
+    configuration.projects.push({
+      id: "web",
+      repositoryRoot: path.join(process.cwd(), "src"),
+      mode: "individual",
+      hub: { kind: "github", repository: "org/web" },
+    });
+    configuration.discovery.push({
+      ...configuration.discovery[0]!,
+      id: "web",
+      projectId: "web",
+      hub: { kind: "github", repository: "org/web" },
+    });
+    const ctx = context(configuration),
+      order: string[] = [];
+    const tick = createOrchestrationNativeTick({
+      evaluateFocus,
+      transport: (source) => async () => {
+        order.push(source.projectId);
+        return {
+          status: 200,
+          body: [
+            {
+              number: 1,
+              html_url: `https://github.com/org/${source.projectId}/issues/1`,
+              title: item().title,
+              body: item().body,
+              state: "open",
+              updated_at: item().updatedAt,
+              assignees: [{ login: "owner" }],
+            },
+          ],
+        };
+      },
+    });
+    expect(
+      (await tick(ctx)).proposals.map(({ item }) => item.projectId),
+    ).toEqual(["web"]);
+    expect(order).toEqual(["web", "api"]);
+    expect(
+      (await tick(ctx)).proposals.map(({ item }) => item.projectId),
+    ).toEqual(["web", "api"]);
+    expect(order).toEqual(["web", "api", "web", "api"]);
+  });
   it.each(["team", "iteration", "query"] as const)(
     "blocks unverified native %s scope before polling or effects",
     async (scope) => {

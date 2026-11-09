@@ -208,6 +208,17 @@ responses. Feedback ordering is normalized before revision hashing. Rate limits
 use bounded retry delays; transient failures retain the cursor and exhaust the
 configured attempt budget explicitly rather than retrying forever.
 
+The shared `prioritizeOrchestrationProjects` helper orders sources by focused
+project priority, with its stable project-ID tie break. Across all sources,
+`focus.budgets.maxItems` bounds **new or revised observations per pass**, including
+new configuration revisions, even in Observe mode. Retained exact observations
+do not consume that budget or create another queue event. When only part of a
+batch fits, the original source cursor is retained; the next pass replays that
+page, skips retained observations and admits the remainder. Cursor advancement
+occurs only when the entire batch has been accounted for. Observe returns after
+discovery, without attempting investigation or reporting an intentional lack of
+investigation authority as a failure.
+
 Recurring safe reads use focus evaluation plus cancellation and source CAS,
 **not** one permanent service effect reservation per poll. Model invocations and
 dispatch use stable exact-effect IDs. The queue retains up to 200 item entries,
@@ -219,6 +230,16 @@ Changing source configuration creates a new source-state identity, not permissio
 to replay an uncertain effect. No automatic archival/reset command is implied.
 GitHub polling is a repeated current-state observation, not an exhaustive event
 log or a proof that no intermediate update occurred.
+
+The canonical store independently rejects records over **1 MiB**; the proposal
+queue stops earlier at 950,000 bytes, 200 item entries, or 20 retained proposals
+per item. A capacity error does not advance the source cursor or delete a prior
+proposal, approval or receipt. Recovery is an explicit operator task: pause the
+service, inspect/export the retained canonical journal, narrow future intake
+where appropriate, and arrange a reviewed archival/migration that preserves
+deduplication and uncertain-effect evidence before resuming. No implicit
+deletion, queue truncation, automatic archive, or fresh-workspace retry bypass is
+provided.
 
 ## Read-only runtime evidence
 
@@ -285,9 +306,13 @@ npm run typecheck
 npx vitest run src/OrchestrationDiscovery.test.ts src/OrchestrationProposal.test.ts src/OrchestrationNativeHost.test.ts src/OrchestrationWorkspace.test.ts src/MultiProjectWorker.test.ts
 ```
 
-The final targeted run passed 73 tests across those five files; type checking
+The initial integration run passed 73 tests across those five files; type checking
 passed. This includes negative team/iteration/query mapping tests with zero
 transport, operation-admission, sandbox or worker calls.
+The intake-budget followup passed 38 tests across the native-host, proposal and
+shared-focus suites plus type checking, including multi-pass partial-page replay,
+new/revised/configuration observation accounting, project priority, and clean
+Observe-only admission without model effects.
 
 Central CLI/public exports, service/focus composition, full product integration
 and README linking are owned by the core integration session. This slice is not

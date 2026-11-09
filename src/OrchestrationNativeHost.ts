@@ -15,6 +15,7 @@ import {
   type DevsquadPhaseCapability,
 } from "./MultiProjectWorker.js";
 import type { SandboxProvider } from "./SandboxProvider.js";
+import { prioritizeOrchestrationProjects } from "./OrchestrationFocus.js";
 import type {
   WorkspaceConfiguration,
   WorkspaceAction,
@@ -128,7 +129,39 @@ export function createOrchestrationNativeTick(options: {
       string,
       ReturnType<typeof createOrchestrationDiscoveryAdapter>
     >();
-    for (const source of configuration.discovery) {
+    const retained = queue.list();
+    const observationKey = (
+      item: OrchestrationDiscoveredItem,
+      revision: number,
+    ) =>
+      JSON.stringify([
+        item.sourceId,
+        item.projectId,
+        item.id,
+        item.revision,
+        revision,
+      ]);
+    const retainedObservations = new Set(
+      retained.map(({ item, proposal }) =>
+        observationKey(item, proposal.configurationRevision),
+      ),
+    );
+    const retainedProposals = new Set(
+      retained.map(({ proposal }) => proposal.id),
+    );
+    let admittedObservations = 0;
+    const prioritized = prioritizeOrchestrationProjects(
+      configuration.focus,
+      configuration.discovery.map((source) => source.projectId),
+    );
+    const projectRank = (projectId: string) => {
+      const rank = prioritized.indexOf(projectId);
+      return rank < 0 ? prioritized.length : rank;
+    };
+    const sources = [...configuration.discovery].sort(
+      (a, b) => projectRank(a.projectId) - projectRank(b.projectId),
+    );
+    for (const source of sources) {
       signal.throwIfAborted();
       const policy = allowed(source.projectId, "discover");
       if (!policy.allowed) {
@@ -186,15 +219,32 @@ export function createOrchestrationNativeTick(options: {
       // Repeated reads are safe; do not exhaust the permanent effect ledger.
       try {
         const batch = await adapter.poll(state.cursor, signal);
-        for (const item of batch.items)
-          queue.ingest(item, configuration.revision);
+        let complete = true;
+        for (const item of batch.items) {
+          const identity = observationKey(item, configuration.revision);
+          if (retainedObservations.has(identity)) continue;
+          if (admittedObservations >= configuration.focus.budgets.maxItems) {
+            complete = false;
+            break;
+          }
+          const proposal = queue.ingest(item, configuration.revision);
+          if (!retainedProposals.has(proposal.id)) {
+            admittedObservations++;
+            retainedProposals.add(proposal.id);
+          }
+          retainedObservations.add(identity);
+        }
+        const diagnostic = complete
+          ? ""
+          : "New/revised observation budget exhausted; original source cursor retained for replay";
         finish({
           ...attempt,
-          cursor: batch.cursor,
+          cursor: complete ? batch.cursor : state.cursor,
           failures: 0,
           retryAt: 0,
-          diagnostic: "",
+          diagnostic,
         });
+        if (diagnostic) diagnostics.push(`Source ${source.id}: ${diagnostic}`);
       } catch (error) {
         const diagnostic =
           error instanceof OrchestrationDiscoveryError
@@ -214,11 +264,16 @@ export function createOrchestrationNativeTick(options: {
         signal.throwIfAborted();
       }
     }
+    if (configuration.focus.mode === "observe")
+      return { proposals: queue.list(), diagnostics };
     const proposals = queue
       .list()
       .filter(
         ({ proposal }) =>
           proposal.configurationRevision === configuration.revision,
+      )
+      .sort(
+        (a, b) => projectRank(a.item.projectId) - projectRank(b.item.projectId),
       );
     for (const { item, proposal } of proposals) {
       signal.throwIfAborted();
