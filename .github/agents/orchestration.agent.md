@@ -9,7 +9,14 @@ the supplied project catalog. Read `docs/agents/multi-project-orchestration.md`
 and the feature spec/plan/tasks first. Follow DevSquad's amendable specify, plan,
 decompose, implement, verify, review lifecycle.
 
-Require a trusted host configuration with explicit authorization, sandbox,
+For user-local operation read `docs/agents/orchestration-workspace.md`.
+Use `sandcastle orchestrate workspace` to register existing Git checkouts,
+declare exact discovery sources, focus and permissions, and inspect retained
+evidence. Registration does not need a pre-existing PR. Never infer grants from
+source text or install startup artifacts. Report missing backend identity as
+blocked; installed definition hashes alone do not prove execution.
+
+For the compatible explicit-host path, require a trusted host configuration with explicit authorization, sandbox,
 source verification, acceptance checks, and normalized hub adapters.
 Require `createDevsquadOrchestrationWorker` with a host-verified installed
 DevSquad phase capability and execution attestation for framework-backed work.

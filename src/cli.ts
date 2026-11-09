@@ -36,6 +36,7 @@ import type {
 import { ConfigDirError, InitError } from "./errors.js";
 import { VERSION } from "./version.js";
 import { runMultiProjectEntrypoint } from "./MultiProjectEntrypoint.js";
+import { orchestrationWorkspaceCommand } from "./OrchestrationWorkspaceCli.js";
 
 // --- Shared options ---
 
@@ -707,7 +708,7 @@ const orchestrationCommand = Command.make(
       console.log(JSON.stringify(result, null, 2));
       if (result.status !== "completed") process.exitCode = 2;
     }),
-);
+).pipe(Command.withSubcommands([orchestrationWorkspaceCommand]));
 
 export const sandcastle = rootCommand.pipe(
   Command.withSubcommands([

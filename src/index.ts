@@ -1,4 +1,17 @@
 export { run } from "./run.js";
+export * from "./OrchestrationWorkspaceContract.js";
+export {
+  OrchestrationWorkspaceStore,
+  workspaceConfigurationKey,
+  defaultWorkspaceConfiguration,
+  initializeWorkspace,
+  readWorkspaceConfiguration,
+  updateWorkspaceConfiguration,
+  registerWorkspaceProject,
+  removeWorkspaceProject,
+  registerWorkspaceRoute,
+  removeWorkspaceRoute,
+} from "./OrchestrationWorkspace.js";
 export { MultiProjectJournal } from "./MultiProjectJournal.js";
 export type {
   OrchestrationLease,

@@ -73,6 +73,14 @@ exclusive reservations, fencing, and unknown outcomes across restarts.
 
 Requires Node 22.13+ for this feature. Try the offline scripted-worker demo:
 
+For versioned local onboarding without a pre-existing PR, start with
+`sandcastle orchestrate workspace init --database <local-sqlite-file>`.
+See [workspace setup and exact permissions](docs/agents/orchestration-workspace.md)
+and [user-local service controls](docs/agents/local-orchestration-service.md).
+The workspace starts in observe mode with no grants. Setup diagnostics distinguish
+configuration from actual framework execution readiness; missing backend identity
+evidence blocks execution rather than falling back to an unattested worker.
+
 ```powershell
 sandcastle orchestrate --demo .\.sandcastle\orchestration-demo
 ```

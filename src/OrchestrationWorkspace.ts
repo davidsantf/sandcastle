@@ -350,6 +350,9 @@ export function removeWorkspaceProject(
       ...config,
       projects: config.projects.filter((project) => project.id !== id),
       discovery: config.discovery.filter((source) => source.projectId !== id),
+      taskTemplates: config.taskTemplates.filter(
+        (task) => task.projectId !== id,
+      ),
       focus: {
         ...config.focus,
         projectIds: config.focus.projectIds.filter((value) => value !== id),

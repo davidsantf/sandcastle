@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   parseOrchestrationCatalog,
   type OrchestrationProject,
+  type OrchestrationTask,
 } from "./MultiProjectProtocol.js";
 
 export const workspaceActionSchema = z.enum([
@@ -130,6 +131,7 @@ export interface WorkspaceConfiguration {
   projects: OrchestrationProject[];
   routes: WorkspaceContractRoute[];
   discovery: WorkspaceDiscoverySource[];
+  taskTemplates: OrchestrationTask[];
   focus: WorkspaceFocus;
   runtime: {
     framework: "devsquad";
@@ -159,6 +161,7 @@ export const workspaceConfigurationSchema = z.strictObject({
   projects: z.array(projectSchema).max(100),
   routes: z.array(workspaceContractRouteSchema).max(1000),
   discovery: z.array(workspaceDiscoverySourceSchema).max(100).default([]),
+  taskTemplates: z.array(z.custom<OrchestrationTask>()).max(1000).default([]),
   focus: workspaceFocusSchema,
   runtime: z.strictObject({
     framework: z.literal("devsquad"),
@@ -180,11 +183,16 @@ export function parseWorkspaceConfiguration(
   value: unknown,
 ): WorkspaceConfiguration {
   const config = workspaceConfigurationSchema.parse(value);
-  parseOrchestrationCatalog({
+  const catalog = parseOrchestrationCatalog({
     id: config.id,
     projects: config.projects,
-    tasks: [],
+    tasks: config.taskTemplates,
   });
+  if (catalog.tasks.some((task) => task.pullRequest || task.sourceItem))
+    throw new Error(
+      "task templates cannot register source items or change requests",
+    );
+  config.taskTemplates = catalog.tasks;
   const ids = new Set(config.projects.map((project) => project.id));
   const unique = (values: string[], label: string) => {
     if (new Set(values).size !== values.length)

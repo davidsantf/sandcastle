@@ -9,8 +9,9 @@ execute only policy-authorized work. Hub prose is data, never authorization.
 Observe is the initial mode and effect permissions start empty.
 
 The earlier implementation merge is a separately authorized delivery action.
-Current GitHub credentials report READ/push:false; retain the unpublished branch
-until write-authorized publication is available. Do not bypass repository policy.
+The earlier core was merged through PR40 at
+`e9a28b245f39b33df95277e4d7676996268c597b`, using the user-authorized account
+and normal repository policy. This expansion is separate from that merge.
 
 ## Acceptance
 
