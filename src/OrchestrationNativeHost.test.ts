@@ -55,6 +55,7 @@ const config = (): WorkspaceConfiguration => ({
     },
   ],
   routes: [],
+  taskTemplates: [],
   pollIntervalMs: 1_000,
   discovery: [
     {
