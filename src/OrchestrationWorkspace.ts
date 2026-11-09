@@ -315,6 +315,18 @@ export function updateWorkspaceConfiguration(
     throw new Error("workspace configuration changed concurrently");
   return next;
 }
+export function migrateWorkspaceConfiguration(
+  store: WorkspaceStore,
+): WorkspaceConfiguration {
+  const record = store.read(workspaceConfigurationKey);
+  const normalized = readWorkspaceConfiguration(store);
+  if (digest(record.value) === digest(normalized)) return normalized;
+  return updateWorkspaceConfiguration(
+    store,
+    normalized.revision,
+    () => normalized,
+  );
+}
 export function registerWorkspaceProject(
   store: WorkspaceStore,
   revision: number,

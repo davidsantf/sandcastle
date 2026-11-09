@@ -7,11 +7,20 @@ export {
   initializeWorkspace,
   readWorkspaceConfiguration,
   updateWorkspaceConfiguration,
+  migrateWorkspaceConfiguration,
   registerWorkspaceProject,
   removeWorkspaceProject,
   registerWorkspaceRoute,
   removeWorkspaceRoute,
 } from "./OrchestrationWorkspace.js";
+export * from "./LocalOrchestrationService.js";
+export * from "./LocalOrchestrationServiceControl.js";
+export * from "./OrchestrationDiscovery.js";
+export * from "./OrchestrationProposal.js";
+export * from "./OrchestrationNativeHost.js";
+export * from "./OrchestrationWorkspaceHost.js";
+export * from "./OrchestrationFocus.js";
+export * from "./OrchestrationOperations.js";
 export { MultiProjectJournal } from "./MultiProjectJournal.js";
 export type {
   OrchestrationLease,

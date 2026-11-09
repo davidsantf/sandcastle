@@ -8,6 +8,7 @@ import {
   initializeWorkspace,
   readWorkspaceConfiguration,
   updateWorkspaceConfiguration,
+  migrateWorkspaceConfiguration,
   registerWorkspaceProject,
   removeWorkspaceProject,
   registerWorkspaceRoute,
@@ -22,6 +23,16 @@ import {
   type WorkspaceConfiguration,
 } from "./OrchestrationWorkspaceContract.js";
 import type { OrchestrationProject } from "./MultiProjectProtocol.js";
+import { createWorkspaceServiceCommands } from "./OrchestrationWorkspaceServiceCli.js";
+import {
+  inspectWorkspaceReadiness,
+  runWorkspaceNativeTick,
+} from "./OrchestrationWorkspaceHost.js";
+import {
+  createOrchestrationProposalQueue,
+  type OrchestrationProposal,
+} from "./OrchestrationProposal.js";
+import { runLocalOrchestrationPass } from "./LocalOrchestrationService.js";
 
 const database = Options.text("database").pipe(
   Options.withDescription(
@@ -105,7 +116,17 @@ export function validateWorkspaceRepositories(
           : `dev.azure.com/${project.hub.organization}/${project.hub.project}/_git/${project.hub.repository}`;
       const normalized = decodeURIComponent(remote)
         .replace(/^git@github\.com:/i, "github.com/")
+        .replace(/^ssh:\/\/git@github\.com\//i, "github.com/")
+        .replace(
+          /^git@ssh\.dev\.azure\.com:v3\/([^/]+)\/([^/]+)\//i,
+          "dev.azure.com/$1/$2/_git/",
+        )
+        .replace(
+          /^ssh:\/\/git@ssh\.dev\.azure\.com\/v3\/([^/]+)\/([^/]+)\//i,
+          "dev.azure.com/$1/$2/_git/",
+        )
         .replace(/^https:\/\/(?:[^/@]+@)?/i, "")
+        .replace(/^([^.]+)\.visualstudio\.com\//i, "dev.azure.com/$1/")
         .replace(/\.git\/?$/, "")
         .replace(/\/$/, "");
       if (normalized.toLowerCase() !== expected.toLowerCase())
@@ -141,6 +162,9 @@ const init = Command.make(
 );
 const list = Command.make("list", { database }, (args) =>
   withWorkspace(args.database, readWorkspaceConfiguration),
+);
+const migrate = Command.make("migrate", { database }, (args) =>
+  withWorkspace(args.database, migrateWorkspaceConfiguration),
 );
 const add = Command.make(
   "add",
@@ -317,39 +341,114 @@ const templateRemove = Command.make(
       ),
     ),
 );
-const validate = Command.make("validate", { database }, (args) =>
+const validate = Command.make(
+  "validate",
+  { database, live: Options.boolean("live") },
+  (args) =>
+    withWorkspace(args.database, async (store) => {
+      const configuration = readWorkspaceConfiguration(store);
+      const projects = validateWorkspaceRepositories(configuration);
+      const blockers = [
+        ...(!projects.length ? ["No repositories registered"] : []),
+        ...(!configuration.focus.projectIds.length
+          ? ["No focused repositories selected"]
+          : []),
+        ...(!configuration.discovery.length
+          ? ["No explicit discovery sources configured"]
+          : []),
+        ...(!configuration.runtime.phaseDefinitions.length
+          ? ["No verified installed DevSquad phase registry configured"]
+          : []),
+      ];
+      const readiness = await inspectWorkspaceReadiness(
+        configuration,
+        AbortSignal.timeout(60_000),
+        args.live,
+      );
+      blockers.push(
+        ...readiness.diagnostics,
+        ...readiness.sources
+          .filter((source) => source.status === "blocked")
+          .map((source) => `${source.sourceId}: ${source.diagnostic}`),
+      );
+      const executionReady = readiness.native.executionReady;
+      if (
+        blockers.length ||
+        !executionReady ||
+        projects.some((project) => project.status !== "ready")
+      )
+        process.exitCode = 2;
+      return {
+        status:
+          blockers.length ||
+          !executionReady ||
+          projects.some((project) => project.status !== "ready")
+            ? "blocked"
+            : "configured",
+        configurationRevision: configuration.revision,
+        projects,
+        blockers,
+        readiness,
+        liveExecutionVerified: false,
+      };
+    }),
+);
+const proposals = Command.make("proposals", { database }, (args) =>
   withWorkspace(args.database, (store) => {
     const configuration = readWorkspaceConfiguration(store);
-    const projects = validateWorkspaceRepositories(configuration);
-    const blockers = [
-      ...(!projects.length ? ["No repositories registered"] : []),
-      ...(!configuration.focus.projectIds.length
-        ? ["No focused repositories selected"]
-        : []),
-      ...(!configuration.discovery.length
-        ? ["No explicit discovery sources configured"]
-        : []),
-      ...(!configuration.runtime.phaseDefinitions.length
-        ? ["No verified installed DevSquad phase registry configured"]
-        : []),
-    ];
-    if (
-      blockers.length ||
-      projects.some((project) => project.status !== "ready")
-    )
-      process.exitCode = 2;
-    return {
-      status:
-        blockers.length ||
-        projects.some((project) => project.status !== "ready")
-          ? "blocked"
-          : "configured",
-      configurationRevision: configuration.revision,
-      projects,
-      blockers,
-      liveExecutionVerified: false,
-    };
+    return createOrchestrationProposalQueue({
+      store,
+      namespace: configuration.id,
+    }).list();
   }),
+);
+const proposal = Command.make("proposal", { database, id }, (args) =>
+  withWorkspace(args.database, (store) => {
+    const configuration = readWorkspaceConfiguration(store);
+    return createOrchestrationProposalQueue({
+      store,
+      namespace: configuration.id,
+    }).get(args.id);
+  }),
+);
+const review = Command.make(
+  "review",
+  {
+    database,
+    id,
+    revision: Options.integer("revision"),
+    proposalDigest: Options.text("proposal-digest"),
+    sourceRevision: Options.text("source-revision"),
+    decision: Options.choice("decision", ["approve", "reject"]),
+  },
+  (args) =>
+    withWorkspace(args.database, async (store) => {
+      const configuration = readWorkspaceConfiguration(store);
+      if (configuration.revision !== args.revision)
+        throw new Error("Stale configuration review; reload current proposal");
+      let reviewed: OrchestrationProposal | undefined;
+      const service = await runLocalOrchestrationPass({
+        configuration,
+        store,
+        tick: async (context) => {
+          reviewed = createOrchestrationProposalQueue({
+            store: context.store,
+            namespace: configuration.id,
+          }).review({
+            proposalId: args.id,
+            proposalDigest: args.proposalDigest,
+            sourceRevision: args.sourceRevision,
+            configurationRevision: args.revision,
+            decision: args.decision,
+          });
+        },
+      });
+      if (service.state === "blocked" || !reviewed) {
+        process.exitCode = 2;
+        return { status: "blocked", service };
+      }
+      return reviewed;
+    }),
 );
 const events = Command.make(
   "events",
@@ -359,6 +458,7 @@ const events = Command.make(
 export const orchestrationWorkspaceCommand = Command.make("workspace").pipe(
   Command.withSubcommands([
     init,
+    migrate,
     add,
     remove,
     list,
@@ -373,5 +473,9 @@ export const orchestrationWorkspaceCommand = Command.make("workspace").pipe(
     templateRemove,
     validate,
     events,
+    proposals,
+    proposal,
+    review,
+    ...createWorkspaceServiceCommands(runWorkspaceNativeTick),
   ]),
 );

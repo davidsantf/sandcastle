@@ -7,6 +7,8 @@ import {
   initializeWorkspace,
   readWorkspaceConfiguration,
   updateWorkspaceConfiguration,
+  migrateWorkspaceConfiguration,
+  workspaceConfigurationKey,
   registerWorkspaceProject,
   removeWorkspaceProject,
   registerWorkspaceRoute,
@@ -117,6 +119,85 @@ describe("versioned orchestration workspace", () => {
       })),
     ).toThrow("immutable");
     expect(f.store.events()).toHaveLength(1);
+  });
+  it("normalizes old workspace defaults and binds trusted task templates without source or PR authority", () => {
+    const f = setup();
+    const config = initializeWorkspace(f.store);
+    const api = project("api", path.join(f.directory, "api"));
+    const template = {
+      id: "repair",
+      projectId: "api",
+      title: "Repair",
+      brief: "Host configured",
+      branch: "agent/repair",
+      baseBranch: "main",
+      scopes: ["src"],
+      acceptance: [{ label: "unit", command: "npm test" }],
+    };
+    const parsed = parseWorkspaceConfiguration({
+      ...config,
+      projects: [api],
+      taskTemplates: [template],
+    });
+    expect(parsed.taskTemplates[0]?.dependsOn).toEqual([]);
+    expect(() =>
+      parseWorkspaceConfiguration({
+        ...config,
+        projects: [api],
+        taskTemplates: [{ ...template, pullRequest: 1 }],
+      }),
+    ).toThrow("cannot register");
+    expect(() =>
+      parseWorkspaceConfiguration({
+        ...config,
+        projects: [api],
+        taskTemplates: [{ ...template, acceptance: [] }],
+      }),
+    ).toThrow();
+    expect(() =>
+      parseWorkspaceConfiguration({
+        ...config,
+        projects: [api],
+        taskTemplates: [{ ...template, projectId: "unknown" }],
+      }),
+    ).toThrow("unknown project");
+    const { taskTemplates: _, ...old } = parsed;
+    expect(parseWorkspaceConfiguration(old).taskTemplates).toEqual([]);
+  });
+  it("migrates additive defaults through revisioned CAS without rewriting retained evidence", () => {
+    const f = setup();
+    const config = parseWorkspaceConfiguration({
+      schemaVersion: 1,
+      revision: 1,
+      id: "local",
+      projects: [],
+      routes: [],
+      focus: {
+        mode: "observe",
+        projectIds: [],
+        priorities: {},
+        maxConcurrency: 2,
+        budgets: { maxItems: 20, maxAttempts: 3, maxRuntimeMs: 300000 },
+        permissions: [],
+      },
+      runtime: {
+        framework: "devsquad",
+        command: "copilot",
+        agent: "devsquad",
+        model: "default",
+      },
+      pollIntervalMs: 60000,
+    });
+    const { taskTemplates: _, ...old } = config;
+    f.store.compareAndSwap(workspaceConfigurationKey, 0, old, {
+      kind: "workspace-initialized",
+      at: new Date().toISOString(),
+    });
+    const oldDigest = f.store.events()[0]!.valueDigest;
+    expect(migrateWorkspaceConfiguration(f.store).revision).toBe(2);
+    expect(f.store.events()[0]!.valueDigest).toBe(oldDigest);
+    expect(migrateWorkspaceConfiguration(f.store).revision).toBe(2);
+    expect(f.store.events()).toHaveLength(2);
   });
   it("shares the core SQLite file and retains CAS/evidence after reopen", () => {
     const f = setup();

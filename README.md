@@ -71,15 +71,20 @@ host owns authorization and acceptance; workers cannot approve themselves,
 merge, deploy, or mutate hubs. A transactional SQLite journal retains artifacts,
 exclusive reservations, fencing, and unknown outcomes across restarts.
 
-Requires Node 22.13+ for this feature. Try the offline scripted-worker demo:
+Requires Node 22.13+ for this feature.
 
 For versioned local onboarding without a pre-existing PR, start with
 `sandcastle orchestrate workspace init --database <local-sqlite-file>`.
 See [workspace setup and exact permissions](docs/agents/orchestration-workspace.md)
 and [user-local service controls](docs/agents/local-orchestration-service.md).
+Use `workspace start/status/pause/resume/stop` for local polling and
+`workspace proposals/proposal/review` for revision-bound local proposal review.
+See [native intake and live-readiness boundaries](docs/agents/orchestration-intake.md).
 The workspace starts in observe mode with no grants. Setup diagnostics distinguish
 configuration from actual framework execution readiness; missing backend identity
 evidence blocks execution rather than falling back to an unattested worker.
+
+Try the offline scripted-worker demo:
 
 ```powershell
 sandcastle orchestrate --demo .\.sandcastle\orchestration-demo

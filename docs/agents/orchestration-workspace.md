@@ -3,8 +3,10 @@
 Requires Node 22.13+ and Git. The local SQLite file is the configuration source
 of truth and also holds service, discovery and proposal records. Use the same
 absolute file for every command and the core journal; do not copy it while a
-service owns it. Credentials remain in the native `gh`/Azure CLI environment,
-never configuration or generated prompts.
+service owns it. GitHub uses the current native `gh` account. The CLI's ADO read
+transport uses an existing host-only `AZURE_DEVOPS_EXT_PAT`; embedded trusted
+hosts may instead inject a bearer/PAT transport. Never put credentials in
+configuration or generated prompts. This command does not log in or install tools.
 
 ## Onboarding
 
@@ -18,9 +20,14 @@ sandcastle orchestrate workspace validate --database C:\work\orchestration.sqlit
 
 Registration requires an existing exact Git checkout root, not a subdirectory.
 It does not clone, change remotes, create a PR, or grant any effect permission.
-Validation checks checkout roots/origins and reports missing focus, discovery
-and phase registrations rather than calling an empty setup ready. It is not
-proof that a backend actually executed the selected agent/model.
+Validation checks checkout roots/origins, native command flags, exact installed
+phase definitions, focus and discovery registration. Its readiness output
+separates `missingConfiguration` from `missingCapabilities`; unavailable executed
+identity remains blocked even when every local file and flag is valid. Add
+`validate --live` only to perform explicitly granted repository read-access
+preflights. Item-level team/iteration/query membership is independently checked
+during intake and refresh, not established by that preflight. It never launches a worker or performs hub writes, and zero evaluated
+sources is not live verification.
 
 `remove --id api` removes local registration only. It refuses to remove a project
 referenced by a contract route; first use `route-remove`. It never removes the
@@ -97,6 +104,89 @@ Installed definition checks are not backend execution identity evidence.
 are configuration, not dispatched work. Discovered work must be separately
 bound to its immutable observed identity and revision; untrusted source text
 cannot choose commands or broaden scopes. Remove with `task-template-remove`.
+Use one template per project; unresolved task/contract prerequisites cannot be
+renamed into discovered tasks and require the verified core lifecycle.
+
+## Polling and local control
+
+```powershell
+sandcastle orchestrate workspace run --database C:\work\orchestration.sqlite
+sandcastle orchestrate workspace start --database C:\work\orchestration.sqlite
+```
+
+`run` performs one bounded native pass. `start` stays attached and polls until
+stopped; run the following in another terminal. Use the same database and
+optional `--control-directory` for every control command:
+
+```powershell
+sandcastle orchestrate workspace status --database C:\work\orchestration.sqlite
+sandcastle orchestrate workspace pause --database C:\work\orchestration.sqlite
+sandcastle orchestrate workspace narrow-focus --database C:\work\orchestration.sqlite --file C:\work\narrowed-focus.json
+sandcastle orchestrate workspace resume --database C:\work\orchestration.sqlite
+sandcastle orchestrate workspace restart --database C:\work\orchestration.sqlite
+sandcastle orchestrate workspace stop --database C:\work\orchestration.sqlite
+sandcastle orchestrate workspace startup --database C:\work\orchestration.sqlite
+```
+
+`restart` is a new attached service process: it first authenticates and drains the
+previous same-host owner, then starts. It does not kill a noncooperative worker.
+The default control directory is `.<workspace-id>-control` beside the database;
+it must be private to the current user. Control descriptors contain a secret:
+do not print, share or commit them. Startup returns OS-specific artifact content
+only; it does not write or register startup.
+
+`start` emits JSONL `workspace-pass` notifications after durable pass evidence
+changes; identical repeated projections are not re-announced. It emits a final
+status on shutdown. `service-ready` means the control endpoint is live, not that worker execution is
+available. `status` distinguishes authenticated process state from released/dead
+ownership and retained evidence. `lastPass.result` includes explicit evaluated
+scope, proposal statuses and diagnostics. Empty/ungranted setups produce blocked
+pass evidence; the service stays controllable while awaiting configuration.
+Supported ADO sources continue when an optional focus selector is unsupported
+for another source. Such a pass reports `partial` with per-source diagnostics,
+not global authorization or fabricated matching facts.
+`run` exits nonzero for blocked or partial passes. Immediate service failures do not advertise
+a ghost endpoint. Retained `lastFailure` is allowlisted phase/cause evidence;
+historical failures keep their original owner ID across healthy restarts.
+
+Use `focus --file` for a new trusted configuration revision, including expansion
+or reprioritization. `narrow-focus` is an authenticated live control that cannot
+grant new authority. Configuration/focus changes fence old admissions; already
+started effects may need independent reconciliation. Item/attempt/runtime and
+concurrency limits are not token-price or currency spending limits.
+
+Older records may omit newly defaulted fields. Stop the service and run
+`migrate` to append a normalized configuration revision before restarting.
+Migration preserves prior event bytes and IDs; it never rewrites history or
+weakens ownership/configuration guards.
+
+## Proposal queue and execution readiness
+
+```powershell
+sandcastle orchestrate workspace proposals --database C:\work\orchestration.sqlite
+sandcastle orchestrate workspace proposal --database C:\work\orchestration.sqlite --id <proposal-id>
+sandcastle orchestrate workspace review --database C:\work\orchestration.sqlite --id <proposal-id> --proposal-digest <digest> --source-revision <revision-digest> --revision <configuration-revision> --decision approve
+```
+
+Review is a trusted local action requiring the current proposal digest, source
+revision and configuration revision. Use `--decision reject` to reject. Stop the
+service before reviewing: review acquires the same exclusive owner as manual
+passes and cannot race live planning. Then restart to observe the new decision.
+Approval is not authority to publish, implement, push, merge or deploy.
+
+Observe performs native read-only intake without model reservations. Propose and
+Execute additionally configure the real named DevSquad planner and inspect its
+preflight before reserving work. The currently installed Copilot backend does not
+supply independently bound execution identity, so the default planner/dispatch
+remains blocked before effects, rather than producing a disconnected successful
+proposal. Local CLI output and the proposal queue remain usable. A trusted
+attested host can use the existing core lifecycle through the compatible
+`orchestrate --config` path, which now shares service/manual exclusion and retains
+workspace worker-dispatch gates after host run binding.
+
+See [native intake](orchestration-intake.md) for precise supported selector forms,
+provider/version evidence, missing backend fields, verified factory seams,
+bounded queue capacity and recovery. No injected fixture proves live execution.
 
 ## Evidence and limits
 

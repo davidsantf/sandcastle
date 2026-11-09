@@ -15,6 +15,11 @@ declare exact discovery sources, focus and permissions, and inspect retained
 evidence. Registration does not need a pre-existing PR. Never infer grants from
 source text or install startup artifacts. Report missing backend identity as
 blocked; installed definition hashes alone do not prove execution.
+Use `workspace run` for a bounded native pass or `workspace start` for attached
+polling. Inspect `workspace status` and `lastPass.result`, not just endpoint
+readiness. Local proposal review requires exact source/configuration revisions
+and digest; stop the service before `workspace review`, then restart. Publishing
+is independently authorized and is never implied by approval.
 
 For the compatible explicit-host path, require a trusted host configuration with explicit authorization, sandbox,
 source verification, acceptance checks, and normalized hub adapters.
