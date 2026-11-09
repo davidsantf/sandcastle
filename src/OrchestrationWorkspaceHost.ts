@@ -15,8 +15,11 @@ import {
 } from "./OrchestrationDiscovery.js";
 import {
   createConfiguredDevsquadProposalPlanner,
+  createOrchestrationLocalExecutionRecorder,
   createOrchestrationNativeTick,
 } from "./OrchestrationNativeHost.js";
+import type { OrchestrationIntakeStore } from "./OrchestrationProposal.js";
+import { noSandbox } from "./sandboxes/no-sandbox.js";
 
 export function workspaceDiscoveryTransport(
   source: WorkspaceDiscoverySource,
@@ -75,6 +78,7 @@ export function configuredWorkspacePlanner(
   ) =>
     | OrchestrationDiscoveryTransport
     | undefined = workspaceDiscoveryTransport,
+  store?: OrchestrationIntakeStore,
 ) {
   const discovery = readyDiscoverySources(configuration);
   const projectIds = new Set(discovery.map((source) => source.projectId));
@@ -91,6 +95,22 @@ export function configuredWorkspacePlanner(
     ),
     evaluateFocus: evaluateOrchestrationFocus,
     transport,
+    ...(configuration.runtime.executionTrust === "trusted-local"
+      ? {
+          sandbox: () => noSandbox(),
+          ...(store
+            ? {
+                recordLocalExecution: createOrchestrationLocalExecutionRecorder(
+                  {
+                    store,
+                    namespace: configuration.id,
+                    configurationRevision: configuration.revision,
+                  },
+                ),
+              }
+            : {}),
+        }
+      : {}),
   });
 }
 
@@ -98,9 +118,13 @@ export async function inspectWorkspaceReadiness(
   configuration: WorkspaceConfiguration,
   signal: AbortSignal,
   live = false,
+  store?: OrchestrationIntakeStore,
 ) {
-  const native =
-    await configuredWorkspacePlanner(configuration).preflight(signal);
+  const native = await configuredWorkspacePlanner(
+    configuration,
+    workspaceDiscoveryTransport,
+    store,
+  ).preflight(signal);
   const diagnostics = workspaceScopeDiagnostics(configuration);
   const scopeReadiness = getOrchestrationNativeScopeReadiness(configuration);
   const sources: {
@@ -223,7 +247,11 @@ export function createWorkspaceNativeTick(
         ],
       };
     const transport = options.transport ?? workspaceDiscoveryTransport;
-    const planner = configuredWorkspacePlanner(configuration, transport);
+    const planner = configuredWorkspacePlanner(
+      configuration,
+      transport,
+      context.store,
+    );
     const readiness =
       configuration.focus.mode === "observe"
         ? null

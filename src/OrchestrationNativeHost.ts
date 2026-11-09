@@ -13,6 +13,7 @@ import {
 import {
   createDevsquadOrchestrationWorker,
   type DevsquadPhaseCapability,
+  type OrchestrationLocalExecutionEvidence,
 } from "./MultiProjectWorker.js";
 import type { SandboxProvider } from "./SandboxProvider.js";
 import { prioritizeOrchestrationProjects } from "./OrchestrationFocus.js";
@@ -507,7 +508,7 @@ export function createDevsquadProposalPlanner(options: {
         );
       if (receipt.kind !== "completed")
         throw new Error(
-          `DevSquad ${purpose} did not produce an attested completed receipt`,
+          `DevSquad ${purpose} did not produce an authorized completed receipt`,
         );
       return receipt.artifact;
     };
@@ -538,6 +539,9 @@ export type OrchestrationNativePhaseDefinition =
   WorkspaceConfiguration["runtime"]["phaseDefinitions"][number];
 export interface OrchestrationNativeReadiness {
   executionReady: boolean;
+  executionTrust: "independent-backend" | "trusted-local";
+  independentBackendVerified: false;
+  warnings: string[];
   diagnostics: string[];
   missingConfiguration: string[];
   missingCapabilities: string[];
@@ -563,14 +567,16 @@ const probeCommand = (command: string, args: string[], signal: AbortSignal) =>
 
 /**
  * Host-installed definitions only. This probe cannot establish backend execution
- * identity; the default controls deliberately refuse dispatch without that proof.
+ * identity. Trusted-local mode explicitly trusts the installed CLI instead.
  */
 export function createOrchestrationNativeSetup(options: {
   command: string;
   phaseDefinitions: OrchestrationNativePhaseDefinition[];
+  executionTrust?: "independent-backend" | "trusted-local";
 }) {
   const definitions = structuredClone(options.phaseDefinitions);
   const command = options.command;
+  const executionTrust = options.executionTrust ?? "independent-backend";
   const resolveDefinition = async (
     stage: DevsquadPhaseCapability["stage"],
   ): Promise<DevsquadPhaseCapability | null> => {
@@ -623,6 +629,7 @@ export function createOrchestrationNativeSetup(options: {
     };
   };
   return {
+    executionTrust,
     async preflight(
       signal: AbortSignal,
     ): Promise<OrchestrationNativeReadiness> {
@@ -680,11 +687,23 @@ export function createOrchestrationNativeSetup(options: {
           );
         }
       }
-      missingCapabilities.push(
-        "Backend lacks independent executed agent/model/definition evidence; live execution is blocked",
-      );
+      if (executionTrust === "independent-backend")
+        missingCapabilities.push(
+          "Backend lacks independent executed agent/model/definition evidence; live execution is blocked",
+        );
       return {
-        executionReady: false,
+        executionReady:
+          executionTrust === "trusted-local" &&
+          !missingConfiguration.length &&
+          !missingCapabilities.length,
+        executionTrust,
+        independentBackendVerified: false,
+        warnings:
+          executionTrust === "trusted-local"
+            ? [
+                "Trusted-local trusts CLI agent/model selection; no independent backend attestation or credential/network isolation is established.",
+              ]
+            : [],
         runtime,
         missingConfiguration,
         missingCapabilities,
@@ -699,9 +718,21 @@ export function createOrchestrationNativeSetup(options: {
       if (request.stage === "verify" || command !== "copilot") return null;
       return resolveDefinition(request.stage);
     },
-    async authorizeCapability() {
-      // Definition identity is not backend execution identity.
-      return false;
+    async authorizeCapability(
+      request?: OrchestrationWorkerRequest,
+      capability?: DevsquadPhaseCapability,
+      signal?: AbortSignal,
+    ) {
+      signal?.throwIfAborted();
+      if (
+        executionTrust !== "trusted-local" ||
+        !request ||
+        !capability ||
+        request.stage === "verify"
+      )
+        return false;
+      const current = await resolveDefinition(request.stage);
+      return current !== null && digest(current) === digest(capability);
     },
     async attestExecution() {
       return false;
@@ -744,12 +775,61 @@ export function createOrchestrationProposalTask(
   ])[0]!;
 }
 
+export function createOrchestrationLocalExecutionRecorder(options: {
+  store: OrchestrationIntakeStore;
+  namespace: string;
+  configurationRevision: number;
+}) {
+  return async (
+    evidence: OrchestrationLocalExecutionEvidence,
+  ): Promise<void> => {
+    const key = `local-execution/${digest([options.namespace, evidence.invocation])}`;
+    const record = {
+      ...evidence,
+      configurationRevision: options.configurationRevision,
+    };
+    const current = options.store.read(key);
+    const reserving = evidence.outcome === "reserved";
+    const admitting = evidence.outcome === "admitted";
+    const previousOutcome = current.version === 1 ? "reserved" : "admitted";
+    if (
+      reserving
+        ? current.version !== 0 || current.value !== null
+        : (admitting
+            ? current.version !== 1
+            : current.version !== 2 &&
+              !(current.version === 1 && evidence.outcome === "unknown")) ||
+          digest(current.value) !==
+            digest({ ...record, outcome: previousOutcome })
+    )
+      throw new Error(
+        "Trusted-local launch already reserved or evidence binding changed",
+      );
+    if (
+      !options.store.compareAndSwap(key, current.version, record, {
+        kind: reserving
+          ? "trusted-local-launch-reserved"
+          : admitting
+            ? "trusted-local-launch-admitted"
+            : "trusted-local-result",
+        at: new Date().toISOString(),
+      })
+    )
+      throw new Error(
+        "Trusted-local execution evidence rejected by owner/configuration fence",
+      );
+  };
+}
+
 /** Data-only setup for the existing executor; never invents task or backend authority. */
 export function createConfiguredDevsquadProposalPlanner(options: {
   configuration: WorkspaceConfiguration;
   evaluateFocus: OrchestrationIntakeFocusEvaluator;
   tasks?: OrchestrationTask[];
   sandbox?: (request: OrchestrationWorkerRequest) => SandboxProvider;
+  recordLocalExecution?: (
+    evidence: OrchestrationLocalExecutionEvidence,
+  ) => Promise<void>;
   transport?: (
     source: OrchestrationDiscoverySource,
   ) => OrchestrationDiscoveryTransport | undefined;
@@ -775,6 +855,7 @@ export function createConfiguredDevsquadProposalPlanner(options: {
       return options.sandbox(request);
     },
     ...setup,
+    recordLocalExecution: options.recordLocalExecution,
   });
   const planner = createDevsquadProposalPlanner({
     execute: worker,
@@ -812,6 +893,13 @@ export function createConfiguredDevsquadProposalPlanner(options: {
       readiness.missingConfiguration.push(
         "No explicitly registered execution backend",
       );
+    if (
+      configuration.runtime.executionTrust === "trusted-local" &&
+      !options.recordLocalExecution
+    )
+      readiness.missingConfiguration.push(
+        "No durable trusted-local execution recorder registered",
+      );
     for (const project of configuration.projects)
       if (!tasks.some((t) => t.projectId === project.id))
         readiness.missingConfiguration.push(
@@ -821,6 +909,8 @@ export function createConfiguredDevsquadProposalPlanner(options: {
       ...readiness.missingConfiguration,
       ...readiness.missingCapabilities,
     ];
+    readiness.executionReady =
+      readiness.executionReady && readiness.diagnostics.length === 0;
     return readiness;
   };
   return {

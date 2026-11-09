@@ -39,6 +39,13 @@ and normal repository policy. This expansion is separate from that merge.
    be checked; absent credentials/framework capability is a truthful blocker.
    No arbitrary live ticket/PR, broad permission request or startup installation
    is part of verification.
+8. Strict independent-backend identity remains the default. Explicitly authorized
+   trusted-local mode trusts installed CLI agent/model selection, labels host
+   provenance honestly and atomically retains invocation/request/configuration
+   launch evidence. It does not fabricate backend attestation, provide OS
+   isolation, register native implementation dispatch or satisfy stronger-proof
+   review/critical/publication gates. Lost evidence, canceled or uncertain
+   invocations are not automatically replayed.
 
 ## Non-regression and verification
 

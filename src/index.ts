@@ -66,7 +66,10 @@ export {
   buildMultiProjectWorkerPrompt,
   resolveOrchestrationGitRevision,
 } from "./MultiProjectWorker.js";
-export type { DevsquadPhaseCapability } from "./MultiProjectWorker.js";
+export type {
+  DevsquadPhaseCapability,
+  OrchestrationLocalExecutionEvidence,
+} from "./MultiProjectWorker.js";
 export { runMultiProjectDemo } from "./MultiProjectDemo.js";
 export { runMultiProjectCoworkDemo } from "./MultiProjectCoworkDemo.js";
 export { runMultiProjectEntrypoint } from "./MultiProjectEntrypoint.js";

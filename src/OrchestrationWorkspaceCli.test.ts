@@ -42,6 +42,46 @@ const invoke = (database: string, command: string, ...args: string[]) => {
 };
 
 describe("compiled workspace CLI", () => {
+  it("persists trusted-local only by explicit revisioned runtime edit without granting permissions", () => {
+    const directory = fs.mkdtempSync(
+      path.join(os.tmpdir(), "workspace-trust-"),
+    );
+    try {
+      const database = path.join(directory, "state.sqlite");
+      const initial = invoke(database, "init");
+      expect(initial.runtime).not.toHaveProperty("executionTrust");
+      const runtime = initial.runtime as Record<string, unknown>;
+      const file = path.join(directory, "runtime.json");
+      fs.writeFileSync(
+        file,
+        JSON.stringify({ ...runtime, executionTrust: "trusted-local" }),
+      );
+      const local = invoke(
+        database,
+        "runtime",
+        "--revision",
+        "1",
+        "--file",
+        file,
+      );
+      expect(local.runtime).toHaveProperty("executionTrust", "trusted-local");
+      expect(local.focus).toMatchObject({ mode: "observe", permissions: [] });
+      expect(() =>
+        invoke(database, "runtime", "--revision", "1", "--file", file),
+      ).toThrow();
+      fs.writeFileSync(
+        file,
+        JSON.stringify({ ...runtime, executionTrust: "worker-verified" }),
+      );
+      expect(() => invoke(database, "runtime", "--file", file)).toThrow();
+      fs.writeFileSync(file, JSON.stringify(runtime));
+      expect(
+        invoke(database, "runtime", "--revision", "2", "--file", file).runtime,
+      ).not.toHaveProperty("executionTrust");
+    } finally {
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
   it("onboards repositories without PRs, persists routes and focus, rejects stale edits and removes registrations only", () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "workspace-cli-"));
     try {

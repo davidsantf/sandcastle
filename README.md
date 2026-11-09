@@ -81,8 +81,12 @@ Use `workspace start/status/pause/resume/stop` for local polling and
 `workspace proposals/proposal/review` for revision-bound local proposal review.
 See [native intake and live-readiness boundaries](docs/agents/orchestration-intake.md).
 The workspace starts in observe mode with no grants. Setup diagnostics distinguish
-configuration from actual framework execution readiness; missing backend identity
-evidence blocks execution rather than falling back to an unattested worker.
+configuration from actual framework execution readiness. Strict backend-attestation
+mode is the default. Explicit `runtime.executionTrust: "trusted-local"` enables
+local proposal workers with durable host launch evidence, trusting the installed
+CLI to honor agent/model selection; it does not claim independent backend proof.
+See the workspace guide before opting in: workers run on the host without
+credential/network isolation, and native implementation dispatch is not registered.
 
 Try the offline scripted-worker demo:
 
@@ -95,8 +99,9 @@ workers, use `sandcastle orchestrate --config <trusted-host-module>` with explic
 authorization, validation, sandbox, and native GitHub/ADO evidence adapters.
 Use `createDevsquadOrchestrationWorker()` as the host's `execute` capability
 to select installed named DevSquad phase agents through Copilot CLI `--agent`.
-Unavailable or unattested framework capabilities do not fall back to generic
-workers. The offline demo does not execute DevSquad.
+Unavailable framework capabilities do not fall back to generic workers.
+Trusted-local execution never satisfies independent critic/attestation gates.
+The offline demo does not execute DevSquad.
 See [setup, authority boundaries, and recovery](docs/agents/multi-project-orchestration.md).
 Cowork composition adds diverse critics, governed instruction/component checks,
 durable signal-to-item scheduling, and downstream compatibility tasks. A verified

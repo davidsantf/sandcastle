@@ -23,7 +23,9 @@ It does not clone, change remotes, create a PR, or grant any effect permission.
 Validation checks checkout roots/origins, native command flags, exact installed
 phase definitions, focus and discovery registration. Its readiness output
 separates `missingConfiguration` from `missingCapabilities`; unavailable executed
-identity remains blocked even when every local file and flag is valid. Add
+identity remains blocked in the default strict mode even when every local file
+and flag is valid. Trusted-local mode is a separate explicit trust policy, not
+backend attestation. Add
 `validate --live` only to perform explicitly granted repository read-access
 preflights. Item-level team/iteration/query membership is independently checked
 during intake and refresh, not established by that preflight. It never launches a worker or performs hub writes, and zero evaluated
@@ -94,9 +96,54 @@ not authorize downstream work or publishing. The existing Cowork host retains
 its verified producer-change and cause-bound task append gates.
 
 `runtime` accepts `framework: "devsquad"`, `command`, `agent`, `model`, and
-`phaseDefinitions`. Each phase binds `stage`, `agentName`, absolute
+`phaseDefinitions`, plus optional `executionTrust` (`independent-backend`, the
+default when omitted, or `trusted-local`). Each phase binds `stage`, `agentName`, absolute
 `definitionPath`, SHA256 `definitionDigest`, and `model: {id,family}`.
 Installed definition checks are not backend execution identity evidence.
+
+### Explicit trusted-local mode
+
+This mode trusts the installed CLI to honor the host-selected DevSquad agent and
+model. It does not independently observe the loaded definition or resolved model.
+The workspace planner uses the existing **no-sandbox host provider**: workers can
+access host credentials and network and filesystem scopes are not an OS sandbox.
+Use it only for repositories and installed agents you trust. Definition hashes
+are checked before admission and after execution; they identify configured local
+files, not a backend-attested loaded definition.
+
+After registering installed phase definitions and trusted task templates, opt in
+with a normal revision-checked local runtime edit:
+
+```powershell
+$configuration = sandcastle orchestrate workspace list --database C:\work\orchestration.sqlite | ConvertFrom-Json
+$configuration.runtime | Add-Member -NotePropertyName executionTrust -NotePropertyValue trusted-local -Force
+$configuration.runtime | ConvertTo-Json -Depth 20 | Set-Content C:\work\runtime.json
+sandcastle orchestrate workspace runtime --database C:\work\orchestration.sqlite --revision $configuration.revision --file C:\work\runtime.json
+```
+
+Stop an active service before editing its configuration, then restart it.
+Set the property to `independent-backend` (or omit it) to restore strict policy.
+The edit does not change focus, grant investigate/implement permissions, approve
+a proposal, or authorize publishing. `validate` only probes readiness; it never
+launches a worker. `executionReady` describes configured planning capability,
+not independent backend verification, implementation dispatch or live validation.
+Readiness includes `executionTrust`, nonblocking `warnings`, and
+`independentBackendVerified: false`.
+
+Each local invocation atomically reserves durable host evidence, rechecks its
+capability and fences admission against the captured service/configuration before
+launch. Evidence binds invocation, intent, request digest, source revision (through
+the request digest for intake), configuration revision, requested agent/model,
+configured definition digest and branch. Append-only `trusted-local-launch-reserved`,
+`trusted-local-launch-admitted` and `trusted-local-result` events distinguish
+reservation/admission from the worker-reported result. They contain no raw worker
+output or exception text. `backendAttested` is always false.
+
+A retained reservation, including one left by a crash or failed result write,
+prevents automatic relaunch of the same invocation. A successful worker receipt
+does not prove acceptance tests passed. Critical human approvals, independent
+critics, verification and separately authorized hub publication are unchanged;
+local evidence cannot satisfy gates that require independent proof.
 
 `task-template-add` accepts a normal orchestration task with a registered
 `projectId`, trusted `branch` prefix, `baseBranch`, literal `scopes` and nonempty
@@ -177,10 +224,12 @@ Approval is not authority to publish, implement, push, merge or deploy.
 Observe performs native read-only intake without model reservations. Propose and
 Execute additionally configure the real named DevSquad planner and inspect its
 preflight before reserving work. The currently installed Copilot backend does not
-supply independently bound execution identity, so the default planner/dispatch
-remains blocked before effects, rather than producing a disconnected successful
-proposal. Local CLI output and the proposal queue remain usable. A trusted
-attested host can use the existing core lifecycle through the compatible
+supply independently bound execution identity, so strict mode remains blocked
+before effects. Explicit trusted-local mode can run the three proposal phases
+(investigation, specification, plan) through the named CLI worker and persist
+their results for review. **Native workspace implementation dispatch remains
+unregistered in either mode**; approving a proposal does not silently launch an
+implementation. A separately configured trusted host can use the existing core lifecycle through the compatible
 `orchestrate --config` path, which now shares service/manual exclusion and retains
 workspace worker-dispatch gates after host run binding.
 

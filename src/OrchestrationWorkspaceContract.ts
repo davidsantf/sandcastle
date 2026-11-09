@@ -138,6 +138,7 @@ export interface WorkspaceConfiguration {
     agent: string;
     model: string;
     command: string;
+    executionTrust?: "independent-backend" | "trusted-local";
     phaseDefinitions: z.infer<typeof workspacePhaseDefinitionSchema>[];
   };
   pollIntervalMs: number;
@@ -172,6 +173,7 @@ export const workspaceConfigurationSchema = z.strictObject({
       .min(1)
       .max(1000)
       .refine((value) => !/[\u0000-\u001f]/.test(value), "invalid executable"),
+    executionTrust: z.enum(["independent-backend", "trusted-local"]).optional(),
     phaseDefinitions: z
       .array(workspacePhaseDefinitionSchema)
       .max(6)

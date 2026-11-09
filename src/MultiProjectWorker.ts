@@ -5,6 +5,7 @@ import { run, type RunResult } from "./run.js";
 import { Output } from "./Output.js";
 import {
   parseWorkerReceipt,
+  digest,
   workerReceiptSchema,
   type OrchestrationProject,
   type OrchestrationTask,
@@ -119,6 +120,25 @@ export interface DevsquadPhaseCapability {
   readonly available: boolean;
 }
 
+export interface OrchestrationLocalExecutionEvidence {
+  schemaVersion: 1;
+  trust: "trusted-local";
+  backendAttested: false;
+  invocation: string;
+  intent: string;
+  requestDigest: string;
+  projectId: string;
+  taskId: string;
+  stage: DevsquadPhaseCapability["stage"];
+  revision?: string;
+  branch: string;
+  baseBranch: string;
+  requestedAgent: string;
+  configuredDefinitionDigest: string;
+  requestedModel: { readonly id: string; readonly family: string };
+  outcome: "reserved" | "admitted" | "completed" | "failed" | "unknown";
+}
+
 export function createDevsquadOrchestrationWorker(options: {
   sandbox: (request: OrchestrationWorkerRequest) => SandboxProvider;
   resolveCapability: (
@@ -136,6 +156,10 @@ export function createDevsquadOrchestrationWorker(options: {
     result: RunResult,
     signal: AbortSignal,
   ) => Promise<boolean>;
+  executionTrust?: "independent-backend" | "trusted-local";
+  recordLocalExecution?: (
+    evidence: OrchestrationLocalExecutionEvidence,
+  ) => Promise<void>;
   invoke?: typeof run;
 }) {
   return async (
@@ -187,6 +211,84 @@ export function createDevsquadOrchestrationWorker(options: {
       };
     if (signal.aborted)
       return { kind: "unknown", reason: "DevSquad dispatch canceled" };
+    if (options.executionTrust === "trusted-local") {
+      if (!options.recordLocalExecution)
+        return {
+          kind: "failed",
+          signature: "local-execution-recorder-unavailable",
+          evidence:
+            "Trusted-local execution requires durable host launch evidence.",
+        };
+      const captured = structuredClone(request);
+      const evidence: OrchestrationLocalExecutionEvidence = {
+        schemaVersion: 1,
+        trust: "trusted-local",
+        backendAttested: false,
+        invocation: captured.invocation,
+        intent: captured.intent,
+        requestDigest: digest(captured),
+        projectId: captured.project.id,
+        taskId: captured.task.id,
+        stage: capability.stage,
+        ...(captured.revision ? { revision: captured.revision } : {}),
+        branch: captured.task.branch,
+        baseBranch: captured.task.baseBranch,
+        requestedAgent: capability.agentName,
+        configuredDefinitionDigest: capability.definitionDigest,
+        requestedModel: { ...capability.model },
+        outcome: "reserved",
+      };
+      await options.recordLocalExecution(structuredClone(evidence));
+      let receipt: OrchestrationWorkerReceipt;
+      try {
+        if (
+          signal.aborted ||
+          !(await options.authorizeCapability(captured, capability, signal))
+        )
+          receipt = {
+            kind: "unknown",
+            reason: "Trusted-local launch authorization changed",
+          };
+        else {
+          await options.recordLocalExecution({
+            ...evidence,
+            outcome: "admitted",
+          });
+          receipt = await createSandcastleOrchestrationWorker({
+            agent: copilot(capability.model.id, {
+              agent: capability.agentName,
+            }),
+            sandbox: options.sandbox,
+            invoke: options.invoke,
+          })(captured, signal);
+          if (
+            signal.aborted ||
+            !(await options.authorizeCapability(captured, capability, signal))
+          )
+            receipt = {
+              kind: "unknown",
+              reason: "Trusted-local execution binding changed",
+            };
+        }
+      } catch {
+        receipt = {
+          kind: "unknown",
+          reason: "Trusted-local invocation outcome is unknown",
+        };
+      }
+      try {
+        await options.recordLocalExecution({
+          ...evidence,
+          outcome: receipt.kind,
+        });
+      } catch {
+        return {
+          kind: "unknown",
+          reason: "Trusted-local result evidence is unacknowledged",
+        };
+      }
+      return receipt;
+    }
     return createSandcastleOrchestrationWorker({
       agent: copilot(capability.model.id, { agent: capability.agentName }),
       sandbox: options.sandbox,

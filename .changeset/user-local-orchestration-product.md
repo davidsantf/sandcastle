@@ -9,3 +9,6 @@ Expose native discovery and explicit configuration/capability readiness through
 the public host path; block unavailable execution before effect reservation.
 Allow project discovery without an unrelated pre-existing pull request while
 retaining host-owned change-request registration and fail-closed verification.
+Add opt-in trusted-local proposal execution with atomic, fenced host launch
+provenance and explicit no-sandbox warnings, without claiming backend attestation
+or weakening independent review and publication gates.

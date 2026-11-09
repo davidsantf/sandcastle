@@ -332,6 +332,13 @@ alone therefore cannot make this default factory execution-ready.
 
 ## Verification scope
 
+The later user-authorized trusted-local policy is documented in
+[workspace setup](orchestration-workspace.md#explicit-trusted-local-mode).
+It is a separate trust choice, not a newly discovered metadata path or proof
+that the historical probe executed a worker. Strict setup still has the identity
+gap above. Trusted-local records requested agent/model and configured definition
+hashes with `backendAttested: false`; it never fulfills independent-proof gates.
+
 The additive tests use the actual canonical SQLite store for host integration,
 fenced ownership, replay and retained queue events. Other tests cover bounded
 GitHub/ADO reads, revision changes, stale reviews, rejection, concurrent/restarted

@@ -25,13 +25,27 @@ change requests yield unknown evidence, not undefined hub requests or green
 zero-check evaluation. Removal affects local registration only.
 
 Trusted local CLI edits may widen grants; remote text and service control may
-not. Backend capability and identity evidence remain independent prerequisites.
+not. Backend capability and identity evidence remain independent prerequisites
+in the default strict execution policy.
 Installed definition hashes and a successful command are not invented model
 attestation. Optional startup generation produces artifacts without OS changes.
+
+The user explicitly authorized a second, opt-in `trusted-local` execution policy.
+It trusts the installed CLI to honor the requested named agent and model, while
+retaining exact definition checks and durable owner/configuration-fenced launch
+reservations. Its evidence is host provenance, never independent backend proof.
+The workspace uses the existing no-sandbox provider only under this explicit
+policy; credential/network isolation is not provided. Unknown outcomes and
+unacknowledged result writes retain their reservations and cannot automatically
+replay. Existing independent critics, critical approvals, verification and
+publication gates are not weakened. Native implementation dispatch is not added
+by this policy; the native planner may produce reviewable artifacts.
 
 ## Consequences
 
 Public CLI setup no longer needs an executable authority module for read-only
-discovery/service operation. Full framework execution may still be blocked when
-the installed backend cannot provide the required identity evidence. Report that
-limit explicitly rather than weakening the existing worker gate.
+discovery/service operation. Strict native execution remains blocked when the
+installed backend cannot provide the required identity evidence. Explicit local
+trust permits native proposal planning, not independent verification or native
+implementation dispatch. Report these distinct limits instead of treating local
+provenance as backend proof or granting authority through worker assertions.

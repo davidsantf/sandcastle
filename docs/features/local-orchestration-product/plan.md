@@ -24,3 +24,17 @@ init/register/routes/focus/setup/manual pass/service/status/pause/resume/stop.
 Test unavailable capabilities and denied actions as negative controls. Update
 README, unique minor changeset and retained evidence with exact commands/results.
 Do not install OS startup or create remote fixture work.
+
+## Authorized trust-policy amendment
+
+Keep independent backend proof as the default. The user-authorized
+`trusted-local` alternative trusts the installed CLI's named-agent/model
+selection for native investigation/specification/planning only. Wire the
+existing runner to durable reservation, final guarded admission and bounded
+result evidence; reread exact phase definitions and reject replay or uncertain
+settlement. Record requested/configured identity honestly, never backend
+attestation. Preserve action scope and all stronger verification, critic,
+critical-approval and publication gates. Document no-sandbox limits and the
+unregistered native implementation dispatcher. Exercise the real guarded
+service/queue with an injected runner, rebuilt CLI policy edits and a
+strict-default negative control before committing this amendment.

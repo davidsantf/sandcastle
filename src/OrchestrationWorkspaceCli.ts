@@ -364,6 +364,7 @@ const validate = Command.make(
         configuration,
         AbortSignal.timeout(60_000),
         args.live,
+        store,
       );
       blockers.push(
         ...readiness.diagnostics,
