@@ -88,7 +88,11 @@ describe("explicit host Azure CLI ADO authentication", () => {
           file: string,
           args: string[],
           options: { signal: AbortSignal; timeout: number; maxBuffer: number },
-          callback: (error: Error | null, stdout: string) => void,
+          callback: (
+            error: Error | null,
+            stdout: string,
+            stderr: string,
+          ) => void,
         ) => {
           expect(options.timeout).toBe(15000);
           expect(options.maxBuffer).toBe(128 * 1024);
@@ -98,6 +102,7 @@ describe("explicit host Azure CLI ADO authentication", () => {
             file.endsWith("where.exe")
               ? `${root}\\az\r\n${root}\\az.cmd\r\n`
               : JSON.stringify(args[3] === "show" ? account : token()),
+            "",
           );
         },
       );
@@ -116,6 +121,7 @@ describe("explicit host Azure CLI ADO authentication", () => {
       }
       expect(calls[1]![1]).toContain("get-access-token");
       expect(calls[1]![1]).toContain(resource);
+      expect(calls[1]![1]).not.toContain("--subscription");
       expect(read).toHaveBeenCalledOnce();
     },
   );
@@ -133,8 +139,6 @@ describe("explicit host Azure CLI ADO authentication", () => {
         resource,
         "--tenant",
         account.tenantId,
-        "--subscription",
-        account.id,
         "--output",
         "json",
         "--only-show-errors",
@@ -332,4 +336,37 @@ describe("explicit host Azure CLI ADO authentication", () => {
     expect(f.execute).not.toHaveBeenCalled();
     expect(f.read).not.toHaveBeenCalled();
   });
+  it("reports credential-independent network failure as transport, not a request to log in", async () => {
+    const f = fixture();
+    f.read.mockRejectedValue(new Error("network error with sensitive cause"));
+    await expect(f.invoke(request, signal())).rejects.toMatchObject({
+      code: "transport",
+    });
+    expect(f.read).toHaveBeenCalledOnce();
+  });
+  it.skipIf(process.platform !== "win32").each([
+    ["AADSTS50076 sensitive diagnostic", "reauthentication-required"],
+    ["invalid CLI arguments sensitive diagnostic", "cli-command-failed"],
+  ])(
+    "redacts installed CLI failure classification for %s",
+    async (stderr, reason) => {
+      native.execute.mockImplementation(
+        (
+          _file: string,
+          _args: string[],
+          _options: unknown,
+          callback: (error: Error, stdout: string, stderr: string) => void,
+        ) =>
+          callback(
+            new Error("sensitive subprocess error"),
+            "sensitive stdout",
+            stderr,
+          ),
+      );
+      const invoke = createOrchestrationAzureCliReadTransport({
+        expectedIdentity: account.user.name,
+      });
+      await expect(invoke(request, signal())).rejects.toMatchObject({ reason });
+    },
+  );
 });

@@ -126,6 +126,9 @@ configuration. Before each read and after token acquisition, the host verifies
 the current account matches the configured identity. It requests only the
 [documented Azure DevOps resource](https://learn.microsoft.com/en-us/azure/devops/cli/entra-tokens?view=azure-devops),
 `499b84ac-1321-427f-aa17-267ca6975798`, using `az account get-access-token`.
+The request selects the verified account tenant only: Azure CLI forbids combining
+`--tenant` and `--subscription` here. Account context is still verified before
+and after acquisition, without a global subscription/account switch.
 Bearer tokens remain in memory, are refreshed within 60 seconds of expiry, and
 must carry the expected audience, tenant and user claims. These checks are
 credential sanity checks, not independent JWT signature verification or agent

@@ -12,6 +12,7 @@ const resource = "499b84ac-1321-427f-aa17-267ca6975798";
 const refreshMarginMs = 60_000;
 type AuthFailure =
   | "cli-unavailable"
+  | "cli-command-failed"
   | "reauthentication-required"
   | "identity-mismatch"
   | "invalid-token"
@@ -29,10 +30,18 @@ const executeFile = (file: string, args: string[], signal: AbortSignal) =>
       file,
       args,
       { signal, timeout: 15_000, maxBuffer: 128 * 1024, windowsHide: true },
-      (error, stdout) =>
+      (error, stdout, stderr) =>
         error
           ? reject(
-              new OrchestrationAzureCliAuthError("reauthentication-required"),
+              new OrchestrationAzureCliAuthError(
+                error.code === "ENOENT"
+                  ? "cli-unavailable"
+                  : /AADSTS\d+|az login|interactive authentication/i.test(
+                        stderr,
+                      )
+                    ? "reauthentication-required"
+                    : "cli-command-failed",
+              ),
             )
           : resolve(stdout),
     );
@@ -120,6 +129,7 @@ export function createOrchestrationAzureCliReadTransport(
   const now = dependencies.now ?? Date.now;
   let cached: { token: string; expiresAt: number; account: string } | undefined;
   return async (request, signal) => {
+    let credentialReady = false;
     try {
       signal.throwIfAborted();
       const account = accountSchema.parse(
@@ -147,8 +157,6 @@ export function createOrchestrationAzureCliReadTransport(
             resource,
             "--tenant",
             account.tenantId,
-            "--subscription",
-            account.id,
             "--output",
             "json",
             "--only-show-errors",
@@ -202,6 +210,7 @@ export function createOrchestrationAzureCliReadTransport(
           throw new OrchestrationAzureCliAuthError("identity-mismatch");
       }
       signal.throwIfAborted();
+      credentialReady = true;
       const response = await (
         dependencies.transport ?? createOrchestrationAdoReadTransport
       )({
@@ -215,6 +224,7 @@ export function createOrchestrationAzureCliReadTransport(
       cached = undefined;
       signal.throwIfAborted();
       if (error instanceof OrchestrationDiscoveryError) throw error;
+      if (credentialReady) throw new OrchestrationDiscoveryError("transport");
       // Subprocess stdout/stderr, Zod input and fetch causes may contain secrets.
       throw new OrchestrationAzureCliAuthError("reauthentication-required");
     }
