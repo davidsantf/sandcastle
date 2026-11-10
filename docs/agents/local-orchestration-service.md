@@ -116,6 +116,10 @@ a later publication.
 
 ## Recovery and operational evidence
 
+Public workspace passes persist their redacted proposal summaries in the
+canonical journal, including successful Observe intake without a diagnostic.
+Absent optional diagnostics are omitted, not stored as non-JSON values.
+
 `status()` exposes idle/running/paused/stopping/stopped/blocked lifecycle,
 immutable-focus copies, pass count, redacted proposed/running/blocked/ready
 operation evidence, and aggregate completed/unsettled counts. Adapters' exception

@@ -12,7 +12,10 @@ import {
   createWorkspaceNativeTick,
   inspectWorkspaceReadiness,
 } from "./OrchestrationWorkspaceHost.js";
-import { readOrchestrationOperationSummary } from "./OrchestrationOperations.js";
+import {
+  orchestrationServiceDigest,
+  readOrchestrationOperationSummary,
+} from "./OrchestrationOperations.js";
 
 const stores: OrchestrationWorkspaceStore[] = [];
 const folders: string[] = [];
@@ -83,11 +86,27 @@ describe("composed workspace host", () => {
   it("observes through the real native adapter, service owner and canonical ledger without model reservations", async () => {
     const f = setup();
     const tick = createWorkspaceNativeTick({ transport: () => f.transport });
+    const passKey = `workspace-pass/${orchestrationServiceDigest(f.configuration.id)}`;
     let result: Awaited<ReturnType<typeof tick>> | undefined;
     const status = await runLocalOrchestrationPass({
       ...f,
       tick: async (context) => {
         result = await tick(context);
+        const current = context.store.read(passKey);
+        const at = new Date().toISOString();
+        expect(
+          context.store.compareAndSwap(
+            passKey,
+            current.version,
+            {
+              configurationRevision: context.configuration.revision,
+              passId: context.passId,
+              at,
+              result,
+            },
+            { kind: "workspace-pass", at },
+          ),
+        ).toBe(true);
       },
     });
     expect(status.state).toBe("stopped");
@@ -101,6 +120,19 @@ describe("composed workspace host", () => {
     expect(
       f.store.events().some((event) => event.kind === "intake-observed"),
     ).toBe(true);
+    const reopened = new OrchestrationWorkspaceStore(
+      path.join(f.configuration.projects[0]!.repositoryRoot, "state.sqlite"),
+    );
+    stores.push(reopened);
+    expect(reopened.read(passKey).value).toMatchObject({
+      configurationRevision: f.configuration.revision,
+      result: {
+        status: "observed",
+        evaluatedSources: 1,
+        proposals: [{ status: "observed" }],
+        diagnostics: [],
+      },
+    });
   });
   it("reports missing configuration separately from backend capability and does not reserve a failed native plan", async () => {
     const f = setup("propose");

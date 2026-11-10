@@ -323,7 +323,9 @@ export function createWorkspaceNativeTick(
       proposals: result.proposals.map(({ proposal }) => ({
         id: proposal.id,
         status: proposal.status,
-        diagnostic: proposal.diagnostic,
+        ...(proposal.diagnostic !== undefined
+          ? { diagnostic: proposal.diagnostic }
+          : {}),
       })),
       lifecycles,
       diagnostics: [...new Set(diagnostics)],
