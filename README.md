@@ -82,6 +82,9 @@ Use `workspace start/status/pause/resume/stop` for local polling and
 See [native intake and live-readiness boundaries](docs/agents/orchestration-intake.md).
 Native sources support a single deduplicated assignment-or-exact-tag selector;
 ADO can also restrict exact work-item types within native team-area scope.
+ADO workspace sources can explicitly select identity-bound existing Azure CLI
+Bearer authentication with in-memory expiry-aware refresh; omitted selection
+preserves the host PAT default. Neither path logs in or grants work permissions.
 The workspace starts in observe mode with no grants. Setup diagnostics distinguish
 configuration from actual framework execution readiness. Strict backend-attestation
 mode is the default. Explicit `runtime.executionTrust: "trusted-local"` enables

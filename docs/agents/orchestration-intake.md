@@ -109,6 +109,40 @@ uses the existing `gh` account. For ADO, register
 `createOrchestrationAdoReadTransport({kind:"bearer"|"pat",token})` from the existing
 trusted host credential context. The token stays in that transport closure.
 There is deliberately no credential lookup from work item text or catalog data.
+For public `workspace run/start`, omitted source authentication preserves the
+existing `AZURE_DEVOPS_EXT_PAT` transport. Alternatively, explicitly register
+this ADO-only source property through `workspace discovery-add`:
+
+```json
+"authentication": {
+  "kind": "azure-cli",
+  "expectedIdentity": "your-existing-account@example.com"
+}
+```
+
+This revision-bound selection uses the already installed, signed-in Azure CLI;
+it never falls back to a PAT, logs in, switches accounts, or changes global
+configuration. Before each read and after token acquisition, the host verifies
+the current account matches the configured identity. It requests only the
+[documented Azure DevOps resource](https://learn.microsoft.com/en-us/azure/devops/cli/entra-tokens?view=azure-devops),
+`499b84ac-1321-427f-aa17-267ca6975798`, using `az account get-access-token`.
+Bearer tokens remain in memory, are refreshed within 60 seconds of expiry, and
+must carry the expected audience, tenant and user claims. These checks are
+credential sanity checks, not independent JWT signature verification or agent
+attestation; Azure DevOps validates the credential. Windows supports the
+installed official MSI `az.cmd` launcher through its existing Python module
+without a shell, or an `az.exe` executable. Unsupported launchers fail closed.
+Each CLI process has a 15-second deadline and honors pass cancellation.
+
+Missing/expired credentials, account changes, rejected access and refresh
+failures produce redacted diagnostics without subprocess output or token
+contents. There is no inline login/retry loop; the existing configured discovery
+failure budget applies. Inspect readiness with one `workspace run` before
+starting persistent polling. If reauthentication is required, the user must
+resolve the existing Azure CLI account outside the service; setup does not
+change credentials automatically. Authentication grants no discovery,
+implementation or publication permission and does not widen native filters.
+
 A configured focus value is a restriction, never evidence that a discovered
 target satisfies it. Supported ADO mappings use independent native reads:
 

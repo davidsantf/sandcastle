@@ -23,6 +23,7 @@ export * from "./OrchestrationDiscovery.js";
 export * from "./OrchestrationProposal.js";
 export * from "./OrchestrationNativeHost.js";
 export * from "./OrchestrationWorkspaceHost.js";
+export * from "./OrchestrationAzureCliTransport.js";
 export * from "./OrchestrationNativeDispatch.js";
 export * from "./OrchestrationFocus.js";
 export * from "./OrchestrationOperations.js";

@@ -121,6 +121,12 @@ export const workspaceDiscoverySourceSchema = z
         "duplicate work item type",
       )
       .optional(),
+    authentication: z
+      .strictObject({
+        kind: z.literal("azure-cli"),
+        expectedIdentity: z.string().trim().min(1).max(200).email(),
+      })
+      .optional(),
     pageSize: z.number().int().min(1).max(20).default(10),
     maxPages: z.number().int().min(1).max(20).default(5),
     includeReviewFeedback: z.boolean().default(true),
@@ -129,6 +135,10 @@ export const workspaceDiscoverySourceSchema = z
   .refine(
     (source) => !source.workItemTypes || source.hub.kind === "ado",
     "workItemTypes requires an ADO discovery source",
+  )
+  .refine(
+    (source) => !source.authentication || source.hub.kind === "ado",
+    "Azure CLI authentication requires an ADO discovery source",
   );
 export type WorkspaceDiscoverySource = z.infer<
   typeof workspaceDiscoverySourceSchema

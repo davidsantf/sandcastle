@@ -24,10 +24,27 @@ import {
 } from "./OrchestrationNativeHost.js";
 import type { OrchestrationIntakeStore } from "./OrchestrationProposal.js";
 import { noSandbox } from "./sandboxes/no-sandbox.js";
+import { createOrchestrationAzureCliReadTransport } from "./OrchestrationAzureCliTransport.js";
+
+const azureCliTransports = new Map<string, OrchestrationDiscoveryTransport>();
 
 export function workspaceDiscoveryTransport(
   source: WorkspaceDiscoverySource,
 ): OrchestrationDiscoveryTransport | undefined {
+  if (
+    source.hub.kind === "ado" &&
+    source.authentication?.kind === "azure-cli"
+  ) {
+    const identity = source.authentication.expectedIdentity.toLowerCase();
+    let transport = azureCliTransports.get(identity);
+    if (!transport) {
+      transport = createOrchestrationAzureCliReadTransport(
+        source.authentication,
+      );
+      azureCliTransports.set(identity, transport);
+    }
+    return transport;
+  }
   if (source.hub.kind === "ado" && process.env.AZURE_DEVOPS_EXT_PAT)
     return createOrchestrationAdoReadTransport({
       kind: "pat",
@@ -151,12 +168,16 @@ export async function inspectWorkspaceReadiness(
       });
       continue;
     }
-    if (source.hub.kind === "ado" && !process.env.AZURE_DEVOPS_EXT_PAT) {
+    if (
+      source.hub.kind === "ado" &&
+      !source.authentication &&
+      !process.env.AZURE_DEVOPS_EXT_PAT
+    ) {
       sources.push({
         sourceId: source.id,
         status: "blocked",
         diagnostic:
-          "ADO read transport requires host-only AZURE_DEVOPS_EXT_PAT or an injected trusted transport",
+          "ADO read transport requires host-only AZURE_DEVOPS_EXT_PAT, explicit identity-bound Azure CLI authentication, or an injected trusted transport",
       });
       continue;
     }
