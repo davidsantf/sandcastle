@@ -146,6 +146,20 @@ resolve the existing Azure CLI account outside the service; setup does not
 change credentials automatically. Authentication grants no discovery,
 implementation or publication permission and does not widen native filters.
 
+Size discovery pages to fit the existing pass deadline, including metadata,
+per-item hydration and an Azure CLI account check before each read. A successful
+manual page close to that deadline is not sufficient persistent-service evidence.
+If a larger page exhausts the deadline, stop the owner and reduce only
+`pageSize` through revision-checked source registration rather than increasing
+timeouts, retries or concurrency or weakening identity checks. Smaller pages
+continue through the same eligible scope. Source configuration changes create a
+new configuration-bound cursor; earlier history remains, replay is deduplicated
+and old approvals are invalidated. Retained proposals, including superseded
+revisions and not-yet-refreshed observations, are not a current eligible-item
+count. Verify completed scoped service passes and continuing authenticated
+control responsiveness after starting, not just the initial control response or
+a last successful manual pass.
+
 After repairing a failed read, a local operator can explicitly rearm its existing
 bounded budget with
 `workspace discovery-retry --database <same-file> --revision <current-revision> --id <source-id>`.
