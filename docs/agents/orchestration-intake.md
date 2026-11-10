@@ -75,7 +75,35 @@ project with the exact same hub:
 }
 ```
 
-Use either `assignedTo` or `optedInLabel`, never an unrestricted selector. GitHub
+Use `assignedTo`, `optedInLabel`, or a single-source union:
+`"selector":{"assignedToOrLabel":{"assignedTo":"your-identity","optedInLabel":"orchestration-ready"}}`.
+There is no unrestricted selector. The union means **within the configured
+project/scope AND (assigned to the identity OR carrying the exact tag)**, not AND.
+GitHub reads two bounded filtered pages and deduplicates item numbers within the
+same source; durable source/item identity also deduplicates replay and overlap
+across pages. Both lanes advance together only after the combined page is
+retained; partial intake keeps the original cursor. A combined page has at most
+twice `pageSize` items and two listing requests. ADO uses one parenthesized OR
+predicate. Do not emulate this with two registered sources: source identity is
+part of proposal/task identity, so separate sources do not deduplicate each other.
+Native refresh rechecks current assignment/tag membership before planning and
+dispatch. A tag proves presence, **not who applied it**, and cannot grant
+implementation, publication, or any other permission. A nonexistent tag safely
+matches nothing until someone applies it; setup does not create labels/tags.
+
+ADO sources can additionally set `"workItemTypes":["User Story"]` to intersect
+the configured exact work-item types (1–20 unique nonempty names) with native
+project/team-area/query restrictions and assignment-or-tag eligibility. The
+adapter pushes this into WIQL and checks the actual `System.WorkItemType` on
+every refresh; type changes, Task/Bug rows and unknown/missing types cannot pass
+an exact User Story restriction. This is a fixed type allowlist, not dynamic
+backlog-category resolution or arbitrary board UI filters; confirm the team's
+current category/type mapping when configuring it. Team areas still come from
+native team settings, including secondary areas and native `includeChildren`
+flags, never only the configured default area. `workItemTypes` is rejected for
+GitHub sources.
+
+GitHub
 uses the existing `gh` account. For ADO, register
 `{kind:"ado",organization,project,repository}` and provide
 `createOrchestrationAdoReadTransport({kind:"bearer"|"pat",token})` from the existing

@@ -80,6 +80,8 @@ and [user-local service controls](docs/agents/local-orchestration-service.md).
 Use `workspace start/status/pause/resume/stop` for local polling and
 `workspace proposals/proposal/review` for revision-bound local proposal review.
 See [native intake and live-readiness boundaries](docs/agents/orchestration-intake.md).
+Native sources support a single deduplicated assignment-or-exact-tag selector;
+ADO can also restrict exact work-item types within native team-area scope.
 The workspace starts in observe mode with no grants. Setup diagnostics distinguish
 configuration from actual framework execution readiness. Strict backend-attestation
 mode is the default. Explicit `runtime.executionTrust: "trusted-local"` enables

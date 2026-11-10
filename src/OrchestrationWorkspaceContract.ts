@@ -86,30 +86,50 @@ export const workspaceContractRouteSchema = z.strictObject({
 export type WorkspaceContractRoute = z.infer<
   typeof workspaceContractRouteSchema
 >;
-export const workspaceDiscoverySourceSchema = z.strictObject({
-  id: identifier,
-  projectId: identifier,
-  hub: z.discriminatedUnion("kind", [
-    z.strictObject({
-      kind: z.literal("github"),
-      repository: z.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/),
-    }),
-    z.strictObject({
-      kind: z.literal("ado"),
-      organization: z.string().regex(/^[A-Za-z0-9_-]+$/),
-      project: z.string().min(1).max(200),
-      repository: z.string().min(1).max(200),
-    }),
-  ]),
-  selector: z.union([
-    z.strictObject({ assignedTo: z.string().min(1).max(200) }),
-    z.strictObject({ optedInLabel: z.string().min(1).max(100) }),
-  ]),
-  pageSize: z.number().int().min(1).max(20).default(10),
-  maxPages: z.number().int().min(1).max(20).default(5),
-  includeReviewFeedback: z.boolean().default(true),
-  includeDependencies: z.boolean().default(true),
-});
+export const workspaceDiscoverySourceSchema = z
+  .strictObject({
+    id: identifier,
+    projectId: identifier,
+    hub: z.discriminatedUnion("kind", [
+      z.strictObject({
+        kind: z.literal("github"),
+        repository: z.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/),
+      }),
+      z.strictObject({
+        kind: z.literal("ado"),
+        organization: z.string().regex(/^[A-Za-z0-9_-]+$/),
+        project: z.string().min(1).max(200),
+        repository: z.string().min(1).max(200),
+      }),
+    ]),
+    selector: z.union([
+      z.strictObject({ assignedTo: z.string().min(1).max(200) }),
+      z.strictObject({ optedInLabel: z.string().min(1).max(100) }),
+      z.strictObject({
+        assignedToOrLabel: z.strictObject({
+          assignedTo: z.string().min(1).max(200),
+          optedInLabel: z.string().min(1).max(100),
+        }),
+      }),
+    ]),
+    workItemTypes: z
+      .array(z.string().trim().min(1).max(200))
+      .min(1)
+      .max(20)
+      .refine(
+        (types) => new Set(types).size === types.length,
+        "duplicate work item type",
+      )
+      .optional(),
+    pageSize: z.number().int().min(1).max(20).default(10),
+    maxPages: z.number().int().min(1).max(20).default(5),
+    includeReviewFeedback: z.boolean().default(true),
+    includeDependencies: z.boolean().default(true),
+  })
+  .refine(
+    (source) => !source.workItemTypes || source.hub.kind === "ado",
+    "workItemTypes requires an ADO discovery source",
+  );
 export type WorkspaceDiscoverySource = z.infer<
   typeof workspaceDiscoverySourceSchema
 >;

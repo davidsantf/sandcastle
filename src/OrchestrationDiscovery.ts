@@ -317,6 +317,32 @@ export function createOrchestrationDiscoveryAdapter(
       ? orchestrationGithubReadTransport
       : undefined);
   const hub = source.hub;
+  const selector = source.selector;
+  const assignment =
+    "assignedTo" in selector
+      ? selector.assignedTo
+      : "assignedToOrLabel" in selector
+        ? selector.assignedToOrLabel.assignedTo
+        : undefined;
+  const optIn =
+    "optedInLabel" in selector
+      ? selector.optedInLabel
+      : "assignedToOrLabel" in selector
+        ? selector.assignedToOrLabel.optedInLabel
+        : undefined;
+  const eligible = (assignees: unknown[], labels: unknown[]) =>
+    (assignment !== undefined &&
+      assignees.some(
+        (value) =>
+          typeof value === "string" &&
+          value.toLowerCase() === assignment.toLowerCase(),
+      )) ||
+    (optIn !== undefined && labels.includes(optIn));
+  const githubEligible = (item: Record<string, unknown>) =>
+    eligible(
+      rows(item.assignees ?? []).map((value) => value.login),
+      rows(item.labels ?? []).map((value) => value.name),
+    );
   const base =
     hub.kind === "github"
       ? `/repos/${hub.repository}`
@@ -458,10 +484,14 @@ export function createOrchestrationDiscoveryAdapter(
     return { ...snapshot, revision: digest(JSON.stringify(snapshot)) };
   };
   const quote = (v: string) => `'${v.replaceAll("'", "''")}'`;
-  const adoSelector =
-    "assignedTo" in source.selector
-      ? `[System.AssignedTo] = ${quote(source.selector.assignedTo)}`
-      : `[System.Tags] CONTAINS ${quote(source.selector.optedInLabel)}`;
+  const adoSelector = `(${[
+    ...(assignment === undefined
+      ? []
+      : [`[System.AssignedTo] = ${quote(assignment)}`]),
+    ...(optIn === undefined ? [] : [`[System.Tags] CONTAINS ${quote(optIn)}`]),
+  ].join(
+    " OR ",
+  )})${source.workItemTypes ? ` AND [System.WorkItemType] IN (${source.workItemTypes.map(quote).join(", ")})` : ""}`;
   type AdoScope = {
     clauses: string[];
     team?: {
@@ -650,27 +680,26 @@ export function createOrchestrationDiscoveryAdapter(
     );
     const fields = obj(item.fields);
     const assigned = fields["System.AssignedTo"];
-    if ("assignedTo" in source.selector) {
-      const expected = source.selector.assignedTo.toLowerCase();
-      const actual =
-        typeof assigned === "string"
-          ? [assigned]
-          : assigned
-            ? [obj(assigned).uniqueName, obj(assigned).id]
-            : [];
-      if (
-        !actual.some(
-          (v) => typeof v === "string" && v.toLowerCase() === expected,
-        )
+    const actual =
+      typeof assigned === "string"
+        ? [assigned]
+        : assigned
+          ? [obj(assigned).uniqueName, obj(assigned).id]
+          : [];
+    if (
+      !eligible(
+        actual,
+        text(fields["System.Tags"])
+          .split(";")
+          .map((value) => value.trim()),
       )
-        throw new OrchestrationDiscoveryError("access");
-    } else if (
-      !text(fields["System.Tags"])
-        .split(";")
-        .map((v) => v.trim())
-        .includes(source.selector.optedInLabel)
     )
       throw new OrchestrationDiscoveryError("access");
+    if (
+      source.workItemTypes &&
+      !source.workItemTypes.includes(text(fields["System.WorkItemType"], 200))
+    )
+      throw new OrchestrationDiscoveryError("scope");
     if (
       hub.kind !== "ado" ||
       item.id !== id ||
@@ -855,18 +884,7 @@ export function createOrchestrationDiscoveryAdapter(
       const value = obj(await request(`${base}/issues/${item.id}`, signal));
       if (positive(value.number) !== positive(Number(item.id)))
         throw new OrchestrationDiscoveryError("invalid");
-      const selector = source.selector;
-      const eligible =
-        "assignedTo" in selector
-          ? rows(value.assignees ?? []).some(
-              (a) =>
-                text(a.login, 200).toLowerCase() ===
-                selector.assignedTo.toLowerCase(),
-            )
-          : rows(value.labels ?? []).some(
-              (l) => l.name === selector.optedInLabel,
-            );
-      if (!eligible || value.state !== "open")
+      if (!githubEligible(value) || value.state !== "open")
         throw new OrchestrationDiscoveryError("access");
       return observeGithub(value, signal);
     },
@@ -918,41 +936,66 @@ export function createOrchestrationDiscoveryAdapter(
         previous ?? { page: 1, afterId: 0, cycle: 0 },
       );
       if (hub.kind === "github") {
-        const selector =
-          "assignedTo" in source.selector
-            ? `assignee=${encodeURIComponent(source.selector.assignedTo)}`
-            : `labels=${encodeURIComponent(source.selector.optedInLabel)}`;
-        const batch = rows(
-          await request(
-            `${base}/issues?state=open&sort=created&direction=asc&${selector}&per_page=${source.pageSize}&page=${cursor.page}`,
-            signal,
-          ),
-        );
-        if (batch.length > source.pageSize)
-          throw new OrchestrationDiscoveryError("invalid");
+        const filters = [
+          ...(assignment === undefined
+            ? []
+            : [
+                {
+                  query: `assignee=${encodeURIComponent(assignment)}`,
+                  matches: (item: Record<string, unknown>) =>
+                    rows(item.assignees ?? []).some(
+                      (value) =>
+                        typeof value.login === "string" &&
+                        value.login.toLowerCase() === assignment.toLowerCase(),
+                    ),
+                },
+              ]),
+          ...(optIn === undefined
+            ? []
+            : [
+                {
+                  query: `labels=${encodeURIComponent(optIn)}`,
+                  matches: (item: Record<string, unknown>) =>
+                    rows(item.labels ?? []).some(
+                      (value) => value.name === optIn,
+                    ),
+                },
+              ]),
+        ];
+        const batch = new Map<number, Record<string, unknown>>();
+        let more = false;
+        for (const filter of filters) {
+          const page = rows(
+            await request(
+              `${base}/issues?state=open&sort=created&direction=asc&${filter.query}&per_page=${source.pageSize}&page=${cursor.page}`,
+              signal,
+            ),
+          );
+          if (page.length > source.pageSize)
+            throw new OrchestrationDiscoveryError("invalid");
+          more ||= page.length === source.pageSize;
+          for (const item of page) {
+            if (!filter.matches(item) || item.state !== "open")
+              throw new OrchestrationDiscoveryError("invalid");
+            const number = positive(item.number);
+            const previous = batch.get(number);
+            // A concurrent reassignment/tag edit between the two native reads needs a fresh pass.
+            if (previous && JSON.stringify(previous) !== JSON.stringify(item))
+              throw new OrchestrationDiscoveryError("incomplete");
+            batch.set(number, item);
+          }
+        }
         const items: OrchestrationDiscoveredItem[] = [];
-        const selected = source.selector;
-        for (const item of batch) {
-          const eligible =
-            "assignedTo" in selected
-              ? rows(item.assignees ?? []).some(
-                  (a) =>
-                    text(a.login, 200).toLowerCase() ===
-                    selected.assignedTo.toLowerCase(),
-                )
-              : rows(item.labels ?? []).some(
-                  (l) => l.name === selected.optedInLabel,
-                );
-          if (!eligible || item.state !== "open")
+        for (const item of batch.values()) {
+          if (!githubEligible(item) || item.state !== "open")
             throw new OrchestrationDiscoveryError("invalid");
           items.push(await observeGithub(item, signal));
         }
         return {
           items,
-          cursor:
-            batch.length === source.pageSize
-              ? { ...cursor, page: cursor.page + 1 }
-              : { page: 1, afterId: 0, cycle: cursor.cycle + 1 },
+          cursor: more
+            ? { ...cursor, page: cursor.page + 1 }
+            : { page: 1, afterId: 0, cycle: cursor.cycle + 1 },
         };
       }
       const scoped = await resolveAdoScope(signal);

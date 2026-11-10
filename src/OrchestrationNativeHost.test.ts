@@ -144,9 +144,8 @@ const evaluateFocus: OrchestrationIntakeFocusEvaluator = (focus, request) => ({
 });
 function context(configuration = config()) {
   const root = folder();
-  const store = new OrchestrationWorkspaceStore(
-    path.join(root, "orchestration.sqlite"),
-  );
+  const database = path.join(root, "orchestration.sqlite");
+  const store = new OrchestrationWorkspaceStore(database);
   stores.push(store);
   initializeWorkspace(store);
   const reservations = new Set<string>();
@@ -158,7 +157,7 @@ function context(configuration = config()) {
       return { state: "ready", value: await execute(signal()) };
     },
   };
-  return { configuration, store, signal: signal(), operations };
+  return { configuration, store, database, signal: signal(), operations };
 }
 function scopedNative() {
   const configuration = config();
@@ -464,6 +463,71 @@ describe("native service intake integration", () => {
       ctx.store.events().filter((event) => event.kind === "intake-observed"),
     ).toHaveLength(3);
     expect(transport).toHaveBeenCalledTimes(3);
+  });
+  it("retains a partial union page across restart and deduplicates items selected by both arms", async () => {
+    const configuration = config();
+    configuration.focus.mode = "observe";
+    configuration.focus.budgets.maxItems = 2;
+    configuration.discovery[0]!.selector = {
+      assignedToOrLabel: { assignedTo: "owner", optedInLabel: "opt-in" },
+    };
+    const ctx = context(configuration);
+    const row = (number: number) => ({
+      number,
+      html_url: `https://github.com/org/api/issues/${number}`,
+      title: item().title,
+      body: item().body,
+      state: "open",
+      updated_at: item().updatedAt,
+      assignees: number === 3 ? [] : [{ login: "owner" }],
+      labels: number === 1 ? [] : [{ name: "opt-in" }],
+    });
+    const transport: OrchestrationDiscoveryTransport = async ({ url }) => ({
+      status: 200,
+      body: (url.includes("labels=") ? [2, 3] : [1, 2]).map(row),
+    });
+    const planner = vi.fn(),
+      dispatch = vi.fn();
+    const perform = vi.spyOn(ctx.operations, "perform");
+    const options = {
+      evaluateFocus,
+      transport: () => transport,
+      planner,
+      dispatch,
+    };
+    const first = await createOrchestrationNativeTick(options)(ctx);
+    expect(first.proposals.map(({ item }) => item.id)).toEqual(["1", "2"]);
+    const key = `intake:source:${digest(JSON.stringify([configuration.id, configuration.discovery[0]]))}`;
+    expect(ctx.store.read(key).value).toMatchObject({ cursor: null });
+    // Reopen the actual journal, not just another in-memory tick.
+    ctx.store.close();
+    stores.splice(stores.indexOf(ctx.store), 1);
+    const store = new OrchestrationWorkspaceStore(ctx.database);
+    stores.push(store);
+    const reopened = { ...ctx, store };
+    const second = await createOrchestrationNativeTick(options)(reopened);
+    expect(second.proposals.map(({ item }) => item.id)).toEqual([
+      "1",
+      "2",
+      "3",
+    ]);
+    expect(store.read(key).value).toMatchObject({
+      cursor: { page: 1, cycle: 1 },
+    });
+    await createOrchestrationNativeTick(options)(reopened);
+    expect(
+      store.events().filter((event) => event.kind === "intake-observed"),
+    ).toHaveLength(3);
+    expect(planner).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(perform).not.toHaveBeenCalled();
+    configuration.focus.permissions = [];
+    const deniedTransport = vi.fn(transport);
+    await createOrchestrationNativeTick({
+      ...options,
+      transport: () => deniedTransport,
+    })(reopened);
+    expect(deniedTransport).not.toHaveBeenCalled();
   });
   it("charges revised and new-configuration observations while skipping retained exact revisions", async () => {
     const configuration = config();
