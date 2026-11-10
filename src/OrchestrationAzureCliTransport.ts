@@ -55,8 +55,11 @@ const executeAzureCli: Execute = async (args, signal) => {
       )
         .trim()
         .split(/\r?\n/);
-      const launcher = candidates[0]!;
-      if (!path.isAbsolute(launcher)) throw new Error("invalid launcher");
+      const launcher = candidates.find((candidate) =>
+        [".exe", ".cmd"].includes(path.extname(candidate).toLowerCase()),
+      );
+      if (!launcher || !path.isAbsolute(launcher))
+        throw new Error("invalid launcher");
       if (path.extname(launcher).toLowerCase() === ".exe") {
         windowsLauncher = { file: launcher, args: [] };
       } else {

@@ -3,6 +3,14 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import {
+  initializeWorkspace,
+  OrchestrationWorkspaceStore,
+  updateWorkspaceConfiguration,
+} from "./OrchestrationWorkspace.js";
+import { createOrchestrationNativeTick } from "./OrchestrationNativeHost.js";
+import { OrchestrationDiscoveryError } from "./OrchestrationDiscovery.js";
+import { evaluateOrchestrationFocus } from "./OrchestrationFocus.js";
 
 const cli = path.resolve("dist", "main.js");
 const invoke = (database: string, command: string, ...args: string[]) => {
@@ -42,6 +50,95 @@ const invoke = (database: string, command: string, ...args: string[]) => {
 };
 
 describe("compiled workspace CLI", () => {
+  it("rearms one failed read under the current configuration without deleting its cursor or failure history", async () => {
+    const directory = fs.mkdtempSync(
+      path.join(os.tmpdir(), "workspace-retry-"),
+    );
+    const database = path.join(directory, "state.sqlite");
+    const store = new OrchestrationWorkspaceStore(database);
+    try {
+      initializeWorkspace(store);
+      const hub = { kind: "github" as const, repository: "fixture/project" };
+      const configuration = updateWorkspaceConfiguration(
+        store,
+        1,
+        (config) => ({
+          ...config,
+          projects: [
+            {
+              id: "fixture",
+              repositoryRoot: process.cwd(),
+              mode: "individual",
+              hub,
+            },
+          ],
+          discovery: [
+            {
+              id: "read",
+              projectId: "fixture",
+              hub,
+              selector: { assignedTo: "owner" },
+              pageSize: 10,
+              maxPages: 1,
+              includeReviewFeedback: false,
+              includeDependencies: false,
+            },
+          ],
+          focus: {
+            ...config.focus,
+            projectIds: ["fixture"],
+            permissions: [{ projectId: "fixture", action: "discover" }],
+          },
+        }),
+      );
+      await createOrchestrationNativeTick({
+        evaluateFocus: evaluateOrchestrationFocus,
+        transport: () => async () => {
+          throw new OrchestrationDiscoveryError("access", 0);
+        },
+      })({
+        configuration,
+        store,
+        signal: new AbortController().signal,
+        operations: {
+          perform: async () => {
+            throw new Error("Observe cannot perform an effect");
+          },
+        },
+      });
+      expect(() =>
+        invoke(database, "discovery-retry", "--revision", "1", "--id", "read"),
+      ).toThrow();
+      expect(
+        invoke(database, "discovery-retry", "--revision", "2", "--id", "read"),
+      ).toEqual({
+        sourceId: "read",
+        configurationRevision: 2,
+        status: "retry-armed",
+      });
+      expect(() =>
+        invoke(database, "discovery-retry", "--revision", "2", "--id", "read"),
+      ).toThrow();
+      const events = store.events();
+      expect(
+        events.some((event) => event.kind === "intake-poll-completed"),
+      ).toBe(true);
+      expect(
+        events.filter((event) => event.kind === "intake-poll-operator-retry"),
+      ).toHaveLength(1);
+      const key = events.find(
+        (event) => event.kind === "intake-poll-operator-retry",
+      )!.key;
+      expect(store.read(key).value).toMatchObject({
+        attempt: 1,
+        cursor: null,
+        failures: 0,
+      });
+    } finally {
+      store.close();
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
   it("persists validated execution controls by exact runtime revision without broadening focus", () => {
     const directory = fs.mkdtempSync(
       path.join(os.tmpdir(), "workspace-controls-"),

@@ -40,6 +40,7 @@ import {
   type OrchestrationProposal,
 } from "./OrchestrationProposal.js";
 import { runLocalOrchestrationPass } from "./LocalOrchestrationService.js";
+import { retryOrchestrationDiscovery } from "./OrchestrationNativeHost.js";
 
 const database = Options.text("database").pipe(
   Options.withDescription(
@@ -224,6 +225,29 @@ const discoveryRemove = Command.make(
       ),
     ),
 );
+const discoveryRetry = Command.make(
+  "discovery-retry",
+  { database, revision: Options.integer("revision"), id },
+  (args) =>
+    withWorkspace(args.database, async (store) => {
+      const configuration = readWorkspaceConfiguration(store);
+      if (configuration.revision !== args.revision)
+        throw new Error("workspace configuration changed; reload before retry");
+      let result: ReturnType<typeof retryOrchestrationDiscovery> | undefined;
+      const service = await runLocalOrchestrationPass({
+        configuration,
+        store,
+        tick: async (context) => {
+          result = retryOrchestrationDiscovery(context, args.id);
+        },
+      });
+      if (service.state === "blocked" || !result) {
+        process.exitCode = 2;
+        return { status: "blocked", service };
+      }
+      return result;
+    }),
+);
 const runtime = Command.make("runtime", { database, revision, file }, (args) =>
   withWorkspace(args.database, (store) => {
     const next = workspaceConfigurationSchema.shape.runtime.parse(
@@ -402,6 +426,7 @@ export const orchestrationWorkspaceCommand = Command.make("workspace").pipe(
     focus,
     discoveryAdd,
     discoveryRemove,
+    discoveryRetry,
     runtime,
     templateAdd,
     templateRemove,

@@ -143,6 +143,17 @@ resolve the existing Azure CLI account outside the service; setup does not
 change credentials automatically. Authentication grants no discovery,
 implementation or publication permission and does not widen native filters.
 
+After repairing a failed read, a local operator can explicitly rearm its existing
+bounded budget with
+`workspace discovery-retry --database <same-file> --revision <current-revision> --id <source-id>`.
+This command requires the same exclusive service ownership and configuration
+fence as a manual pass: stop the service first. It honors retained provider
+backoff and rejects healthy/uninitialized sources. It preserves pagination,
+attempt counters, configuration, proposals and append-only failure evidence,
+records an operator-retry event, and makes no external call. The next
+`workspace run/start` again uses the unchanged automatic failure budget; this
+is not a continuous retry mode or recovery of an uncertain external write.
+
 A configured focus value is a restriction, never evidence that a discovered
 target satisfies it. Supported ADO mappings use independent native reads:
 

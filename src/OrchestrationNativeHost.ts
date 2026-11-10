@@ -101,6 +101,56 @@ const nativeScopeKey = (focus: OrchestrationNativeConfiguration["focus"]) =>
       focus[key] === undefined ? [] : [[key, focus[key]]],
     ),
   );
+const nativePollKey = (
+  configuration: OrchestrationNativeConfiguration,
+  source: OrchestrationDiscoverySource,
+) =>
+  `intake:source:${digest(
+    JSON.stringify(
+      hasNativeScope(configuration.focus)
+        ? [configuration.id, source, nativeScopeKey(configuration.focus)]
+        : [configuration.id, source],
+    ),
+  )}`;
+
+/** Explicit operator recovery for failed reads, not automatic retry or effect recovery. */
+export function retryOrchestrationDiscovery(
+  context: OrchestrationNativeTickContext,
+  sourceId: string,
+  now: () => number = Date.now,
+) {
+  context.signal.throwIfAborted();
+  const source = context.configuration.discovery.find(
+    (source) => source.id === sourceId,
+  );
+  if (!source) throw new Error("unknown discovery source");
+  const key = nativePollKey(context.configuration, source);
+  const stored = context.store.read(key);
+  const state = pollStateSchema.parse(stored.value);
+  if (!state.failures)
+    throw new Error("discovery source has no failed read to retry");
+  if (state.retryAt > now())
+    throw new Error("discovery retry must respect retained provider backoff");
+  if (
+    !context.store.compareAndSwap(
+      key,
+      stored.version,
+      {
+        ...state,
+        failures: 0,
+        diagnostic:
+          "Operator rearmed failed read-only discovery; prior failure evidence retained",
+      },
+      { kind: "intake-poll-operator-retry", at: new Date(now()).toISOString() },
+    )
+  )
+    throw new Error("discovery state changed; reload before retry");
+  return {
+    sourceId,
+    configurationRevision: context.configuration.revision,
+    status: "retry-armed" as const,
+  };
+}
 // Authorize only preparatory, provider-filtered reads here; full item policy uses native facts.
 const nativeReadFocus = (focus: OrchestrationNativeConfiguration["focus"]) => {
   const {
@@ -226,13 +276,7 @@ export function createOrchestrationNativeTick(options: {
       );
       if (!hasNativeScope(configuration.focus))
         adapters.set(source.id, adapter);
-      const key = `intake:source:${digest(
-        JSON.stringify(
-          hasNativeScope(configuration.focus)
-            ? [configuration.id, source, nativeScopeKey(configuration.focus)]
-            : [configuration.id, source],
-        ),
-      )}`;
+      const key = nativePollKey(configuration, source);
       pollKeys.set(source.id, key);
       const stored = store.read(key);
       const state =

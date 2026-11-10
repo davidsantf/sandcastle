@@ -19,6 +19,7 @@ import {
   createOrchestrationNativeSetup,
   createOrchestrationNativeTick,
   createOrchestrationProposalTask,
+  retryOrchestrationDiscovery,
   type OrchestrationNativeConfiguration,
   type OrchestrationIntakeFocusEvaluator,
   type OrchestrationNativeTickContext,
@@ -26,6 +27,7 @@ import {
 import { createOrchestrationProposalQueue } from "./OrchestrationProposal.js";
 import {
   createOrchestrationDiscoveryAdapter,
+  OrchestrationDiscoveryError,
   type OrchestrationDiscoveredItem,
   type OrchestrationDiscoveryTransport,
 } from "./OrchestrationDiscovery.js";
@@ -159,6 +161,89 @@ function context(configuration = config()) {
   };
   return { configuration, store, database, signal: signal(), operations };
 }
+describe("explicit read-only discovery recovery", () => {
+  it("rearms only by operator action, retains the cursor and evidence, and bounds the next failure again", async () => {
+    const ctx = context();
+    ctx.configuration.focus.mode = "observe";
+    ctx.configuration.focus.budgets.maxAttempts = 1;
+    let time = 1_000;
+    const transport = vi.fn<OrchestrationDiscoveryTransport>(async () => {
+      throw new OrchestrationDiscoveryError("access");
+    });
+    const tick = createOrchestrationNativeTick({
+      evaluateFocus,
+      transport: () => transport,
+      now: () => time,
+    });
+    await tick(ctx);
+    await tick(ctx);
+    expect(transport).toHaveBeenCalledOnce();
+    expect(() =>
+      retryOrchestrationDiscovery(ctx, "github", () => time),
+    ).toThrow("backoff");
+    time += 60_001;
+    const key = ctx.store
+      .events()
+      .find((event) => event.kind === "intake-poll-completed")!.key;
+    const before = ctx.store.read(key);
+    expect(
+      retryOrchestrationDiscovery(ctx, "github", () => time),
+    ).toMatchObject({
+      sourceId: "github",
+      status: "retry-armed",
+      configurationRevision: 1,
+    });
+    const retained = ctx.store.read(key);
+    expect(retained.value).toMatchObject({
+      cursor: null,
+      attempt: 1,
+      failures: 0,
+    });
+    expect(ctx.store.events()).toContainEqual(
+      expect.objectContaining({
+        key,
+        version: before.version,
+        kind: "intake-poll-completed",
+      }),
+    );
+    expect(ctx.store.events().at(-1)?.kind).toBe("intake-poll-operator-retry");
+    expect(() =>
+      retryOrchestrationDiscovery(ctx, "github", () => time),
+    ).toThrow("no failed read");
+    await tick(ctx);
+    await tick(ctx);
+    expect(transport).toHaveBeenCalledTimes(2);
+    expect(ctx.store.read(key).value).toMatchObject({
+      attempt: 2,
+      failures: 1,
+      cursor: null,
+    });
+    ctx.configuration.focus.iteration = "project\\different-scope";
+    expect(() =>
+      retryOrchestrationDiscovery(ctx, "github", () => time),
+    ).toThrow();
+  });
+  it("does not rearm another source, an uninitialized read or a cancelled context", async () => {
+    const ctx = context();
+    expect(() => retryOrchestrationDiscovery(ctx, "unknown")).toThrow(
+      "unknown discovery source",
+    );
+    expect(() => retryOrchestrationDiscovery(ctx, "github")).toThrow();
+    const controller = new AbortController();
+    controller.abort();
+    expect(() =>
+      retryOrchestrationDiscovery(
+        { ...ctx, signal: controller.signal },
+        "github",
+      ),
+    ).toThrow();
+    expect(
+      ctx.store
+        .events()
+        .filter((event) => event.kind === "intake-poll-operator-retry"),
+    ).toHaveLength(0);
+  });
+});
 function scopedNative() {
   const configuration = config();
   const hub = {

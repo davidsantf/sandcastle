@@ -6,6 +6,21 @@ import {
 import { workspaceDiscoveryTransport } from "./OrchestrationWorkspaceHost.js";
 import { workspaceDiscoverySourceSchema } from "./OrchestrationWorkspaceContract.js";
 
+const native = vi.hoisted(() => ({
+  execute: vi.fn(),
+  readFile: vi.fn(),
+  access: vi.fn(),
+}));
+vi.mock("node:child_process", async (original) => ({
+  ...(await original<typeof import("node:child_process")>()),
+  execFile: native.execute,
+}));
+vi.mock("node:fs/promises", async (original) => ({
+  ...(await original<typeof import("node:fs/promises")>()),
+  readFile: native.readFile,
+  access: native.access,
+}));
+
 const resource = "499b84ac-1321-427f-aa17-267ca6975798";
 const now = Date.parse("2026-11-10T12:00:00Z");
 const account = {
@@ -60,6 +75,50 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 describe("explicit host Azure CLI ADO authentication", () => {
+  it.skipIf(process.platform !== "win32")(
+    "selects the installed MSI cmd after an extensionless shell launcher without invoking a shell",
+    async () => {
+      const root = "C:\\fixture-azure\\wbin";
+      native.readFile.mockResolvedValue(
+        '"%~dp0\\..\\python.exe" -IBm azure.cli %*',
+      );
+      native.access.mockResolvedValue(undefined);
+      native.execute.mockImplementation(
+        (
+          file: string,
+          args: string[],
+          options: { signal: AbortSignal; timeout: number; maxBuffer: number },
+          callback: (error: Error | null, stdout: string) => void,
+        ) => {
+          expect(options.timeout).toBe(15000);
+          expect(options.maxBuffer).toBe(128 * 1024);
+          expect(options.signal.aborted).toBe(false);
+          callback(
+            null,
+            file.endsWith("where.exe")
+              ? `${root}\\az\r\n${root}\\az.cmd\r\n`
+              : JSON.stringify(args[3] === "show" ? account : token()),
+          );
+        },
+      );
+      const read = vi.fn(async () => ({ status: 200, body: {} }));
+      const invoke = createOrchestrationAzureCliReadTransport(
+        { expectedIdentity: account.user.name },
+        { now: () => now, transport: () => read },
+      );
+      await invoke(request, signal());
+      expect(native.readFile).toHaveBeenCalledWith(`${root}\\az.cmd`, "utf8");
+      const calls = native.execute.mock.calls.slice(1);
+      expect(calls).toHaveLength(3);
+      for (const [file, args] of calls) {
+        expect(file).toBe("C:\\fixture-azure\\python.exe");
+        expect(args.slice(0, 3)).toEqual(["-IBm", "azure.cli", "account"]);
+      }
+      expect(calls[1]![1]).toContain("get-access-token");
+      expect(calls[1]![1]).toContain(resource);
+      expect(read).toHaveBeenCalledOnce();
+    },
+  );
   it("requests only the ADO resource with the verified account, caches in memory and preserves read request and signal", async () => {
     const f = fixture();
     const s = signal();
