@@ -3,6 +3,10 @@ import { Effect, Option } from "effect";
 import fs from "node:fs";
 import path from "node:path";
 import {
+  readDashboardConfiguration,
+  startOrchestrationDashboard,
+} from "./OrchestrationDashboard.js";
+import {
   verifyWorkspaceRepositoryRoot,
   validateWorkspaceRepositories,
 } from "./OrchestrationWorkspaceRepositories.js";
@@ -415,6 +419,36 @@ const events = Command.make(
 );
 export const orchestrationWorkspaceCommand = Command.make("workspace").pipe(
   Command.withSubcommands([
+    Command.make(
+      "dashboard",
+      {
+        file: Options.text("file"),
+        port: Options.integer("port").pipe(Options.withDefault(4318)),
+      },
+      (args) =>
+        Effect.tryPromise(async () => {
+          if (args.port < 1 || args.port > 65535)
+            throw new Error("Invalid dashboard port");
+          const dashboard = await startOrchestrationDashboard({
+            ...readDashboardConfiguration(path.resolve(args.file)),
+            port: args.port,
+          });
+          console.log(
+            JSON.stringify({
+              event: "dashboard-ready",
+              url: dashboard.url,
+              readOnly: true,
+            }),
+          );
+          await new Promise<void>((resolve) => {
+            const stop = () => {
+              void dashboard.close().then(resolve);
+            };
+            process.once("SIGINT", stop);
+            process.once("SIGTERM", stop);
+          });
+        }),
+    ),
     init,
     migrate,
     add,

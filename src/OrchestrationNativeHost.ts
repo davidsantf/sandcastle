@@ -101,7 +101,7 @@ const nativeScopeKey = (focus: OrchestrationNativeConfiguration["focus"]) =>
       focus[key] === undefined ? [] : [[key, focus[key]]],
     ),
   );
-const nativePollKey = (
+export const nativePollKey = (
   configuration: OrchestrationNativeConfiguration,
   source: OrchestrationDiscoverySource,
 ) =>

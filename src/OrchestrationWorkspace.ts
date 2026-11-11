@@ -13,6 +13,18 @@ import {
 import { digest, type OrchestrationProject } from "./MultiProjectProtocol.js";
 
 export const workspaceConfigurationKey = "workspace:configuration";
+const eventMetadata = (row: Record<string, unknown>): WorkspaceEvent => {
+  if (digest(JSON.parse(String(row.value))) !== row.digest)
+    throw new Error("workspace event integrity failure");
+  return {
+    sequence: Number(row.sequence),
+    key: String(row.key),
+    version: Number(row.version),
+    kind: String(row.kind),
+    at: String(row.at),
+    valueDigest: String(row.digest),
+  };
+};
 const validKey = (key: string) => {
   if (!/^[A-Za-z][A-Za-z0-9._:/-]{0,255}$/.test(key))
     throw new Error("invalid workspace record key");
@@ -55,11 +67,13 @@ export class OrchestrationWorkspaceStore implements WorkspaceStore {
   constructor(
     filename: string,
     private readonly now: () => number = Date.now,
+    private readonly options: { readOnly?: boolean } = {},
   ) {
     if (filename !== ":memory:") {
       if (!path.isAbsolute(filename) || filename.startsWith("\\\\"))
         throw new Error("workspace requires absolute local database path");
-      fs.mkdirSync(path.dirname(filename), { recursive: true, mode: 0o700 });
+      if (!options.readOnly)
+        fs.mkdirSync(path.dirname(filename), { recursive: true, mode: 0o700 });
       if (
         path.resolve(fs.realpathSync(path.dirname(filename))).toLowerCase() !==
         path.resolve(path.dirname(filename)).toLowerCase()
@@ -75,8 +89,17 @@ export class OrchestrationWorkspaceStore implements WorkspaceStore {
     const sqlite: typeof import("node:sqlite") = createRequire(import.meta.url)(
       "node:sqlite",
     );
-    this.db = new sqlite.DatabaseSync(filename);
+    this.db = new sqlite.DatabaseSync(filename, { readOnly: options.readOnly });
     try {
+      if (options.readOnly) {
+        this.db.exec("PRAGMA busy_timeout=1000;");
+        const versions = this.db
+          .prepare("SELECT version FROM workspace_metadata")
+          .all();
+        if (versions.length !== 1 || Number(versions[0]!.version) !== 1)
+          throw new Error("unsupported workspace schema");
+        return;
+      }
       this.db.exec(
         "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000;",
       );
@@ -109,6 +132,56 @@ export class OrchestrationWorkspaceStore implements WorkspaceStore {
   }
   close() {
     this.db.close();
+  }
+  /** Bounded projection metadata for read-only operational inspection. */
+  inspectRecords(prefix: string, limit = 100) {
+    if (!prefix || !Number.isInteger(limit) || limit < 1 || limit > 200)
+      throw new Error("invalid inspection bounds");
+    return this.db
+      .prepare(
+        "SELECT r.key,r.value,r.digest,e.value AS evidenceValue,e.digest AS evidenceDigest,e.at,e.kind FROM workspace_records r JOIN workspace_events e ON e.key=r.key AND e.version=r.version WHERE substr(r.key,1,?)=? ORDER BY e.sequence DESC LIMIT ?",
+      )
+      .all(prefix.length, prefix, limit)
+      .map((row) => {
+        const value: unknown = JSON.parse(String(row.value));
+        if (
+          digest(value) !== row.digest ||
+          row.value !== row.evidenceValue ||
+          row.digest !== row.evidenceDigest
+        )
+          throw new Error("workspace projection lacks matching evidence");
+        return {
+          key: String(row.key),
+          at: String(row.at),
+          kind: String(row.kind),
+          value,
+        };
+      });
+  }
+  recentEvents(limit = 80) {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 200)
+      throw new Error("invalid inspection bounds");
+    return this.db
+      .prepare(
+        "SELECT sequence,key,version,kind,at,digest,value FROM workspace_events ORDER BY sequence DESC LIMIT ?",
+      )
+      .all(limit)
+      .reverse()
+      .map(eventMetadata);
+  }
+  inspectRecordHistory(key: string) {
+    validKey(key);
+    return this.db
+      .prepare(
+        "SELECT value,digest,at FROM workspace_events WHERE key=? ORDER BY version DESC LIMIT 200",
+      )
+      .all(key)
+      .map((row) => {
+        const value: unknown = JSON.parse(String(row.value));
+        if (digest(value) !== row.digest)
+          throw new Error("workspace event integrity failure");
+        return { value, at: String(row.at) };
+      });
   }
   guards(): readonly WorkspaceStoreGuard[] {
     return [];
@@ -146,6 +219,7 @@ export class OrchestrationWorkspaceStore implements WorkspaceStore {
     value: unknown,
     event: { kind: string; at: string },
   ) {
+    if (this.options.readOnly) throw new Error("workspace is read-only");
     validKey(key);
     if (
       !Number.isSafeInteger(expectedVersion) ||
@@ -204,18 +278,7 @@ export class OrchestrationWorkspaceStore implements WorkspaceStore {
         "SELECT sequence,key,version,kind,at,digest,value FROM workspace_events WHERE sequence>? ORDER BY sequence LIMIT 10000",
       )
       .all(after)
-      .map((row) => {
-        if (digest(JSON.parse(String(row.value))) !== row.digest)
-          throw new Error("workspace event integrity failure");
-        return {
-          sequence: Number(row.sequence),
-          key: String(row.key),
-          version: Number(row.version),
-          kind: String(row.kind),
-          at: String(row.at),
-          valueDigest: String(row.digest),
-        };
-      });
+      .map(eventMetadata);
   }
   withGuard(guard: WorkspaceStoreGuard): WorkspaceStore {
     return this.guarded([guard]);

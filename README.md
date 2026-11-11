@@ -79,6 +79,17 @@ See [workspace setup and exact permissions](docs/agents/orchestration-workspace.
 and [user-local service controls](docs/agents/local-orchestration-service.md).
 Use `workspace start/status/pause/resume/stop` for local polling and
 `workspace proposals/proposal/review` for revision-bound local proposal review.
+For a local read-only activity UI, run
+`sandcastle orchestrate workspace dashboard --file <local-dashboard.json> --port 4318`.
+The JSON contains `{"workspaces":[{"name":"Project","database":"<absolute canonical SQLite path>"}]}`.
+Open the printed loopback URL. The dashboard reads existing journals in place
+and checks existing authenticated status controls; it never starts agents,
+approves work, or repairs stopped services. It refreshes every 15 seconds,
+labels retained observations separately from current eligibility, and shows
+unknown launches, local validation (not independent review), and recent events.
+Source text is rendered as text; runtime secrets and raw issue bodies are omitted.
+Keep this personal host configuration outside the repository. Stop the
+dashboard with Ctrl+C; restart with the same command and canonical databases.
 See [native intake and live-readiness boundaries](docs/agents/orchestration-intake.md).
 Native sources support a single deduplicated assignment-or-exact-tag selector;
 ADO can also restrict exact work-item types within native team-area scope.
