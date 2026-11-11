@@ -45,6 +45,7 @@ import {
 } from "./OrchestrationProposal.js";
 import { runLocalOrchestrationPass } from "./LocalOrchestrationService.js";
 import { retryOrchestrationDiscovery } from "./OrchestrationNativeHost.js";
+import { reconcileUnstartedWorkspacePlanning } from "./OrchestrationPlanningRecovery.js";
 
 const database = Options.text("database").pipe(
   Options.withDescription(
@@ -100,6 +101,22 @@ const init = Command.make(
 );
 const list = Command.make("list", { database }, (args) =>
   withWorkspace(args.database, readWorkspaceConfiguration),
+);
+const reconcilePlanning = Command.make(
+  "reconcile-planning",
+  { database, file },
+  (args) =>
+    withWorkspace(args.database, async (store) => {
+      const result = await reconcileUnstartedWorkspacePlanning(
+        store,
+        readJson(args.file),
+      );
+      return {
+        id: result.id,
+        status: result.status,
+        planningSettlement: result.planningSettlement,
+      };
+    }),
 );
 const migrate = Command.make("migrate", { database }, (args) =>
   withWorkspace(args.database, migrateWorkspaceConfiguration),
@@ -469,6 +486,7 @@ export const orchestrationWorkspaceCommand = Command.make("workspace").pipe(
     proposals,
     proposal,
     review,
+    reconcilePlanning,
     ...createWorkspaceServiceCommands(runWorkspaceNativeTick),
   ]),
 );

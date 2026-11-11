@@ -117,6 +117,16 @@ Only the registered template supplies scopes and acceptance; source text grants
 no authority. Independent review, critical-change and publication gates still stop
 at needs-input. See [automatic local policy](docs/agents/orchestration-intake.md#automatic-bounded-local-policy).
 
+For an explicit human plan gate, a GitHub discovery source can instead configure
+`workflow: {kind:"github-labels",approver:"github-login"}`. This disables automatic
+policy approval for that source. The host publishes the exact plan, verifies the
+configured user's later label event, and synchronizes planning, approval,
+implementation and separate read-only review stages. Findings are commented and
+fixed within the approved scope; `runtime.reviewLoop.maxIterations` defaults to
+**10** implementation/review pairs, including the initial pair, and survives
+restart/source refresh. Unknown outcomes and missing independent proof block,
+never mark finished. See [label workflow](docs/agents/orchestration-workspace.md#github-label-workflow).
+
 Optional revisioned `runtime.localValidation` registers exact shell-free host
 check argv against the implementation's pinned detached Git snapshot. Each
 check must match trusted template acceptance and return a nonzero structured

@@ -22,7 +22,16 @@ import {
   createOrchestrationLocalExecutionRecorder,
   createOrchestrationNativeTick,
 } from "./OrchestrationNativeHost.js";
-import type { OrchestrationIntakeStore } from "./OrchestrationProposal.js";
+import {
+  createOrchestrationProposalQueue,
+  OrchestrationProposalBlockedError,
+  priorProposalExecutionHold,
+  type OrchestrationIntakeStore,
+} from "./OrchestrationProposal.js";
+import {
+  createGithubWorkflow,
+  type GithubWorkflowTransport,
+} from "./OrchestrationGithubWorkflow.js";
 import { noSandbox } from "./sandboxes/no-sandbox.js";
 import { createOrchestrationAzureCliReadTransport } from "./OrchestrationAzureCliTransport.js";
 import { digest } from "./MultiProjectProtocol.js";
@@ -35,6 +44,11 @@ export function workspaceProposalPolicyDecision(
   proposal: OrchestrationProposal,
 ) {
   const policy = configuration.runtime.proposalPolicy;
+  if (
+    configuration.discovery.find((source) => source.id === item.sourceId)
+      ?.workflow
+  )
+    return undefined;
   const rule = policy?.rules.find((rule) => rule.sourceId === item.sourceId);
   const templates = configuration.taskTemplates.filter(
     (task) => task.projectId === item.projectId,
@@ -293,15 +307,23 @@ export function createWorkspaceNativeTick(
     ) => OrchestrationDiscoveryTransport | undefined;
     /** Trusted test/embedding seam; public CLI uses the actual installed runner. */
     invoke?: typeof run;
+    githubWorkflowTransport?: GithubWorkflowTransport;
   } = {},
 ) {
   return async (context: WorkspaceNativeTickContext) => {
     const { configuration, signal } = context;
     const transport = options.transport ?? workspaceDiscoveryTransport;
+    const workflow = createGithubWorkflow({
+      configuration,
+      store: context.store,
+      transport: options.githubWorkflowTransport,
+      discoveryTransport: transport,
+    });
     const dispatcher = createWorkspaceNativeDispatcher({
       context,
       transport,
       invoke: options.invoke,
+      workflow,
     });
     const retained = dispatcher.summaries();
     const diagnostics = [
@@ -354,6 +376,32 @@ export function createWorkspaceNativeTick(
         : await planner.preflight(signal);
     if (readiness && !readiness.executionReady)
       diagnostics.push(...readiness.diagnostics);
+    const queue = createOrchestrationProposalQueue({
+      store: context.store,
+      namespace: configuration.id,
+    });
+    if (configuration.focus.mode === "execute")
+      for (const { proposal } of queue.list()) {
+        if (
+          proposal.status !== "ready" ||
+          !workflow.enabled(proposal) ||
+          proposal.configurationRevision !== configuration.revision ||
+          priorProposalExecutionHold(
+            proposal,
+            queue.list().map((entry) => entry.proposal),
+          )
+        )
+          continue;
+        try {
+          await workflow.ready(proposal, signal);
+        } catch {
+          signal.throwIfAborted();
+          workflow.syncFailure(proposal);
+          diagnostics.push(
+            `Proposal ${proposal.id}: GitHub plan/approval synchronization failed or is uncertain; no approval inferred`,
+          );
+        }
+      }
     if (
       configuration.focus.mode === "execute" &&
       readiness?.executionReady &&
@@ -371,11 +419,49 @@ export function createWorkspaceNativeTick(
           }
         : {}),
       // Missing capabilities must not consume implementation or planning reservations.
-      planner: readiness?.executionReady ? planner.plan : undefined,
+      planner: readiness?.executionReady
+        ? async (item, config, abort) => {
+            const proposal = queue
+              .list()
+              .find(
+                ({ proposal }) =>
+                  proposal.source.sourceId === item.sourceId &&
+                  proposal.source.id === item.id &&
+                  proposal.configurationRevision === config.revision &&
+                  proposal.sourceRevision === item.revision,
+              )?.proposal;
+            if (proposal && workflow.enabled(proposal)) {
+              try {
+                await workflow.stage(
+                  proposal,
+                  "orchestration-planning",
+                  "planning",
+                  abort,
+                );
+              } catch {
+                abort.throwIfAborted();
+                throw new OrchestrationProposalBlockedError(
+                  "GitHub planning stage synchronization failed or is uncertain; no worker launched",
+                );
+              }
+            }
+            return planner.plan(item, config, abort);
+          }
+        : undefined,
       dispatch:
         readiness?.executionReady && dispatcher.available
-          ? (item, proposal, _context, signal) =>
-              dispatcher.dispatch(item, proposal, signal)
+          ? async (item, proposal, _context, signal) => {
+              if (workflow.enabled(proposal)) {
+                await workflow.assertApproved(proposal, signal);
+                await workflow.stage(
+                  proposal,
+                  "orchestration-implementing",
+                  "initial-implementation",
+                  signal,
+                );
+              }
+              return dispatcher.dispatch(item, proposal, signal);
+            }
           : undefined,
     });
     const result = await tick({
@@ -383,6 +469,29 @@ export function createWorkspaceNativeTick(
       configuration: { ...configuration, discovery: selected },
     });
     diagnostics.push(...result.diagnostics);
+    for (const { proposal } of result.proposals) {
+      if (
+        proposal.status !== "unknown" ||
+        proposal.planningSettlement ||
+        proposal.configurationRevision !== configuration.revision ||
+        !workflow.enabled(proposal)
+      )
+        continue;
+      try {
+        await workflow.blocked(
+          proposal,
+          proposal.diagnostic ??
+            "Worker outcome is unresolved; retained evidence must be reconciled before any retry.",
+          signal,
+        );
+      } catch {
+        signal.throwIfAborted();
+        workflow.syncFailure(proposal);
+        diagnostics.push(
+          `Proposal ${proposal.id}: blocked-status synchronization failed or is uncertain; no retry authorized`,
+        );
+      }
+    }
     if (
       result.proposals.some(({ proposal }) =>
         ["unknown", "dispatching", "planning"].includes(proposal.status),

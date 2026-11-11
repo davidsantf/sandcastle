@@ -360,6 +360,144 @@ describe("built-in native implementation lifecycle (fixture runner and hub)", ()
     timeoutMs: 2000,
     disabledMcpServers: ["fixture-server"],
   };
+  it("blocks another initial implementation after an exhausted issue run, even on a newly approved configuration revision", async () => {
+    const f = await fixture("github", "execute", true, controls);
+    const { nativeReviewKey } = await import("./OrchestrationNativeReview.js");
+    f.store.compareAndSwap(
+      nativeReviewKey(f.configuration.id, "assigned/api/1"),
+      0,
+      { state: "exhausted", attempts: 10, maxIterations: 10 },
+      { kind: "retained-review-fixture", at: new Date().toISOString() },
+    );
+    const config = updateWorkspaceConfiguration(
+      f.store,
+      f.configuration.revision,
+      (current) => ({
+        ...current,
+        runtime: { ...current.runtime, reviewLoop: { maxIterations: 10 } },
+      }),
+    );
+    const observed = f.queue.ingest(f.item, config.revision);
+    const planned = await f.queue.plan(
+      observed.id,
+      async () => artifacts,
+      signal(),
+    );
+    f.queue.review({
+      proposalId: planned.id,
+      proposalDigest: planned.digest!,
+      sourceRevision: planned.sourceRevision,
+      configurationRevision: config.revision,
+      decision: "approve",
+    });
+    await f.pass(config);
+    await f.pass(config);
+    expect(f.requests).toEqual([]);
+    expect(
+      f.store.read(nativeReviewKey(config.id, "assigned/api/1")).value,
+    ).toMatchObject({ state: "exhausted", attempts: 10 });
+  });
+  it("runs a real separate reviewer invocation after actual validation on the public native path without manufacturing critical proof", async () => {
+    const f = await fixture("github", "execute", true, controls);
+    const check = {
+      projectId: "api",
+      label: "regression",
+      executable: process.execPath,
+      args: [
+        "-e",
+        "console.log(JSON.stringify({schemaVersion:1,state:'passed',evaluatedScope:2}))",
+      ],
+      timeoutMs: 3000,
+    };
+    const configuration = updateWorkspaceConfiguration(
+      f.store,
+      f.configuration.revision,
+      (current) => ({
+        ...current,
+        taskTemplates: current.taskTemplates.map((task) => ({
+          ...task,
+          acceptance: [
+            {
+              label: check.label,
+              command: JSON.stringify([check.executable, ...check.args]),
+            },
+          ],
+        })),
+        runtime: {
+          ...current.runtime,
+          localValidation: [check],
+          reviewLoop: { maxIterations: 10 },
+        },
+      }),
+    );
+    const observed = f.queue.ingest(f.item, configuration.revision);
+    const planned = await f.queue.plan(
+      observed.id,
+      async () => ({
+        ...artifacts,
+        acceptance: [
+          {
+            criterion: "Actual host regression",
+            verification: `Run configured host check: ${configuration.taskTemplates[0]!.acceptance[0]!.command}`,
+          },
+        ],
+      }),
+      signal(),
+    );
+    f.queue.review({
+      proposalId: planned.id,
+      proposalDigest: planned.digest!,
+      sourceRevision: planned.sourceRevision,
+      configurationRevision: configuration.revision,
+      decision: "approve",
+    });
+    const implement = vi.mocked(run).getMockImplementation()!;
+    const phases: string[] = [];
+    vi.mocked(run).mockImplementation(async (options) => {
+      const request: OrchestrationWorkerRequest = JSON.parse(
+        String(options.prompt)
+          .split("Host request (JSON data):\n")[1]!
+          .split("\n\nReturn exactly")[0]!,
+      );
+      phases.push(request.stage);
+      if (request.stage !== "review") return implement(options);
+      expect(request.artifacts).toMatchObject({
+        specify: artifacts.specification,
+        plan: artifacts.plan,
+      });
+      expect(request.task.scopes).toEqual(["src"]);
+      const argv = options.agent.buildPrintCommand({
+        prompt: "fixture",
+        dangerouslySkipPermissions: true,
+      }).process!.args;
+      expect(argv.join("\0")).toContain("--deny-tool\0apply_patch");
+      return {
+        branch: request.task.branch,
+        iterations: [],
+        stdout: "",
+        commits: [],
+        output: {
+          kind: "completed",
+          artifact:
+            "Exact commit reviewed against plan and actual validation; no findings.",
+          contracts: {},
+          findings: [],
+        },
+      };
+    });
+    const result = await f.pass(configuration);
+    expect(phases).toEqual(["implement", "review"]);
+    expect(result.result!.lifecycles[0]!.tasks[0]).toMatchObject({
+      status: "needs-input",
+      implementationRecorded: true,
+      localValidation: { state: "passed", evaluatedScope: 2 },
+    });
+    expect(result.result!.lifecycles[0]!.tasks[0]!.reason).toContain(
+      "independent",
+    );
+    await f.pass(configuration);
+    expect(phases).toEqual(["implement", "review"]);
+  });
   it.each(["passed", "failed"] as const)(
     "runs the registered actual host check after implementation and records %s without granting independent proof",
     async (state) => {

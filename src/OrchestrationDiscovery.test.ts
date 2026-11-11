@@ -37,6 +37,41 @@ const github = (items = [issue()]) =>
     status: 200,
     body: url.includes("/issues?") ? items : [],
   }));
+it("keeps label-workflow bookkeeping stable while real content, assignment and unrelated labels invalidate approval", async () => {
+  const raw = issue();
+  raw.labels = [{ name: "orchestration-ready" }];
+  const adapter = createOrchestrationDiscoveryAdapter(
+    source({
+      includeReviewFeedback: false,
+      includeDependencies: false,
+      workflow: { kind: "github-labels", approver: "owner" },
+    }),
+    async ({ url }) => ({
+      status: 200,
+      body: url.includes("/issues?") ? [raw] : raw,
+    }),
+  );
+  const initial = (await adapter.poll(null, signal())).items[0]!;
+  raw.updated_at = "2026-11-11T21:00:00Z";
+  raw.labels.push({ name: "orchestration-planning" });
+  expect((await adapter.refresh(initial, signal())).revision).toBe(
+    initial.revision,
+  );
+  raw.body = "Changed requested deliverable";
+  expect((await adapter.refresh(initial, signal())).revision).not.toBe(
+    initial.revision,
+  );
+  raw.body = initial.body;
+  raw.labels.push({ name: "needs-human" });
+  expect((await adapter.refresh(initial, signal())).revision).not.toBe(
+    initial.revision,
+  );
+  raw.labels.pop();
+  raw.assignees.push({ login: "other-owner" });
+  expect((await adapter.refresh(initial, signal())).revision).not.toBe(
+    initial.revision,
+  );
+});
 const projectId = "11111111-1111-4111-8111-111111111111";
 const teamId = "22222222-2222-4222-8222-222222222222";
 const savedQuery = "33333333-3333-4333-8333-333333333333";

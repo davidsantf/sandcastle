@@ -58,6 +58,23 @@ const route = {
 };
 
 describe("versioned orchestration workspace", () => {
+  it("defaults the strict review loop to ten and rejects invalid configured limits", () => {
+    const { store } = setup();
+    const config = initializeWorkspace(store);
+    expect(
+      parseWorkspaceConfiguration({
+        ...config,
+        runtime: { ...config.runtime, reviewLoop: {} },
+      }).runtime.reviewLoop?.maxIterations,
+    ).toBe(10);
+    for (const maxIterations of [0, -1, 1.5, 101, "10", null])
+      expect(() =>
+        parseWorkspaceConfiguration({
+          ...config,
+          runtime: { ...config.runtime, reviewLoop: { maxIterations } },
+        }),
+      ).toThrow();
+  });
   it("initializes empty and registers without unrelated PRs; removals never touch repositories", () => {
     const f = setup();
     expect(initializeWorkspace(f.store).projects).toEqual([]);

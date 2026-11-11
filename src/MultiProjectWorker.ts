@@ -55,6 +55,8 @@ ${JSON.stringify(request, null, 2)}
 
 Return exactly one complete tagged JSON object, with no prose before or after:
 <orchestration-receipt>{"kind":"completed","artifact":"substantive markdown artifact or implementation/review evidence","contracts":{},"findings":[]}</orchestration-receipt>
+Receipt findings MUST be an array of plain strings, never objects. Include severity
+and concrete evidence inside each string. Do not add fields outside this schema.
 For a known failure use {"kind":"failed","signature":"stable failure category","evidence":"actionable evidence"}.
 For an uncertain external outcome use {"kind":"unknown","reason":"explanation"}.
 Contract values, if supplied, are SHA-256 hashes, never permissions.
@@ -94,7 +96,9 @@ export function createSandcastleOrchestrationWorker(options: {
       prompt:
         buildMultiProjectWorkerPrompt(request) +
         (options.executionControls
-          ? "\nLocal-files profile: only view/read_file/apply_patch are available. Do not invoke shell, MCPs or delegation. Make the scoped edit, then return the receipt. The host records any scoped local commit after you settle; do not claim independent acceptance or review.\n"
+          ? ["implement", "fix"].includes(request.stage)
+            ? "\nLocal-files profile: only view/read_file/apply_patch are available. Do not invoke shell, MCPs or delegation. Make the scoped edit, then return the receipt. The host records any scoped local commit after you settle; do not claim independent acceptance or review.\n"
+            : "\nRead-only local-files profile: only view/read_file are available. Do not edit files or invoke shell, MCPs or delegation. Return the structured receipt; you cannot attest independent backend execution or acceptance.\n"
           : ""),
       maxIterations: 1,
       idleTimeoutSeconds: 300,
@@ -314,6 +318,9 @@ export function createDevsquadOrchestrationWorker(options: {
               pluginDirectory: capability.pluginDirectory,
               executionControls,
               fileScopes: captured.task.scopes,
+              readOnly: ["specify", "plan", "decompose", "review"].includes(
+                captured.stage,
+              ),
             }),
             executionControls,
             sandbox: options.sandbox,
@@ -353,6 +360,9 @@ export function createDevsquadOrchestrationWorker(options: {
         pluginDirectory: capability.pluginDirectory,
         executionControls,
         fileScopes: request.task.scopes,
+        readOnly: ["specify", "plan", "decompose", "review"].includes(
+          request.stage,
+        ),
       }),
       executionControls,
       sandbox: options.sandbox,

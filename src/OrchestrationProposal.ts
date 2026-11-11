@@ -99,6 +99,13 @@ const proposalSchema = z
       })
       .optional(),
     diagnostic: z.string().optional(),
+    planningSettlement: z
+      .strictObject({
+        kind: z.enum(["not-started", "read-only-invalid-receipt"]),
+        evidenceDigest: z.string().regex(/^[a-f0-9]{64}$/),
+        at: z.number(),
+      })
+      .optional(),
     dispatchReceipt: z.string().max(8_000).optional(),
   })
   .refine((proposal) => !(proposal.approval && proposal.policyDecision), {
@@ -108,6 +115,23 @@ export type OrchestrationProposal = z.infer<typeof proposalSchema>;
 export const parseOrchestrationProposal = (value: unknown) => {
   return proposalSchema.parse(value);
 };
+export function priorProposalExecutionHold(
+  proposal: OrchestrationProposal,
+  proposals: readonly OrchestrationProposal[],
+) {
+  return proposals.find(
+    (prior) =>
+      prior.id !== proposal.id &&
+      prior.source.projectId === proposal.source.projectId &&
+      prior.source.sourceId === proposal.source.sourceId &&
+      prior.source.id === proposal.source.id &&
+      !prior.planningSettlement &&
+      (["planning", "dispatching", "unknown", "dispatched"].includes(
+        prior.status,
+      ) ||
+        Boolean(prior.supersededFrom)),
+  );
+}
 const entrySchema = z.strictObject({
   key: z.string(),
   item: itemSchema,
@@ -184,6 +208,39 @@ export function createOrchestrationProposalQueue(options: {
     get(proposalId: string) {
       const { proposal } = find(read().queue, proposalId);
       return { item: snapshot(proposal.source), proposal: snapshot(proposal) };
+    },
+    /** Host settlement only; never resets or reopens the original proposal. */
+    settlePlanningOutcome(
+      proposalId: string,
+      evidenceDigest: string,
+      kind: "not-started" | "read-only-invalid-receipt" = "not-started",
+    ) {
+      z.string()
+        .regex(/^[a-f0-9]{64}$/)
+        .parse(evidenceDigest);
+      return update(`intake-planning-reconciled-${kind}`, (queue) => {
+        const { proposal } = find(queue, proposalId);
+        if (
+          proposal.planningSettlement?.evidenceDigest === evidenceDigest &&
+          proposal.planningSettlement.kind === kind
+        )
+          return snapshot(proposal);
+        if (
+          proposal.planningSettlement ||
+          proposal.artifacts ||
+          proposal.approval ||
+          proposal.policyDecision ||
+          proposal.dispatchReceipt ||
+          !(
+            proposal.status === "unknown" ||
+            (proposal.status === "superseded" &&
+              ["planning", "unknown"].includes(proposal.supersededFrom ?? ""))
+          )
+        )
+          throw new Error("Proposal is not an unsettled planning-only outcome");
+        proposal.planningSettlement = { kind, evidenceDigest, at: now() };
+        return snapshot(proposal);
+      });
     },
     ingest(item: OrchestrationDiscoveredItem, configurationRevision: number) {
       return update("intake-observed", (queue) => {

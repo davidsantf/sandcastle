@@ -45,6 +45,11 @@ import {
   readNativeLocalValidation,
   runNativeLocalValidation,
 } from "./OrchestrationNativeValidation.js";
+import type { createGithubWorkflow } from "./OrchestrationGithubWorkflow.js";
+import {
+  nativeReviewKey,
+  runNativeReviewLoop,
+} from "./OrchestrationNativeReview.js";
 
 export type WorkspaceNativeTickContext =
   LocalOrchestrationTickContext<WorkspaceConfiguration> & {
@@ -111,6 +116,7 @@ export function createWorkspaceNativeDispatcher(options: {
     source: WorkspaceDiscoverySource,
   ) => OrchestrationDiscoveryTransport | undefined;
   invoke?: typeof run;
+  workflow?: ReturnType<typeof createGithubWorkflow>;
 }) {
   const { context } = options;
   const { configuration, store } = context;
@@ -198,6 +204,15 @@ export function createWorkspaceNativeDispatcher(options: {
         source.projectId === project.id,
     );
     const assertCurrent = async () => {
+      if (
+        configuration.discovery.find(
+          (source) => source.id === proposal.source.sourceId,
+        )?.workflow
+      ) {
+        if (!options.workflow)
+          throw new Error("GitHub workflow approval verifier is unavailable");
+        await options.workflow.assertApproved(proposal, signal);
+      }
       signal.throwIfAborted();
       const current = queue.get(id).proposal;
       const policy = configuration.runtime.proposalPolicy;
@@ -349,6 +364,17 @@ export function createWorkspaceNativeDispatcher(options: {
         )
           return false;
         await assertCurrent();
+        if (
+          store.read(
+            nativeReviewKey(
+              configuration.id,
+              `${proposal.source.sourceId}/${proposal.source.projectId}/${proposal.source.id}`,
+            ),
+          ).value !== null
+        )
+          throw new Error(
+            "Existing durable review run prevents another initial implementation; its attempt budget cannot reset across proposal or configuration revisions",
+          );
         return true;
       },
       execute,
@@ -361,28 +387,116 @@ export function createWorkspaceNativeDispatcher(options: {
         };
       },
       async assessPhase(request, _receipt, revision, abort) {
-        const validation = await runNativeLocalValidation({
-          configuration,
-          proposalId: id,
-          projectId: project.id,
-          repositoryRoot: project.repositoryRoot,
-          revision,
-          signal: abort,
-          store,
-          write,
-          assertCurrent: async () => {
-            await assertCurrent();
-            if (
-              (await resolveOrchestrationGitRevision(
+        const validateRevision = async (
+          expected: string,
+          validationSignal: AbortSignal,
+        ) =>
+          runNativeLocalValidation({
+            configuration,
+            proposalId: id,
+            projectId: project.id,
+            repositoryRoot: project.repositoryRoot,
+            revision: expected,
+            validationAttempt: expected === revision ? undefined : expected,
+            signal: validationSignal,
+            store,
+            write,
+            assertCurrent: async () => {
+              await assertCurrent();
+              if (
+                (await resolveOrchestrationGitRevision(
+                  project,
+                  task,
+                  validationSignal,
+                  request.baseRevision,
+                )) !== expected
+              )
+                throw new Error(
+                  "Implementation changed during local validation",
+                );
+            },
+          });
+        const validation = await validateRevision(revision, abort);
+        let reviewEvidence = "";
+        if (
+          validation?.state === "passed" &&
+          validation.evaluatedScope > 0 &&
+          (configuration.runtime.reviewLoop ||
+            options.workflow?.enabled(proposal))
+        ) {
+          const review = await runNativeReviewLoop({
+            store,
+            namespace: configuration.id,
+            proposalId: id,
+            runKey: `${proposal.source.sourceId}/${proposal.source.projectId}/${proposal.source.id}`,
+            proposalDigest: proposal.digest!,
+            sourceRevision: proposal.sourceRevision,
+            configurationRevision: configuration.revision,
+            request,
+            revision,
+            maxIterations:
+              configuration.runtime.reviewLoop?.maxIterations ?? 10,
+            timeoutMs: configuration.focus.budgets.maxRuntimeMs,
+            signal: abort,
+            execute,
+            assertCurrent: async () => {
+              await assertCurrent();
+            },
+            resolveRevision: (reviewSignal) =>
+              resolveOrchestrationGitRevision(
                 project,
                 task,
-                abort,
+                reviewSignal,
                 request.baseRevision,
-              )) !== revision
-            )
-              throw new Error("Implementation changed during local validation");
-          },
-        });
+              ),
+            validate: async (current, reviewSignal) =>
+              (current === revision
+                ? validation
+                : await validateRevision(current, reviewSignal)) ?? null,
+            onStage: options.workflow?.enabled(proposal)
+              ? (event) => {
+                  const checked = readNativeLocalValidation(
+                    store,
+                    nativeValidationKey(
+                      configuration.id,
+                      event.revision === revision
+                        ? id
+                        : `${id}/review/${event.revision}`,
+                    ),
+                  );
+                  return options.workflow!.reviewEvent(
+                    proposal,
+                    {
+                      ...event,
+                      validation: checked
+                        ? {
+                            evaluatedScope: checked.evaluatedScope,
+                            checks: checked.checks.map(({ name, state }) => ({
+                              name,
+                              state,
+                            })),
+                          }
+                        : undefined,
+                    },
+                    abort,
+                  );
+                }
+              : undefined,
+          });
+          reviewEvidence = `Separate read-only reviewer ${review.state}; iterations ${review.attempts}; ${review.evidence}. `;
+          if (review.state !== "clean")
+            return {
+              state: review.state === "unknown" ? "unknown" : "blocked",
+              revision: review.revision,
+              evaluatedScope: validation.evaluatedScope,
+              checks: validation.checks.map(({ name, state }) => ({
+                name,
+                state,
+              })),
+              evidence: reviewEvidence,
+            };
+          revision = review.revision;
+        }
         return {
           state:
             validation && validation.state !== "passed"
@@ -396,6 +510,7 @@ export function createWorkspaceNativeDispatcher(options: {
             validation?.checks.map(({ name, state }) => ({ name, state })) ??
             [],
           evidence:
+            reviewEvidence +
             (validation
               ? `Local validation ${validation.state}; evaluated scope ${validation.evaluatedScope}. ${validation.diagnostic ?? ""} `
               : "") +

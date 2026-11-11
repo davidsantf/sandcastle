@@ -6,7 +6,12 @@ import {
   OrchestrationWorkspaceStore,
   readWorkspaceConfiguration,
 } from "./OrchestrationWorkspace.js";
-import { createOrchestrationProposalQueue } from "./OrchestrationProposal.js";
+import {
+  createOrchestrationProposalQueue,
+  priorProposalExecutionHold,
+} from "./OrchestrationProposal.js";
+import { githubWorkflowKey } from "./OrchestrationGithubWorkflow.js";
+import { workflowOwner } from "./OrchestrationWorkflowContract.js";
 import { orchestrationServiceDigest } from "./OrchestrationOperations.js";
 import { sendLocalOrchestrationControl } from "./LocalOrchestrationServiceControl.js";
 import {
@@ -130,22 +135,65 @@ export async function readDashboardWorkspace(
           "Native CLI launch provenance, not independent backend attestation",
       };
     });
-    const proposals = createOrchestrationProposalQueue({
+    const entries = createOrchestrationProposalQueue({
       store,
       namespace: config.id,
-    })
-      .list()
-      .map(({ proposal }) => ({
+    }).list();
+    const proposals = entries.map(({ proposal }) => {
+      const prior = priorProposalExecutionHold(
+        proposal,
+        entries.map((entry) => entry.proposal),
+      );
+      const workflow = optionalRecord(
+        store.read(
+          githubWorkflowKey(
+            config.id,
+            proposal.source.sourceId,
+            proposal.source.id,
+          ),
+        ).value,
+      );
+      const relevantWorkflow =
+        workflow.proposalId === proposal.id ? workflow : {};
+      const review = optionalRecord(relevantWorkflow.review);
+      const effectiveState =
+        prior ||
+        proposal.status === "unknown" ||
+        proposal.status === "blocked" ||
+        relevantWorkflow.sync === "blocked"
+          ? "blocked"
+          : clean(relevantWorkflow.stage) || proposal.status;
+      return {
         id: proposal.id,
         issue: proposal.source.id,
         url: sourceUrl(proposal.source.url),
         title: clean(proposal.source.title, 250),
         state: proposal.status,
+        effectiveState,
+        stageOwner: relevantWorkflow.stage
+          ? workflowOwner(String(relevantWorkflow.stage))
+          : undefined,
         revision: proposal.configurationRevision,
         currentConfiguration:
           proposal.configurationRevision === config.revision,
-        unresolvedPrior: Boolean(proposal.supersededFrom),
-        diagnostic: clean(proposal.diagnostic),
+        unresolvedPrior: Boolean(prior),
+        diagnostic: prior
+          ? `Earlier issue execution is unresolved (${prior.status}, planning/dispatch evidence retained). This observation is blocked, not runnable; no duplicate worker will launch.`
+          : clean(relevantWorkflow.diagnostic) || clean(proposal.diagnostic),
+        workflowSync: clean(relevantWorkflow.sync),
+        review: Object.keys(review).length
+          ? {
+              iteration: Number(review.attempt ?? 0),
+              limit: config.runtime.reviewLoop?.maxIterations ?? 10,
+              revision: clean(review.revision, 64),
+              findings: strings(review.findings).map((finding) =>
+                clean(finding),
+              ),
+              reason: clean(review.reason),
+              trust:
+                "Separate read-only CLI invocation, not independent backend identity attestation",
+            }
+          : undefined,
         artifacts: proposal.artifacts
           ? {
               investigation: true,
@@ -153,7 +201,8 @@ export async function readDashboardWorkspace(
               plan: true,
             }
           : undefined,
-      }));
+      };
+    });
     const validations = store
       .inspectRecords("native-local-validation/", 100)
       .map((row) => {
@@ -247,7 +296,13 @@ export async function readDashboardWorkspace(
               ? "Paused; previously admitted work may still settle"
               : blockers.length
                 ? "No active phase confirmed; attention required"
-                : "Idle between polls; no active phase confirmed",
+                : current.some(
+                      (proposal) =>
+                        proposal.effectiveState ===
+                        "orchestration-user-approval",
+                    )
+                  ? "Waiting for user plan approval; no active agent"
+                  : "Idle between polls; no active phase confirmed",
       scope: config.discovery.map((source) => ({
         hub: source.hub.kind,
         project: source.hub.repository,

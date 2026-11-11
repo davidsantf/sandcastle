@@ -53,6 +53,26 @@ after configuration edits. Implemented-but-unverified native tasks retain scope
 holds until independent host reconciliation. No native publication callback or
 independent critic proof is fabricated.
 
+GitHub label workflows now have an explicit human boundary: publish the exact
+source/configuration-bound plan, then accept only the configured user's
+attributed implementation-ready label event after that publication. Host policy
+is not human approval. A revision or material scope expansion invalidates the
+decision. A fenced same-ledger outbox restricts writes to orchestration labels
+and necessary plan/status/findings comments; uncertain writes do not replay.
+
+Implementation is followed by a separate read-only reviewer invocation bound to
+the exact commit, approved artifacts and actual host validation. Findings within
+scope cause bounded fixes and fresh review; changed scope returns to approval.
+One implementation/review pair counts as one iteration, default ten, persisted
+across restart and source revisions. Exhaustion, unknown outcomes and missing
+independent critical proof block completion rather than imply finished.
+
+Planning recovery is evidence-specific, not a reservation reset. A stopped
+owner, exact launch/log/configuration binding, absent worktree and unchanged
+creation-only branch can prove either the known prelaunch long-path failure or
+the narrow settled read-only invalid-findings receipt failure. Original unknown
+journals remain intact; no successful plan or human approval is synthesized.
+
 ## Consequences
 
 Public CLI setup no longer needs an executable authority module for read-only

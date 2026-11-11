@@ -52,7 +52,9 @@ const execGit = (
     // matches silently fail, breaking worktree creation (issue #595).
     execFile(
       "git",
-      args,
+      process.platform === "win32"
+        ? ["-c", "core.longpaths=true", ...args]
+        : args,
       { cwd, env: { ...process.env, LC_ALL: "C" } },
       (error, stdout, stderr) => {
         if (error) {

@@ -47,6 +47,7 @@ export async function runNativeLocalValidation(options: {
   projectId: string;
   repositoryRoot: string;
   revision: string;
+  validationAttempt?: string;
   signal: AbortSignal;
   store: OrchestrationIntakeStore;
   assertCurrent: () => Promise<unknown>;
@@ -56,7 +57,12 @@ export async function runNativeLocalValidation(options: {
     (check) => check.projectId === options.projectId,
   );
   if (!checks?.length) return undefined;
-  const key = nativeValidationKey(options.configuration.id, options.proposalId);
+  const key = nativeValidationKey(
+    options.configuration.id,
+    options.validationAttempt
+      ? `${options.proposalId}/review/${options.validationAttempt}`
+      : options.proposalId,
+  );
   const previous = readNativeLocalValidation(options.store, key);
   if (previous) {
     if (
@@ -127,6 +133,7 @@ export async function runNativeLocalValidation(options: {
     const added = await exec(
       "git",
       [
+        ...(process.platform === "win32" ? ["-c", "core.longpaths=true"] : []),
         "-c",
         `core.hooksPath=${hooks}`,
         "-C",

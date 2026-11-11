@@ -131,7 +131,19 @@ export const workspaceDiscoverySourceSchema = z
     maxPages: z.number().int().min(1).max(20).default(5),
     includeReviewFeedback: z.boolean().default(true),
     includeDependencies: z.boolean().default(true),
+    workflow: z
+      .strictObject({
+        kind: z.literal("github-labels"),
+        approver: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/),
+      })
+      .optional(),
   })
+  .refine(
+    (source) =>
+      !source.workflow ||
+      (source.hub.kind === "github" && !source.includeReviewFeedback),
+    "GitHub label workflow requires GitHub and separate plan/review comments (includeReviewFeedback=false)",
+  )
   .refine(
     (source) => !source.workItemTypes || source.hub.kind === "ado",
     "workItemTypes requires an ADO discovery source",
@@ -209,6 +221,13 @@ export interface WorkspaceConfiguration {
         needsInputTerms?: string[];
       }[];
     };
+    reviewLoop?: { maxIterations: number };
+    planningOverrides?: {
+      sourceId: string;
+      itemId: string;
+      investigationOnly: true;
+      template: OrchestrationTask;
+    }[];
     phaseDefinitions: z.infer<typeof workspacePhaseDefinitionSchema>[];
   };
   pollIntervalMs: number;
@@ -273,6 +292,22 @@ export const workspaceConfigurationSchema = z.strictObject({
       .array(workspacePhaseDefinitionSchema)
       .max(6)
       .default([]),
+    reviewLoop: z
+      .strictObject({
+        maxIterations: z.number().int().min(1).max(100).default(10),
+      })
+      .optional(),
+    planningOverrides: z
+      .array(
+        z.strictObject({
+          sourceId: identifier,
+          itemId: z.string().regex(/^[1-9][0-9]*$/),
+          investigationOnly: z.literal(true),
+          template: z.custom<OrchestrationTask>(),
+        }),
+      )
+      .max(100)
+      .optional(),
   }),
   pollIntervalMs: z.number().int().min(100).max(3_600_000),
 });
@@ -290,6 +325,38 @@ export function parseWorkspaceConfiguration(
       "task templates cannot register source items or change requests",
     );
   config.taskTemplates = catalog.tasks;
+  const overrides = config.runtime.planningOverrides ?? [];
+  if (
+    new Set(overrides.map((rule) => `${rule.sourceId}/${rule.itemId}`)).size !==
+    overrides.length
+  )
+    throw new Error("Duplicate issue planning override");
+  for (const rule of overrides) {
+    const source = config.discovery.find(
+      (source) => source.id === rule.sourceId,
+    );
+    if (!source?.workflow || source.projectId !== rule.template.projectId)
+      throw new Error(
+        "Issue planning override requires matching GitHub label workflow",
+      );
+    const parsed = parseOrchestrationCatalog({
+      id: config.id,
+      projects: config.projects,
+      tasks: [rule.template],
+    }).tasks[0]!;
+    if (
+      parsed.sourceItem ||
+      parsed.pullRequest ||
+      parsed.dependsOn.length ||
+      parsed.requiresContracts.length
+    )
+      throw new Error(
+        "Investigation overrides cannot contain execution dependencies/authority",
+      );
+    if (config.runtime.executionControls)
+      assertCopilotFileScopes(parsed.scopes);
+    rule.template = parsed;
+  }
   if (config.runtime.executionControls)
     for (const task of config.taskTemplates)
       assertCopilotFileScopes(task.scopes);

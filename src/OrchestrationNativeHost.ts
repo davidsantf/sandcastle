@@ -40,6 +40,7 @@ import {
 export { getOrchestrationNativeScopeReadiness } from "./OrchestrationDiscovery.js";
 import {
   createOrchestrationProposalQueue,
+  priorProposalExecutionHold,
   OrchestrationProposalBlockedError,
   type OrchestrationIntakeStore,
   type OrchestrationProposal,
@@ -383,20 +384,11 @@ export function createOrchestrationNativeTick(options: {
       signal.throwIfAborted();
       if (!adapters.has(item.sourceId)) continue;
       if (
-        options.policyDecision &&
         ["observed", "ready"].includes(proposal.status) &&
-        queue
-          .list()
-          .some(
-            ({ proposal: prior }) =>
-              prior.id !== proposal.id &&
-              prior.source.sourceId === item.sourceId &&
-              prior.source.id === item.id &&
-              (["planning", "dispatching", "unknown", "dispatched"].includes(
-                prior.status,
-              ) ||
-                prior.supersededFrom),
-          )
+        priorProposalExecutionHold(
+          proposal,
+          queue.list().map((entry) => entry.proposal),
+        )
       ) {
         diagnostics.push(
           `Proposal ${proposal.id}: earlier issue execution or unknown outcome requires reconciliation; automatic progression suppressed`,
@@ -498,6 +490,9 @@ export function createOrchestrationNativeTick(options: {
       if (
         proposal.status === "ready" &&
         options.policyDecision &&
+        !configuration.discovery.find(
+          (source) => source.id === verified.sourceId,
+        )?.workflow &&
         configuration.focus.mode === "execute" &&
         allowed(verified, "implement").allowed
       ) {
@@ -575,6 +570,7 @@ export function createDevsquadProposalPlanner(options: {
   project: (projectId: string) => OrchestrationWorkerRequest["project"];
   acceptance: (
     projectId: string,
+    item: OrchestrationDiscoveredItem,
   ) => OrchestrationProposalArtifacts["acceptance"];
 }) {
   return async (
@@ -641,7 +637,7 @@ export function createDevsquadProposalPlanner(options: {
       investigation,
       specification,
       plan,
-      acceptance: options.acceptance(item.projectId),
+      acceptance: options.acceptance(item.projectId, item),
     };
   };
 }
@@ -1046,7 +1042,10 @@ export function createConfiguredDevsquadProposalPlanner(options: {
   const planner = createDevsquadProposalPlanner({
     execute: worker,
     task: (item) => {
-      const template = tasks.find((t) => t.projectId === item.projectId);
+      const template =
+        configuration.runtime.planningOverrides?.find(
+          (rule) => rule.sourceId === item.sourceId && rule.itemId === item.id,
+        )?.template ?? tasks.find((t) => t.projectId === item.projectId);
       if (!template)
         throw new Error("No trusted task/acceptance template registered");
       return createOrchestrationProposalTask(
@@ -1060,13 +1059,15 @@ export function createConfiguredDevsquadProposalPlanner(options: {
       if (!project) throw new Error("No registered proposal project");
       return project;
     },
-    acceptance: (projectId) =>
-      tasks
-        .find((t) => t.projectId === projectId)!
-        .acceptance.map((check) => ({
-          criterion: `Trusted host check ${check.label} must pass`,
-          verification: `Run configured host check: ${check.command}`,
-        })),
+    acceptance: (projectId, item) =>
+      (
+        configuration.runtime.planningOverrides?.find(
+          (rule) => rule.sourceId === item.sourceId && rule.itemId === item.id,
+        )?.template ?? tasks.find((t) => t.projectId === projectId)!
+      ).acceptance.map((check) => ({
+        criterion: `Trusted host check ${check.label} must pass`,
+        verification: `Run configured host check: ${check.command}`,
+      })),
   });
   const preflight = async (
     signal: AbortSignal,

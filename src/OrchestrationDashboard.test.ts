@@ -17,6 +17,7 @@ import {
 import { createOrchestrationProposalQueue } from "./OrchestrationProposal.js";
 import { orchestrationServiceDigest } from "./OrchestrationOperations.js";
 import { nativePollKey } from "./OrchestrationNativeHost.js";
+import { githubWorkflowKey } from "./OrchestrationGithubWorkflow.js";
 
 const folders: string[] = [];
 afterEach(() =>
@@ -64,6 +65,77 @@ function fixture() {
     });
   return { database, store, config, source, put };
 }
+it("shows an earlier unknown hold across source revisions without changing observed state, then exposes actual review findings", async () => {
+  const f = fixture();
+  const queue = createOrchestrationProposalQueue({
+    store: f.store,
+    namespace: f.config.id,
+  });
+  const item = {
+    sourceId: "github",
+    projectId: "api",
+    id: "306",
+    kind: "issue" as const,
+    title: "Scoped correction",
+    body: "untrusted",
+    updatedAt: "2026-11-11T20:00:00Z",
+    url: "https://github.com/fixture/api/issues/306",
+    revision: "a".repeat(64),
+    feedback: [],
+    dependencies: [],
+  };
+  const original = queue.ingest(item, f.config.revision);
+  await queue.plan(
+    original.id,
+    async () => {
+      throw new Error("uncertain");
+    },
+    new AbortController().signal,
+  );
+  f.put(githubWorkflowKey(f.config.id, "github", "306"), {
+    proposalId: original.id,
+    stage: "orchestration-planning",
+    sync: "confirmed",
+  });
+  const unknown = await readDashboardWorkspace({
+    name: "Fixture",
+    database: f.database,
+  });
+  expect(
+    unknown.proposals.find((proposal) => proposal.id === original.id),
+  ).toMatchObject({
+    state: "unknown",
+    effectiveState: "blocked",
+  });
+  const current = queue.ingest(
+    { ...item, revision: "b".repeat(64) },
+    f.config.revision,
+  );
+  f.put(githubWorkflowKey(f.config.id, "github", "306"), {
+    proposalId: current.id,
+    stage: "orchestration-reviewing",
+    sync: "confirmed",
+    review: {
+      attempt: 10,
+      revision: "c".repeat(40),
+      findings: ["Handle empty input"],
+    },
+  });
+  f.store.close();
+  const result = await readDashboardWorkspace({
+    name: "Fixture",
+    database: f.database,
+  });
+  expect(
+    result.proposals.find((proposal) => proposal.id === current.id),
+  ).toMatchObject({
+    state: "observed",
+    effectiveState: "blocked",
+    unresolvedPrior: true,
+    stageOwner: "agent",
+    review: { iteration: 10, limit: 10, findings: ["Handle empty input"] },
+  });
+});
 it("maps real proposal and launch shapes; keeps unknown outcomes and local-proof boundaries without bodies or paths", async () => {
   const f = fixture();
   const queue = createOrchestrationProposalQueue({

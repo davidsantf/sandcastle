@@ -1128,6 +1128,8 @@ export interface CopilotOptions {
   readonly executionControls?: CopilotExecutionControls;
   /** Literal task scopes relative to the isolated worktree, not hub-supplied paths. */
   readonly fileScopes?: readonly string[];
+  /** Restrict Copilot to file reads, including for named reviewer agents. */
+  readonly readOnly?: boolean;
 }
 
 export const copilot = (
@@ -1195,7 +1197,7 @@ export const copilot = (
           "--available-tools",
           "view",
           "read_file",
-          "apply_patch",
+          ...(options?.readOnly ? [] : ["apply_patch"]),
           "--deny-tool",
           "shell",
           "--deny-tool",
@@ -1209,6 +1211,7 @@ export const copilot = (
           "--disallow-temp-dir",
           "--sync-session=off",
         );
+        if (options?.readOnly) args.push("--deny-tool", "apply_patch");
         for (const name of controls.disabledMcpServers)
           args.push("--disable-mcp-server", name);
         return {
@@ -1221,18 +1224,24 @@ export const copilot = (
           },
         };
       }
-      const allowAll = dangerouslySkipPermissions ? " --allow-all-tools" : "";
+      const allowAll =
+        dangerouslySkipPermissions && !options?.readOnly
+          ? " --allow-all-tools"
+          : "";
+      const readOnlyFlags = options?.readOnly
+        ? " --available-tools view read_file --deny-tool apply_patch --deny-tool shell --deny-tool url --deny-tool memory --disable-builtin-mcps"
+        : "";
       const effortFlag = options?.effort ? ` --effort ${options.effort}` : "";
       const agentFlag = options?.agent
         ? ` --agent ${shellEscape(options.agent)}`
         : "";
       return {
-        command: `copilot -p ${shellEscape(prompt)} --output-format json --model ${shellEscape(model)}${allowAll}${effortFlag}${agentFlag}`,
+        command: `copilot -p ${shellEscape(prompt)} --output-format json --model ${shellEscape(model)}${allowAll}${effortFlag}${agentFlag}${readOnlyFlags}`,
       };
     },
 
     buildInteractiveArgs({ prompt }: AgentCommandOptions): string[] {
-      if (controls)
+      if (controls || options?.readOnly)
         throw new Error(
           "local-files execution controls require non-interactive direct execution",
         );

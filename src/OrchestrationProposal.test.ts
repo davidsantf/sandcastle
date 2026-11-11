@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { digest } from "./MultiProjectProtocol.js";
 import {
   createOrchestrationProposalQueue,
+  priorProposalExecutionHold,
   OrchestrationProposalBlockedError,
   type OrchestrationIntakeStore,
   type OrchestrationProposalArtifacts,
@@ -57,6 +58,44 @@ const setup = () => {
   });
   return { store, queue };
 };
+it("retains cross-revision unknown holds until proven unstarted without reopening the launch", async () => {
+  const { queue } = setup();
+  const original = queue.ingest(intakeTestItem(), 1);
+  expect(
+    (
+      await queue.plan(
+        original.id,
+        async () => {
+          throw new Error("transport unknown");
+        },
+        signal(),
+      )
+    ).status,
+  ).toBe("unknown");
+  const current = queue.ingest(intakeTestItem("new"), 2);
+  expect(
+    priorProposalExecutionHold(
+      current,
+      queue.list().map((entry) => entry.proposal),
+    ),
+  ).toBeTruthy();
+  queue.settlePlanningOutcome(original.id, digest("host verified no worker"));
+  expect(queue.get(original.id).proposal.status).toBe("superseded");
+  expect(
+    priorProposalExecutionHold(
+      current,
+      queue.list().map((entry) => entry.proposal),
+    ),
+  ).toBeUndefined();
+  const replay = vi.fn(async () => intakeTestArtifacts);
+  expect((await queue.plan(original.id, replay, signal())).status).toBe(
+    "superseded",
+  );
+  expect(replay).not.toHaveBeenCalled();
+  expect(() =>
+    queue.settlePlanningOutcome(original.id, digest("different")),
+  ).toThrow();
+});
 const approve = async (
   queue: ReturnType<typeof createOrchestrationProposalQueue>,
 ) => {

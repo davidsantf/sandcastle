@@ -38,7 +38,7 @@ function render(){
  }
  const issues=projects.flatMap(p=>(p.proposals||[]).filter(q=>$('history').checked||(q.currentConfiguration&&q.state!=='superseded')).map(q=>({p,q})));
  if(!issues.length)$('issues').append(el('div','No retained issues in this view. This is not a fresh remote eligibility check.','empty'));
- for(const {p,q} of issues){const button=el('button',undefined,'issue'+(selection===q.id?' selected':''));button.append(el('small',p.name+' · #'+q.issue),el('strong',q.title),badge(q.state));button.onclick=()=>{selection=q.id;render()};$('issues').append(button)}
+ for(const {p,q} of issues){const button=el('button',undefined,'issue'+(selection===q.id?' selected':''));button.append(el('small',p.name+' · #'+q.issue),el('strong',q.title),badge(q.effectiveState||q.state));button.onclick=()=>{selection=q.id;render()};$('issues').append(button)}
  const chosen=issues.find(x=>x.q.id===selection);
  $('detail').replaceChildren();
  if(chosen){
@@ -46,6 +46,9 @@ function render(){
   if(q.url){const a=el('a','Open source #'+q.issue);a.href=q.url;a.target='_blank';a.rel='noopener noreferrer';$('detail').append(a)}
   $('detail').append(el('p','Proposal '+q.id.slice(0,12)+' · '+q.state+' · configuration revision '+q.revision,'hint'));
   if(q.diagnostic)$('detail').append(el('p',q.diagnostic));
+  if(q.effectiveState!==q.state)$('detail').append(el('p','Effective state: '+q.effectiveState+' · stored observation: '+q.state));
+  if(q.stageOwner)$('detail').append(el('p','Stage owner: '+q.stageOwner+' · hub synchronization: '+q.workflowSync));
+  if(q.review){$('detail').append(el('h4','Review / fix cycle'),el('p','Iteration '+q.review.iteration+' of '+q.review.limit+' · commit '+q.review.revision),el('p',q.review.trust,'hint'));q.review.findings.forEach(f=>$('detail').append(el('p',f)));if(q.review.reason)$('detail').append(el('p',q.review.reason))}
   $('detail').append(el('h4','Agent phase evidence'));
   if(!p.phases.length)$('detail').append(el('p','No native worker launch recorded for this workspace.'));
   for(const phase of p.phases)$('detail').append(el('p',phase.agent+' · '+phase.stage+' · '+phase.outcome+' · '+stamp(phase.at)+' (workspace launch history; not necessarily this issue)'));

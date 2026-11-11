@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { z } from "zod";
 import { digest } from "./MultiProjectProtocol.js";
+import { orchestrationWorkflowLabels } from "./OrchestrationWorkflowContract.js";
 import {
   workspaceDiscoverySourceSchema,
   type WorkspaceDiscoverySource,
@@ -481,7 +482,23 @@ export function createOrchestrationDiscoveryAdapter(
         .map((label) => text(label.name, 200))
         .sort(),
     };
-    return { ...snapshot, revision: digest(JSON.stringify(snapshot)) };
+    const revision = source.workflow
+      ? digest(
+          JSON.stringify({
+            ...snapshot,
+            updatedAt: undefined,
+            labels: snapshot.labels.filter(
+              (label) =>
+                label === "orchestration-ready" ||
+                !orchestrationWorkflowLabels.includes(label),
+            ),
+            assignees: rows(item.assignees ?? [])
+              .map((actor) => text(actor.login, 100))
+              .sort(),
+          }),
+        )
+      : digest(JSON.stringify(snapshot));
+    return { ...snapshot, revision };
   };
   const quote = (v: string) => `'${v.replaceAll("'", "''")}'`;
   const adoSelector = `(${[

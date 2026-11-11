@@ -44,6 +44,90 @@ Pass plain local JSON files with `--file`. These files are host configuration,
 not work-item instructions. Unknown fields in focus/routes/runtime/sources fail
 validation. No executable authority module is loaded by workspace onboarding.
 
+## GitHub label workflow
+
+Opt a GitHub issue source into `workflow: {"kind":"github-labels","approver":"exact-login"}`
+with `includeReviewFeedback:false`. Native source refresh excludes host stage/comment
+churn from the approval revision, but changes to title/body/assignment/unrelated
+labels invalidate it. Existing assignment OR exact opt-in eligibility is unchanged.
+`orchestration-ready` remains an eligibility marker when unassigned; the other
+stage label represents the current lifecycle.
+
+| Label                                | Owner/action                                                                                                             |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| `orchestration-ready`                | User makes an issue eligible; assignment also remains valid eligibility                                                  |
+| `orchestration-planning`             | Agent begins actual named investigation/specification/planning                                                           |
+| `orchestration-user-approval`        | User reviews the published exact source/configuration/plan digest                                                        |
+| `orchestration-implementation-ready` | Configured GitHub user adds this label after that plan comment                                                           |
+| `orchestration-implementing`         | Host validates approval and dispatches implementation or an approved-scope fix                                           |
+| `orchestration-reviewing`            | Separate read-only reviewer examines the exact implementation commit, approved artifacts and actual local validation     |
+| `orchestration-finished`             | Reserved for genuine implementation, validation and required review/proof completion; not admission, merge or deployment |
+
+This source does **not** use automatic bounded-local policy approval. Pre-existing,
+third-party or stale labels cannot approve. Approval is bound to the exact
+published comment and attributed immutable label event. Removing/replacing
+approval before dispatch blocks it; host stage cleanup is journaled separately.
+Unknown prior invocations across issue revisions block duplicate launch.
+The host may create only the seven workflow labels and post necessary plan,
+status and actionable findings comments. Issue text never grants write authority.
+Remote effects reserve before mutation; exact retained remote evidence can
+confirm an uncertain write, otherwise it is held rather than blindly retried.
+
+Findings produce one deduplicated issue comment tied to reviewed commit/plan and
+local validation, then automatically return to implementing and a fresh review.
+Reviewer findings prefixed `APPROVAL_REQUIRED:` or any artifact amendments stop
+automatic fixes and return to user approval; they never widen approved scope.
+Separate invocation means actual read-only tool enforcement, **not** independent
+backend identity attestation. Missing critical/independent evidence still blocks
+completion, so this native host does not currently set `orchestration-finished`.
+Failed/unknown reviewers, synchronization failures and exhausted limits are
+visible blocked outcomes, not successful reviews.
+
+Optional strict `runtime.reviewLoop: {"maxIterations":10}` accepts integers1-100;
+omitting it uses10 for workflow sources. One iteration is one implementation
+attempt followed by review. Initial implementation counts1; at most9 further
+fix/review pairs are allowed by default. Counts/deadlines bind to the issue run,
+persist across restart and source/configuration revision changes, and cannot reset
+an exhausted run implicitly. Remaining findings at10 block an11th implementation
+and emit one limit-reached status comment. Existing per-call credits, deadlines,
+concurrency, validation and unknown-outcome guards are unchanged.
+
+Host-only `runtime.planningOverrides` can select an exact source/item
+`investigationOnly:true` template with literal files and pinned base. This does
+not grant implementation even if an approval label is later added. Broader work
+requires a genuinely new scoped plan/configuration and user decision.
+
+### Evidence-specific planning recovery
+
+`workspace reconcile-planning --database <canonical-db> --file <evidence.json>`
+settles the supported Windows `Filename too long` checkout failure before
+model launch. Evidence names `proposalId`, `launchKey`, exact retained `logDigest`
+and `baseRevision`. The owner must be released with no reserved operations.
+The host verifies exact log format, branch/task binding, creation-only reflog,
+unchanged base and absence of retained worktree/model output. It appends a
+`not-started` settlement without deleting/resetting the original unknown launch.
+Changed code, model output or uncertain retained work still fails closed.
+
+An explicit `"kind":"read-only-invalid-receipt"` instead supports the narrow
+settled specify failure where the worker returned findings as severity/evidence
+objects rather than required strings. Exact single-receipt framing and normal
+host process-settlement footer, schema failure limited to findings, an absent
+worktree and unchanged creation-only branch are required. The settlement records
+the raw receipt digest and **does not accept its artifact as a successful plan**.
+It preserves the original unknown launch, does not reopen that proposal, and
+permits a newly revisioned corrected planning configuration only after the
+effect-free failure is independently established. Other malformed receipts,
+missing settlement evidence or retained changes still block.
+
+### Behavioral acceptance
+
+The workflow tests exercise attributed fresh approval versus third-party,
+revoked and stale decisions; journaled write uncertainty/deduplication;
+cross-revision unknown holds; actual separate read-only review and real host
+validation; findings/fix/fresh-review progression; scope expansion and missing
+critical proof; and iteration10 versus forbidden11 across reopen. Fixture proof
+is not evidence that a live issue was implemented or independently reviewed.
+
 `focus` accepts the full focus object from `list`: `mode` (`observe`, `propose`,
 `execute`), `projectIds`, optional `team`/`iteration`/`query`, `priorities`,
 `maxConcurrency`, `budgets` (`maxItems`, `maxAttempts`, `maxRuntimeMs`) and exact

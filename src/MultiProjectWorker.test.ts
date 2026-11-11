@@ -107,6 +107,79 @@ describe("explicit installed DevSquad execution", () => {
     vi.mocked(run).mockResolvedValue(result);
     return { execute, resolveCapability, authorizeCapability, attestExecution };
   };
+  it.each([
+    "specify",
+    "plan",
+    "decompose",
+    "review",
+    "implement",
+    "fix",
+  ] as const)(
+    "enforces tool read-only for %s according to phase, without independent-backend claims",
+    async (stage) => {
+      const records: unknown[] = [];
+      const execute = createDevsquadOrchestrationWorker({
+        sandbox: () => sandbox,
+        resolveCapability: async () => capability(stage),
+        authorizeCapability: async () => true,
+        attestExecution: async () => {
+          throw new Error(
+            "Trusted-local is not independent backend attestation",
+          );
+        },
+        executionTrust: "trusted-local",
+        recordLocalExecution: async (evidence) => {
+          records.push(evidence);
+        },
+        executionControls: {
+          profile: "local-files",
+          maxAiCredits: 30,
+          maxAutopilotContinues: 0,
+          timeoutMs: 2000,
+          disabledMcpServers: [],
+        },
+      });
+      vi.mocked(run).mockResolvedValue(result);
+      expect(await execute({ ...request(), stage }, signal())).toEqual(receipt);
+      const invocation = vi.mocked(run).mock.calls[0]![0];
+      const args = invocation.agent.buildPrintCommand({
+        prompt: "fixture",
+        dangerouslySkipPermissions: true,
+      }).process!.args;
+      const editing = ["implement", "fix"].includes(stage);
+      expect(
+        args.slice(
+          args.indexOf("--available-tools") + 1,
+          args.indexOf("--deny-tool"),
+        ),
+      ).toEqual(
+        editing ? ["view", "read_file", "apply_patch"] : ["view", "read_file"],
+      );
+      expect(
+        args.some(
+          (arg, index) =>
+            arg === "--deny-tool" && args[index + 1] === "apply_patch",
+        ),
+      ).toBe(!editing);
+      expect(records).toEqual([
+        expect.objectContaining({
+          stage,
+          outcome: "reserved",
+          backendAttested: false,
+        }),
+        expect.objectContaining({
+          stage,
+          outcome: "admitted",
+          backendAttested: false,
+        }),
+        expect.objectContaining({
+          stage,
+          outcome: "completed",
+          backendAttested: false,
+        }),
+      ]);
+    },
+  );
   it("wires the configured framework executor into the runnable host", async () => {
     const framework = fixture();
     const host = createMultiProjectSandcastleHost({
