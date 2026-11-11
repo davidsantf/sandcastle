@@ -61,10 +61,14 @@ const bindingFor = (proposal: OrchestrationProposal, template: unknown) => ({
   configurationRevision: proposal.configurationRevision,
   source: proposal.source,
   artifacts: proposal.artifacts,
-  approval: proposal.approval,
+  ...(proposal.approval ? { approval: proposal.approval } : {}),
+  ...(proposal.policyDecision
+    ? { policyDecision: proposal.policyDecision }
+    : {}),
   template,
 });
 function approved(proposal: OrchestrationProposal) {
+  const decision = proposal.approval ?? proposal.policyDecision;
   if (
     !proposal.artifacts ||
     !proposal.digest ||
@@ -78,10 +82,9 @@ function approved(proposal: OrchestrationProposal) {
         }),
       ) ||
     proposal.sourceRevision !== proposal.source.revision ||
-    proposal.approval?.proposalDigest !== proposal.digest ||
-    proposal.approval.sourceRevision !== proposal.sourceRevision ||
-    proposal.approval.configurationRevision !==
-      proposal.configurationRevision ||
+    decision?.proposalDigest !== proposal.digest ||
+    decision.sourceRevision !== proposal.sourceRevision ||
+    decision.configurationRevision !== proposal.configurationRevision ||
     !["approved", "dispatching", "dispatched", "unknown"].includes(
       proposal.status,
     )
@@ -192,10 +195,22 @@ export function createWorkspaceNativeDispatcher(options: {
     const assertCurrent = async () => {
       signal.throwIfAborted();
       const current = queue.get(id).proposal;
+      const policy = configuration.runtime.proposalPolicy;
+      const policyMatches =
+        !proposal.policyDecision ||
+        (policy &&
+          digest(policy) === proposal.policyDecision.policyDigest &&
+          digest(template) === proposal.policyDecision.templateDigest &&
+          policy.rules.some(
+            (rule) =>
+              rule.sourceId === proposal.source.sourceId &&
+              rule.taskTemplateId === template.id,
+          ));
       if (
         configuration.revision !== proposal.configurationRevision ||
         configuration.runtime.executionTrust !== "trusted-local" ||
         !currentSource ||
+        !policyMatches ||
         !current ||
         !["approved", "dispatching", "dispatched", "unknown"].includes(
           current.status,
@@ -403,6 +418,21 @@ export function createWorkspaceNativeDispatcher(options: {
           "Native implementation requires one trusted project template",
         );
       const template = templates[0]!;
+      if (
+        proposal.policyDecision &&
+        (!configuration.runtime.proposalPolicy ||
+          digest(configuration.runtime.proposalPolicy) !==
+            proposal.policyDecision.policyDigest ||
+          digest(template) !== proposal.policyDecision.templateDigest ||
+          !configuration.runtime.proposalPolicy.rules.some(
+            (rule) =>
+              rule.sourceId === item.sourceId &&
+              rule.taskTemplateId === template.id,
+          ))
+      )
+        throw new Error(
+          "Native proposal policy/template changed before admission",
+        );
       const binding = bindingFor(proposal, template);
       const project = configuration.projects.find(
         (p) => p.id === item.projectId,

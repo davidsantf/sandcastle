@@ -25,6 +25,63 @@ import {
 import type { OrchestrationIntakeStore } from "./OrchestrationProposal.js";
 import { noSandbox } from "./sandboxes/no-sandbox.js";
 import { createOrchestrationAzureCliReadTransport } from "./OrchestrationAzureCliTransport.js";
+import { digest } from "./MultiProjectProtocol.js";
+import type { OrchestrationProposal } from "./OrchestrationProposal.js";
+import type { OrchestrationDiscoveredItem } from "./OrchestrationDiscovery.js";
+
+export function workspaceProposalPolicyDecision(
+  configuration: WorkspaceConfiguration,
+  item: OrchestrationDiscoveredItem,
+  proposal: OrchestrationProposal,
+) {
+  const policy = configuration.runtime.proposalPolicy;
+  const rule = policy?.rules.find((rule) => rule.sourceId === item.sourceId);
+  const templates = configuration.taskTemplates.filter(
+    (task) => task.projectId === item.projectId,
+  );
+  const template = templates[0];
+  if (
+    !policy ||
+    !rule ||
+    !template ||
+    templates.length !== 1 ||
+    configuration.discovery.find((source) => source.id === item.sourceId)
+      ?.projectId !== item.projectId ||
+    proposal.source.sourceId !== item.sourceId ||
+    proposal.source.id !== item.id ||
+    proposal.source.projectId !== item.projectId ||
+    !proposal.artifacts ||
+    template.id !== rule.taskTemplateId ||
+    configuration.runtime.executionTrust !== "trusted-local" ||
+    !configuration.runtime.executionControls ||
+    configuration.focus.mode !== "execute" ||
+    !(["discover", "investigate", "implement"] as const).every(
+      (action) =>
+        evaluateOrchestrationFocus(configuration.focus, {
+          projectId: item.projectId,
+          action,
+          ...item.scope,
+        }).allowed,
+    ) ||
+    item.kind === "pull-request" ||
+    (item.labels ?? []).some((label) =>
+      /^(needs-human|needs-input|do-not-autofix|critical|security|breaking-change)$/i.test(
+        label,
+      ),
+    ) ||
+    proposal.configurationRevision !== configuration.revision ||
+    proposal.sourceRevision !== item.revision ||
+    digest(proposal.artifacts?.acceptance) !==
+      digest(
+        template.acceptance.map((check) => ({
+          criterion: `Trusted host check ${check.label} must pass`,
+          verification: `Run configured host check: ${check.command}`,
+        })),
+      )
+  )
+    return undefined;
+  return { policyDigest: digest(policy), templateDigest: digest(template) };
+}
 
 const azureCliTransports = new Map<string, OrchestrationDiscoveryTransport>();
 
@@ -100,6 +157,7 @@ export function configuredWorkspacePlanner(
     | OrchestrationDiscoveryTransport
     | undefined = workspaceDiscoveryTransport,
   store?: OrchestrationIntakeStore,
+  invoke?: typeof run,
 ) {
   const discovery = readyDiscoverySources(configuration);
   const projectIds = new Set(discovery.map((source) => source.projectId));
@@ -116,6 +174,7 @@ export function configuredWorkspacePlanner(
     ),
     evaluateFocus: evaluateOrchestrationFocus,
     transport,
+    invoke,
     ...(configuration.runtime.executionTrust === "trusted-local"
       ? {
           sandbox: () => noSandbox(),
@@ -284,6 +343,7 @@ export function createWorkspaceNativeTick(
       configuration,
       transport,
       context.store,
+      options.invoke,
     );
     const readiness =
       configuration.focus.mode === "observe"
@@ -301,6 +361,12 @@ export function createWorkspaceNativeTick(
     const tick = createOrchestrationNativeTick({
       evaluateFocus: evaluateOrchestrationFocus,
       transport,
+      ...(configuration.runtime.proposalPolicy
+        ? {
+            policyDecision: (item, proposal) =>
+              workspaceProposalPolicyDecision(configuration, item, proposal),
+          }
+        : {}),
       // Missing capabilities must not consume implementation or planning reservations.
       planner: readiness?.executionReady ? planner.plan : undefined,
       dispatch:

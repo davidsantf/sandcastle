@@ -739,19 +739,29 @@ describe("native service intake integration", () => {
     const tick = createOrchestrationNativeTick({
       evaluateFocus,
       planner,
-      transport: () => async () => ({
+      transport: () => async (request) => ({
         status: 200,
-        body: [
-          {
-            number: 1,
-            html_url: item().url,
-            title: item().title,
-            body: item().body,
-            state: "open",
-            updated_at: item().updatedAt,
-            assignees: [{ login: "owner" }],
-          },
-        ],
+        body: request.url.includes("/issues/1")
+          ? {
+              number: 1,
+              html_url: item().url,
+              title: item().title,
+              body: item().body,
+              state: "open",
+              updated_at: item().updatedAt,
+              assignees: [{ login: "owner" }],
+            }
+          : [
+              {
+                number: 1,
+                html_url: item().url,
+                title: item().title,
+                body: item().body,
+                state: "open",
+                updated_at: item().updatedAt,
+                assignees: [{ login: "owner" }],
+              },
+            ],
       }),
     });
     const first = await tick(ctx);
@@ -1083,6 +1093,13 @@ describe("concrete native setup controls", () => {
           artifact: "Substantive attested fixture phase artifact and evidence.",
           contracts: {},
           findings: [],
+          ...(command.includes("devsquad.plan")
+            ? {
+                amendments: {
+                  plan: "Amended substantive implementation plan, not just its summary.",
+                },
+              }
+            : {}),
         },
       };
     });
@@ -1099,6 +1116,9 @@ describe("concrete native setup controls", () => {
     );
     expect(stages).toEqual(["specify", "specify", "plan"]);
     expect(result.acceptance).toEqual(artifacts.acceptance);
+    expect(result.plan).toBe(
+      "Amended substantive implementation plan, not just its summary.",
+    );
     expect(vi.mocked(run).mock.calls[0]?.[0].prompt).toContain(
       "untrusted data",
     );

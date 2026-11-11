@@ -29,7 +29,7 @@ import type { WorkspaceFocus } from "./OrchestrationWorkspaceContract.js";
 import type { CopilotExecutionControls } from "./CopilotExecutionControls.js";
 
 const controlledHelp =
-  "--agent --model --max-ai-credits --max-autopilot-continues --available-tools --allow-tool --deny-tool --disable-builtin-mcps --disable-mcp-server --no-custom-instructions --no-auto-update --no-ask-user --disallow-temp-dir --sync-session";
+  "--agent --model --plugin-dir --max-ai-credits --max-autopilot-continues --available-tools --allow-tool --deny-tool --disable-builtin-mcps --disable-mcp-server --no-custom-instructions --no-auto-update --no-ask-user --disallow-temp-dir --sync-session";
 let nativeHelp = controlledHelp;
 
 vi.mock("./run.js", () => ({ run: vi.fn() }));
@@ -360,6 +360,188 @@ describe("built-in native implementation lifecycle (fixture runner and hub)", ()
     timeoutMs: 2000,
     disabledMcpServers: ["fixture-server"],
   };
+  it("loads an explicitly registered local plugin on every phase and rejects redirected manifest bindings", async () => {
+    const f = await fixture("github", "propose", false, controls);
+    const pluginDirectory = path.join(f.directory, "plugin");
+    fs.mkdirSync(path.join(pluginDirectory, ".github", "plugin"), {
+      recursive: true,
+    });
+    fs.mkdirSync(path.join(pluginDirectory, "agents"));
+    const manifest = path.join(
+      pluginDirectory,
+      ".github",
+      "plugin",
+      "plugin.json",
+    );
+    fs.writeFileSync(
+      manifest,
+      JSON.stringify({ name: "devsquad", agents: "agents/" }),
+    );
+    const configuration = updateWorkspaceConfiguration(
+      f.store,
+      f.configuration.revision,
+      (current) => ({
+        ...current,
+        runtime: {
+          ...current.runtime,
+          phaseDefinitions: current.runtime.phaseDefinitions.map(
+            (definition) => {
+              const definitionPath = path.join(
+                pluginDirectory,
+                "agents",
+                path.basename(definition.definitionPath),
+              );
+              fs.copyFileSync(definition.definitionPath, definitionPath);
+              return {
+                ...definition,
+                definitionPath,
+                pluginDirectory,
+                pluginManifestDigest: createHash("sha256")
+                  .update(fs.readFileSync(manifest))
+                  .digest("hex"),
+              };
+            },
+          ),
+        },
+      }),
+    );
+    vi.mocked(run).mockImplementation(async (options) => {
+      const request = JSON.parse(
+        String(options.prompt)
+          .split("Host request (JSON data):\n")[1]!
+          .split("\n\nReturn exactly")[0]!,
+      );
+      expect(
+        options.agent
+          .buildPrintCommand({
+            prompt: "fixture",
+            dangerouslySkipPermissions: true,
+          })
+          .process!.args.join("\0"),
+      ).toContain(`--plugin-dir\0${pluginDirectory}`);
+      return {
+        branch: request.task.branch,
+        iterations: [],
+        stdout: "",
+        commits: [],
+        output: {
+          kind: "completed",
+          artifact:
+            "Substantive fixture planning result with explicit plugin loading.",
+          contracts: {},
+          findings: [],
+        },
+      };
+    });
+    nativeHelp = controlledHelp.replace(" --plugin-dir", "");
+    const unsupported = await f.pass(configuration);
+    expect(unsupported.result?.readiness?.executionReady).toBe(false);
+    expect(unsupported.result?.diagnostics.join()).toContain(
+      "local plugin loading",
+    );
+    expect(run).not.toHaveBeenCalled();
+    expect(
+      f.store
+        .events()
+        .filter((event) => event.kind === "trusted-local-launch-admitted"),
+    ).toHaveLength(0);
+    nativeHelp = controlledHelp;
+    await f.pass(configuration);
+    expect(run).toHaveBeenCalledTimes(3);
+    fs.writeFileSync(
+      manifest,
+      JSON.stringify({
+        name: "devsquad",
+        agents: "agents/",
+        hooks: "different-hooks.json",
+      }),
+    );
+    const changed = await f.pass(configuration);
+    expect(changed.result?.readiness?.executionReady).toBe(false);
+    expect(run).toHaveBeenCalledTimes(3);
+  });
+  it("automatically plans, records a policy decision and implements once without inventing human approval or independent proof", async () => {
+    const f = await fixture("github", "execute", true, controls);
+    const configuration = updateWorkspaceConfiguration(
+      f.store,
+      f.configuration.revision,
+      (current) => ({
+        ...current,
+        runtime: {
+          ...current.runtime,
+          proposalPolicy: {
+            kind: "bounded-local",
+            rules: [{ sourceId: "assigned", taskTemplateId: "template" }],
+          },
+        },
+      }),
+    );
+    const implement = vi.mocked(run).getMockImplementation()!;
+    vi.mocked(run).mockImplementation(async (options) => {
+      const request: OrchestrationWorkerRequest = JSON.parse(
+        String(options.prompt)
+          .split("Host request (JSON data):\n")[1]!
+          .split("\n\nReturn exactly")[0]!,
+      );
+      if (request.stage === "implement") return implement(options);
+      return {
+        branch: request.task.branch,
+        iterations: [],
+        stdout: "",
+        commits: [],
+        output: {
+          kind: "completed",
+          artifact:
+            "Fixture real-path planning receipt, not live model evidence.",
+          contracts: {},
+          findings: [],
+        },
+      };
+    });
+    const planned = await f.pass(configuration);
+    expect(
+      planned.result?.proposals.find((proposal) => proposal.status === "ready"),
+    ).toBeDefined();
+    expect(run).toHaveBeenCalledTimes(3);
+    const dispatched = await f.pass(configuration);
+    expect(dispatched.result?.lifecycles[0]?.tasks[0]).toMatchObject({
+      status: "needs-input",
+      implementationRecorded: true,
+    });
+    expect(dispatched.result?.lifecycles[0]?.tasks[0]?.reason).toContain(
+      "independent",
+    );
+    const proposal = f.queue
+      .list()
+      .find(
+        ({ proposal }) =>
+          proposal.configurationRevision === configuration.revision,
+      )!.proposal;
+    expect(proposal.status).toBe("dispatched");
+    expect(proposal.approval).toBeUndefined();
+    expect(proposal.policyDecision).toMatchObject({
+      kind: "bounded-local",
+      configurationRevision: configuration.revision,
+      sourceRevision: proposal.sourceRevision,
+      proposalDigest: proposal.digest,
+    });
+    expect(
+      f.store
+        .events()
+        .filter((event) => event.kind === "intake-policy-authorized"),
+    ).toHaveLength(1);
+    await f.pass(configuration);
+    expect(run).toHaveBeenCalledTimes(4);
+    // A changed issue/config must not launch again while its admitted lifecycle
+    // still requires independent proof.
+    f.raw.body += " New request, not permission to rerun an admitted issue.";
+    f.raw.updated_at = "2026-11-10T08:00:00Z";
+    const changed = await f.pass(configuration);
+    expect(changed.result?.diagnostics.join()).toContain(
+      "requires reconciliation",
+    );
+    expect(run).toHaveBeenCalledTimes(4);
+  });
   it("keeps the same runtime controls on every configured proposal-planning phase", async () => {
     const f = await fixture("github", "propose", false, controls);
     vi.mocked(run).mockImplementation(async (options) => ({

@@ -97,6 +97,15 @@ with Execute focus and an explicit implement grant. Implementation receipts are
 not completion: unavailable independent review/critical proof blocks acceptance,
 publication and completion without fabricating evidence.
 
+For automatic bounded local progression without per-stage human review, explicitly
+configure `runtime.proposalPolicy: {kind:"bounded-local",rules:[{sourceId,taskTemplateId}]}`
+alongside trusted-local execution, local-files controls, Execute focus and exact
+discover/investigate/implement grants. The host investigates, specifies, plans
+and records a revision-bound **policy decision**, not a fabricated human approval.
+Only the registered template supplies scopes and acceptance; source text grants
+no authority. Independent review, critical-change and publication gates still stop
+at needs-input. See [automatic local policy](docs/agents/orchestration-intake.md#automatic-bounded-local-policy).
+
 For bounded native local editing, configure the optional revision-bound
 `runtime.executionControls` **local-files** profile. It propagates credit and
 continuation limits, file-only tools, named MCP disables and a host process
@@ -104,6 +113,9 @@ deadline through planning and implementation; unsupported controls fail closed.
 Omitting it preserves legacy launch behavior, not these bounds. Credit limits
 are soft CLI limits; host process termination is separate. Neither scoped tool
 approvals nor MCP disables isolate host credentials, installed hooks or network.
+An installed DevSquad plugin not globally registered can be loaded explicitly
+per process using each phase definition's canonical `pluginDirectory` and pinned
+`pluginManifestDigest`; no plugin installation or global enablement is performed.
 See [execution controls and configuration](docs/agents/orchestration-workspace.md#bounded-local-file-execution)
 and [actual shipped Windows launch evidence](docs/agents/orchestration-intake.md#shipped-default-launch-validation-with-explicit-controls).
 

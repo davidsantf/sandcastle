@@ -58,39 +58,56 @@ const itemSchema = z.object({
   labels: z.array(z.string().max(200)).max(1_000).optional(),
   scope: orchestrationDiscoveryScopeFactsSchema.optional(),
 });
-const proposalSchema = z.strictObject({
-  id: z.string().regex(/^[a-f0-9]{64}$/),
-  sourceRevision: z.string(),
-  configurationRevision: z.number().int().min(1),
-  source: itemSchema,
-  status: z.enum([
-    "observed",
-    "planning",
-    "ready",
-    "approved",
-    "rejected",
-    "superseded",
-    "dispatching",
-    "dispatched",
-    "unknown",
-    "blocked",
-  ]),
-  digest: z.string().optional(),
-  artifacts: orchestrationProposalArtifactsSchema.optional(),
-  approval: z
-    .strictObject({
-      proposalDigest: z.string(),
-      sourceRevision: z.string(),
-      configurationRevision: z.number().int().min(1),
-      at: z.number(),
-    })
-    .optional(),
-  diagnostic: z.string().optional(),
-  dispatchReceipt: z.string().max(8_000).optional(),
-});
+const proposalSchema = z
+  .strictObject({
+    id: z.string().regex(/^[a-f0-9]{64}$/),
+    sourceRevision: z.string(),
+    configurationRevision: z.number().int().min(1),
+    source: itemSchema,
+    status: z.enum([
+      "observed",
+      "planning",
+      "ready",
+      "approved",
+      "rejected",
+      "superseded",
+      "dispatching",
+      "dispatched",
+      "unknown",
+      "blocked",
+    ]),
+    digest: z.string().optional(),
+    supersededFrom: z.enum(["planning", "dispatching", "unknown"]).optional(),
+    artifacts: orchestrationProposalArtifactsSchema.optional(),
+    approval: z
+      .strictObject({
+        proposalDigest: z.string(),
+        sourceRevision: z.string(),
+        configurationRevision: z.number().int().min(1),
+        at: z.number(),
+      })
+      .optional(),
+    policyDecision: z
+      .strictObject({
+        kind: z.literal("bounded-local"),
+        policyDigest: z.string().regex(/^[a-f0-9]{64}$/),
+        templateDigest: z.string().regex(/^[a-f0-9]{64}$/),
+        proposalDigest: z.string(),
+        sourceRevision: z.string(),
+        configurationRevision: z.number().int().positive(),
+        at: z.number(),
+      })
+      .optional(),
+    diagnostic: z.string().optional(),
+    dispatchReceipt: z.string().max(8_000).optional(),
+  })
+  .refine((proposal) => !(proposal.approval && proposal.policyDecision), {
+    message: "Proposal cannot combine human approval and policy authority",
+  });
 export type OrchestrationProposal = z.infer<typeof proposalSchema>;
-export const parseOrchestrationProposal = (value: unknown) =>
-  proposalSchema.parse(value);
+export const parseOrchestrationProposal = (value: unknown) => {
+  return proposalSchema.parse(value);
+};
 const entrySchema = z.strictObject({
   key: z.string(),
   item: itemSchema,
@@ -196,6 +213,12 @@ export function createOrchestrationProposalQueue(options: {
             if (
               !["superseded", "rejected", "dispatched"].includes(old.status)
             ) {
+              if (
+                old.status === "planning" ||
+                old.status === "dispatching" ||
+                old.status === "unknown"
+              )
+                old.supersededFrom = old.status;
               old.status = "superseded";
               old.diagnostic =
                 "Source or configuration changed; prior approval is invalid";
@@ -308,6 +331,39 @@ export function createOrchestrationProposalQueue(options: {
         return snapshot(proposal);
       });
     },
+    decideByPolicy(request: {
+      proposalId: string;
+      proposalDigest: string;
+      sourceRevision: string;
+      configurationRevision: number;
+      policyDigest: string;
+      templateDigest: string;
+    }) {
+      return update("intake-policy-authorized", (queue) => {
+        const { entry, proposal } = find(queue, request.proposalId);
+        if (
+          current(entry).id !== proposal.id ||
+          proposal.status !== "ready" ||
+          proposal.digest !== request.proposalDigest ||
+          proposal.sourceRevision !== request.sourceRevision ||
+          proposal.configurationRevision !== request.configurationRevision
+        )
+          throw new Error("Stale policy decision; re-investigation required");
+        proposal.policyDecision = proposalSchema.shape.policyDecision
+          .unwrap()
+          .parse({
+            kind: "bounded-local",
+            policyDigest: request.policyDigest,
+            templateDigest: request.templateDigest,
+            proposalDigest: request.proposalDigest,
+            sourceRevision: request.sourceRevision,
+            configurationRevision: request.configurationRevision,
+            at: now(),
+          });
+        proposal.status = "approved";
+        return snapshot(proposal);
+      });
+    },
     async execute(
       request: { proposalId: string; configurationRevision: number },
       controls: {
@@ -374,10 +430,12 @@ export function createOrchestrationProposalQueue(options: {
         if (
           current(entry).id !== proposal.id ||
           proposal.configurationRevision !== request.configurationRevision ||
-          proposal.approval?.proposalDigest !== proposal.digest ||
-          proposal.approval?.sourceRevision !== entry.item.revision ||
-          proposal.approval?.configurationRevision !==
-            request.configurationRevision
+          (proposal.approval ?? proposal.policyDecision)?.proposalDigest !==
+            proposal.digest ||
+          (proposal.approval ?? proposal.policyDecision)?.sourceRevision !==
+            entry.item.revision ||
+          (proposal.approval ?? proposal.policyDecision)
+            ?.configurationRevision !== request.configurationRevision
         )
           throw new Error(
             "Stale approval; re-investigation and review required",

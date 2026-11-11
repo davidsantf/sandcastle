@@ -260,6 +260,19 @@ file, bounded size, name and current digest. These are configuration-integrity
 checks, **not proof that the backend loaded that definition**. Neither the root
 candidate agent name nor a model alias is an attestation.
 
+When an existing local DevSquad plugin is not globally registered, each phase
+may additionally register `pluginDirectory` and `pluginManifestDigest` together.
+The directory must be absolute/canonical, contain the selected definition
+directly under `agents`, and have `.github/plugin/plugin.json` naming `devsquad`
+with `agents` or `agents/`. The manifest's SHA-256 must match the pinned digest.
+Explicit local-files controls and installed CLI `--plugin-dir` support are
+required; unsupported/mutated definitions or manifests fail before new launches.
+The production provider passes the directory as a separate direct argv value
+for planning and implementation; it does not install or globally enable plugins.
+Host launch evidence retains directory/manifest bindings. This trusts the
+installed plugin code, including hooks; it does not hash every plugin file,
+disable all hooks, isolate credentials/network or prove backend-loaded identity.
+
 One trusted task template per project supplies scopes, base branch and acceptance.
 The configured planner rejects ambiguous templates, inherited PR/source authority,
 and unresolved `dependsOn`/`requiresContracts`. It does not silently rename
@@ -272,13 +285,15 @@ Trusted scopes/acceptance are preserved; no repository-root scope is invented.
 ## Proposal actions and executor boundary
 
 `createOrchestrationProposalQueue({store,namespace:configuration.id})` exposes
-`list`, `get`, `ingest`, `plan`, `review`, and `execute`. `list`/`get` return the
+`list`, `get`, `ingest`, `plan`, `review`, `decideByPolicy`, and `execute`. `list`/`get` return the
 source snapshot for the particular proposal, including superseded revisions.
 Planning actually invokes the existing DevSquad worker route three times:
 investigation via `specify`, specification via `specify`, and implementation plan
 via `plan`. Trusted task instructions survive, the investigation feeds
 specification, and both prior artifacts feed planning. Hub text is explicitly
-marked untrusted. Artifacts have this validated shape:
+marked untrusted. Substantive same-stage amendments replace the phase's summary
+when supplied; they remain proposals, not authority. Malformed tagged receipts
+remain unknown outcomes, never inferred successes. Artifacts have this validated shape:
 
 ```ts
 {
@@ -310,6 +325,60 @@ verification blocks before implementation; changed evidence supersedes approval.
 `dispatching`/`unknown` outcomes suppress automatic repetition after restart.
 Approval is never a publication permission.
 
+## Automatic bounded-local policy
+
+The default still requires exact local proposal review. For an explicitly
+authorized trusted-local lane, register this optional runtime property using
+`workspace runtime --revision <current> --file <runtime.json>`:
+
+```json
+"proposalPolicy": {
+  "kind": "bounded-local",
+  "rules": [{ "sourceId": "assigned-work", "taskTemplateId": "safe-documentation" }]
+}
+```
+
+Each unique rule names an existing exact source and its project's sole trusted
+template. The configuration rejects missing/ambiguous templates, nonliteral file
+scopes, labeled templates, dependencies and required/provided contracts. It also
+requires explicit trusted-local execution and local-files controls; strict
+independent-backend mode is never silently downgraded.
+
+The shipped `workspace run/start` composition freshly verifies all eligible
+observations before planning, and again before policy/dispatch. Assignment/tag
+removal, closure, changed revision or failed native scope checks prevent new
+effects. Execute focus and current exact discover/investigate/implement grants
+are required for automatic authorization. Pull requests and exact
+case-insensitive `needs-human`, `needs-input`, `do-not-autofix`, `critical`,
+`security`, `breaking-change` labels cannot receive it. A worker cannot select
+another template, widen scope, substitute acceptance or grant itself authority.
+The trusted template must explicitly require failure for work outside its lane;
+restricting edits is not permission to substitute documentation for a code task.
+
+An observed item receives three real named planning calls. A later pass may
+authorize the ready artifact and dispatch its bounded local implementation.
+One atomic `intake-policy-authorized` event records a separate `policyDecision`
+bound to policy/template/proposal digests and source/configuration revisions.
+It writes no human `approval` and conveys no independent acceptance/review,
+critical or publication evidence. The existing core lifecycle therefore retains
+genuine needs-input gates after an edit; an admission receipt is not completion.
+Trusted host acceptance helpers remain separate from model assertions.
+
+Older planning/dispatching/unknown/admitted work for the same source/item blocks
+automatic progression of a later revision. Supersession preserves earlier
+uncertainty in `supersededFrom`; changing configuration or reopening the journal
+must not turn an uncertain effect into a fresh launch. Never clear a hold or
+manufacture a revision just to retry a model. Human review remains available for
+unmatched ready proposals. Pausing, narrowing focus or removing implement grants
+stops new effects; service cancellation reaches owned native process trees.
+Budgets are per pass/process, not a rolling account spending cap.
+
+Focused executable acceptance covers automatic three-phase planning and one
+implementation, separate policy authority, reopening without redispatch, stale
+decisions/configuration, unknown supersession, Observe/Propose denial, current
+eligibility refresh and unchanged independent-proof gates. Fixture runners and
+hub rows are not live framework evidence.
+
 The public workspace host now supplies a built-in bridge to the existing core
 lifecycle; users need not invent a dispatch callback. Strict mode remains blocked
 on the independent identity gap below. Explicit trusted-local mode can admit
@@ -330,6 +399,45 @@ an injected callback alone is not live execution evidence.
 supplied command substitution. Actual process exit determines pass/fail;
 missing checks fail explicitly. Process success proves a host check, not model,
 framework identity, PR policy, or publication authorization.
+
+## Actual automatic local progression validation
+
+On 2026-11-11 the shipped public native workspace tick, configured planner,
+bounded-local policy and built-in lifecycle ran against an isolated local Git
+fixture using authenticated native Copilot CLI 1.0.109 and the existing
+plugin-qualified `devsquad:devsquad.specify`, `devsquad:devsquad.plan` and
+`devsquad:devsquad.implement`. Only the GitHub source transport/data was a fixture:
+no substituted process/runner, seeded planning artifacts or manual approval.
+Explicit process-local loading used the actual installed DevSquad plugin,
+canonical definitions and pinned manifest, not a global installation.
+
+The successful run made exactly four native invocations: investigation,
+specification, plan, implementation. A distinct revision-bound policy decision
+authorized the implementation without a human approval record. The real model
+edited only `src/value.txt`; the host committed the scoped local edit. An
+independently executed exact-content assertion failed before launch (exit 1)
+and passed on the actual edited branch (exit 0, accepting LF or CRLF).
+Reopening the journal retained four launch admissions and no repeat invocation.
+The lifecycle deliberately remained needs-input for unavailable independent
+phase-critic/critical evidence; no review, CI, backend attestation or publication
+receipt was fabricated.
+
+Earlier distinct fixture attempts remain retained: an invalid union-query
+fixture failed before a launch; the unregistered named plugin produced an
+explicit `No such agent` failure; and a model-generated malformed closing
+delimiter left planning unknown. The latter was not parsed leniently, reset or
+retried from its uncertain journal. Host output instructions were clarified,
+and the final proof used a new disposable fixture with the same strict parser.
+No automatic retry of any unknown attempt occurred.
+
+Each invocation had the configured 30-credit **soft** CLI limit, zero autopilot
+continuations, file-only tools, configured/builtin MCP disables and a hard
+240-second owned-process deadline. The pass deadline was 900 seconds, concurrency
+one, with at most three planning invocations then one implementation. Existing
+Python was selected per process with automatic setup disabled; no runtime or
+dependency installation, credential change, remote write or primary-checkout
+edit was performed. These results prove bounded local progression, not live
+LLMLab issue execution or unrestricted work readiness.
 
 ## Bounded polling and recovery
 

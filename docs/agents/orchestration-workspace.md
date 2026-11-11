@@ -306,13 +306,18 @@ trusted template per project, `workspace run/start/restart` automatically binds
 an approved issue/work-item proposal to the existing core lifecycle. No executable
 host module or dispatch callback is needed. Observe/Propose never admit or recover
 implementation workers. Pull requests are not accepted as implementation sources.
+An explicitly configured [bounded-local policy](./orchestration-intake.md#automatic-bounded-local-policy)
+can authorize that exact trusted template automatically instead of requiring
+manual per-stage proposal approval. It records distinct host policy authority,
+not a human approval or independent review, and retains the same needs-input,
+scope, current-source and publication boundaries.
 A separately configured trusted host can also use the existing core lifecycle through the compatible
 `orchestrate --config` path, which now shares service/manual exclusion and retains
 workspace worker-dispatch gates after host run binding.
 
 ### Built-in implementation and recovery
 
-The host retains proposal digest, approval, exact native source/revision, original
+The host retains proposal digest, approval or policy decision, exact native source/revision, original
 configuration, trusted template, approved artifacts and immutable single-task
 catalog in one atomic bounded `native-dispatch-index/<workspace-digest>` record.
 Admission is all-or-nothing, including its recovery index. The core cause is

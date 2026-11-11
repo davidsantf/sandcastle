@@ -31,6 +31,7 @@ describe("host-owned native execution controls", () => {
   it("generates exact shell-free argv and overrides broad inherited auto-approval", () => {
     const agent = copilot("auto", {
       agent: "devsquad:devsquad.implement",
+      pluginDirectory: process.cwd(),
       executionControls: controls,
       fileScopes: ["src/value.txt"],
       env: { COPILOT_ALLOW_ALL: "true", COPILOT_ASSISTED_APPROVAL: "true" },
@@ -56,6 +57,7 @@ describe("host-owned native execution controls", () => {
     ]);
     for (const pair of [
       ["--agent", "devsquad:devsquad.implement"],
+      ["--plugin-dir", process.cwd()],
       ["--max-ai-credits", "30"],
       ["--max-autopilot-continues", "0"],
       ["--disable-mcp-server", "fixture-mcp"],
@@ -78,6 +80,16 @@ describe("host-owned native execution controls", () => {
         dangerouslySkipPermissions: false,
       }),
     ).toThrow(/non-interactive/);
+  });
+  it("rejects process-local plugin loading without explicit controls or an absolute path", () => {
+    expect(() => copilot("auto", { pluginDirectory: process.cwd() })).toThrow();
+    expect(() =>
+      copilot("auto", {
+        pluginDirectory: "../plugin",
+        executionControls: controls,
+        fileScopes: ["README.md"],
+      }),
+    ).toThrow();
   });
   it.each([
     { maxAiCredits: 29 },

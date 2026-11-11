@@ -75,6 +75,63 @@ const approve = async (
   });
 };
 describe("durable revision-bound proposal queue", () => {
+  it("persists policy authority separately, rejects stale bindings and retains unknown holds through revision changes", async () => {
+    const { store, queue } = setup();
+    const observed = queue.ingest(intakeTestItem(), 1);
+    const ready = await queue.plan(
+      observed.id,
+      async () => intakeTestArtifacts,
+      signal(),
+    );
+    const decision = {
+      proposalId: ready.id,
+      proposalDigest: ready.digest!,
+      sourceRevision: ready.sourceRevision,
+      configurationRevision: 1,
+      policyDigest: digest("policy"),
+      templateDigest: digest("template"),
+    };
+    expect(() =>
+      queue.decideByPolicy({ ...decision, proposalDigest: digest("other") }),
+    ).toThrow("Stale");
+    const authorized = queue.decideByPolicy(decision);
+    expect(authorized.approval).toBeUndefined();
+    expect(authorized.policyDecision?.kind).toBe("bounded-local");
+    expect(() => queue.decideByPolicy(decision)).toThrow("Stale");
+    const dispatch = vi.fn(async () => {
+      throw new Error("Unacknowledged effect");
+    });
+    await queue.execute(
+      { proposalId: ready.id, configurationRevision: 1 },
+      {
+        authorize: () => true,
+        refresh: async () => intakeTestItem(),
+        dispatch,
+      },
+      signal(),
+    );
+    const reopened = createOrchestrationProposalQueue({
+      store,
+      namespace: "workspace",
+    });
+    expect(reopened.get(ready.id).proposal.status).toBe("unknown");
+    reopened.ingest(intakeTestItem("next"), 2);
+    expect(reopened.get(ready.id).proposal).toMatchObject({
+      status: "superseded",
+      supersededFrom: "unknown",
+      policyDecision: { kind: "bounded-local" },
+    });
+    await reopened.execute(
+      { proposalId: ready.id, configurationRevision: 2 },
+      {
+        authorize: () => true,
+        refresh: async () => intakeTestItem("next"),
+        dispatch,
+      },
+      signal(),
+    );
+    expect(dispatch).toHaveBeenCalledOnce();
+  });
   it("deduplicates replay and resumes retained state after restart", async () => {
     const { store, queue } = setup();
     const approved = await approve(queue);

@@ -153,6 +153,15 @@ export const workspacePhaseDefinitionSchema = z.strictObject({
       "absolute definition path required",
     ),
   definitionDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  pluginDirectory: z
+    .string()
+    .min(1)
+    .refine(path.isAbsolute, "plugin directory must be absolute")
+    .optional(),
+  pluginManifestDigest: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional(),
   model: z.strictObject({
     id: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,199}$/),
     family: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,199}$/),
@@ -174,6 +183,10 @@ export interface WorkspaceConfiguration {
     command: string;
     executionTrust?: "independent-backend" | "trusted-local";
     executionControls?: import("./CopilotExecutionControls.js").CopilotExecutionControls;
+    proposalPolicy?: {
+      kind: "bounded-local";
+      rules: { sourceId: string; taskTemplateId: string }[];
+    };
     phaseDefinitions: z.infer<typeof workspacePhaseDefinitionSchema>[];
   };
   pollIntervalMs: number;
@@ -210,6 +223,20 @@ export const workspaceConfigurationSchema = z.strictObject({
       .refine((value) => !/[\u0000-\u001f]/.test(value), "invalid executable"),
     executionTrust: z.enum(["independent-backend", "trusted-local"]).optional(),
     executionControls: copilotExecutionControlsSchema.optional(),
+    proposalPolicy: z
+      .strictObject({
+        kind: z.literal("bounded-local"),
+        rules: z
+          .array(
+            z.strictObject({
+              sourceId: identifier,
+              taskTemplateId: identifier,
+            }),
+          )
+          .min(1)
+          .max(100),
+      })
+      .optional(),
     phaseDefinitions: z
       .array(workspacePhaseDefinitionSchema)
       .max(6)
@@ -234,6 +261,25 @@ export function parseWorkspaceConfiguration(
   if (config.runtime.executionControls)
     for (const task of config.taskTemplates)
       assertCopilotFileScopes(task.scopes);
+  if (
+    config.runtime.phaseDefinitions.some(
+      (definition) => definition.pluginDirectory,
+    ) &&
+    !config.runtime.executionControls
+  )
+    throw new Error(
+      "process-local plugins require explicit local-files controls",
+    );
+  if (
+    config.runtime.phaseDefinitions.some(
+      (definition) =>
+        Boolean(definition.pluginDirectory) !==
+        Boolean(definition.pluginManifestDigest),
+    )
+  )
+    throw new Error(
+      "process-local plugins require a directory and pinned manifest digest",
+    );
   const ids = new Set(config.projects.map((project) => project.id));
   const unique = (values: string[], label: string) => {
     if (new Set(values).size !== values.length)
@@ -258,6 +304,46 @@ export function parseWorkspaceConfiguration(
     config.runtime.phaseDefinitions.map((definition) => definition.stage),
     "phase definition",
   );
+  if (config.runtime.proposalPolicy) {
+    if (
+      config.runtime.executionTrust !== "trusted-local" ||
+      !config.runtime.executionControls
+    )
+      throw new Error(
+        "bounded-local policy requires trusted-local execution and explicit local-files controls",
+      );
+    unique(
+      config.runtime.proposalPolicy.rules.map((rule) => rule.sourceId),
+      "policy source",
+    );
+    for (const rule of config.runtime.proposalPolicy.rules) {
+      const source = config.discovery.find(
+        (source) => source.id === rule.sourceId,
+      );
+      const templates = config.taskTemplates.filter(
+        (task) => task.projectId === source?.projectId,
+      );
+      const template = templates[0];
+      if (
+        !source ||
+        templates.length !== 1 ||
+        template?.id !== rule.taskTemplateId
+      )
+        throw new Error(
+          "bounded-local policy requires one exact registered source/project task template",
+        );
+      assertCopilotFileScopes(template.scopes);
+      if (
+        template.dependsOn.length ||
+        template.requiresContracts.length ||
+        template.providesContracts.length ||
+        template.labels.length
+      )
+        throw new Error(
+          "bounded-local policy cannot authorize labeled, dependent or contract-publishing templates",
+        );
+    }
+  }
   for (const source of config.discovery) {
     const project = config.projects.find(
       (project) => project.id === source.projectId,

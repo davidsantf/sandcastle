@@ -53,8 +53,8 @@ leave no uncommitted changes. Do not approve your own implementation.
 Host request (JSON data):
 ${JSON.stringify(request, null, 2)}
 
-Return exactly one <orchestration-receipt> JSON object:
-{"kind":"completed","artifact":"substantive markdown artifact or implementation/review evidence","contracts":{},"findings":[]}
+Return exactly one complete tagged JSON object, with no prose before or after:
+<orchestration-receipt>{"kind":"completed","artifact":"substantive markdown artifact or implementation/review evidence","contracts":{},"findings":[]}</orchestration-receipt>
 For a known failure use {"kind":"failed","signature":"stable failure category","evidence":"actionable evidence"}.
 For an uncertain external outcome use {"kind":"unknown","reason":"explanation"}.
 Contract values, if supplied, are SHA-256 hashes, never permissions.
@@ -62,7 +62,8 @@ Planning/repair receipts may include an "amendments" object containing substanti
 "specify", "plan", or "decompose" artifact replacements within this same scope.
 These are proposals; the host must authorize the next exact artifact-bound intent.
 Do not invent acceptance results; the host evaluates them independently.
-</orchestration-receipt>`;
+The response must end with the exact ASCII closing delimiter </orchestration-receipt>.
+Missing or altered delimiters are uncertain outcomes, not successful receipts.`;
 
 export function createSandcastleOrchestrationWorker(options: {
   agent: AgentProvider;
@@ -141,6 +142,8 @@ export interface DevsquadPhaseCapability {
   readonly capabilityId: string;
   readonly agentName: string;
   readonly definitionDigest: string;
+  readonly pluginDirectory?: string;
+  readonly pluginManifestDigest?: string;
   readonly model: { readonly id: string; readonly family: string };
   readonly available: boolean;
 }
@@ -160,6 +163,8 @@ export interface OrchestrationLocalExecutionEvidence {
   baseBranch: string;
   requestedAgent: string;
   configuredDefinitionDigest: string;
+  pluginDirectory?: string;
+  pluginManifestDigest?: string;
   requestedModel: { readonly id: string; readonly family: string };
   outcome: "reserved" | "admitted" | "completed" | "failed" | "unknown";
   executionControlsDigest?: string;
@@ -211,7 +216,11 @@ export function createDevsquadOrchestrationWorker(options: {
       !resolved.model ||
       !identifier.test(resolved.model.id) ||
       !identifier.test(resolved.model.family) ||
-      !/^[a-f0-9]{64}$/.test(resolved.definitionDigest)
+      !/^[a-f0-9]{64}$/.test(resolved.definitionDigest) ||
+      (resolved.pluginDirectory !== undefined &&
+        (!executionControls ||
+          !path.isAbsolute(resolved.pluginDirectory) ||
+          !/^[a-f0-9]{64}$/.test(resolved.pluginManifestDigest ?? "")))
     )
       return {
         kind: "failed",
@@ -226,6 +235,12 @@ export function createDevsquadOrchestrationWorker(options: {
       capabilityId: resolved.capabilityId,
       agentName: resolved.agentName,
       definitionDigest: resolved.definitionDigest,
+      ...(resolved.pluginDirectory
+        ? {
+            pluginDirectory: resolved.pluginDirectory,
+            pluginManifestDigest: resolved.pluginManifestDigest,
+          }
+        : {}),
       model: Object.freeze({
         id: resolved.model.id,
         family: resolved.model.family,
@@ -265,6 +280,12 @@ export function createDevsquadOrchestrationWorker(options: {
         baseBranch: captured.task.baseBranch,
         requestedAgent: capability.agentName,
         configuredDefinitionDigest: capability.definitionDigest,
+        ...(capability.pluginDirectory
+          ? {
+              pluginDirectory: capability.pluginDirectory,
+              pluginManifestDigest: capability.pluginManifestDigest!,
+            }
+          : {}),
         requestedModel: { ...capability.model },
         outcome: "reserved",
         ...(executionControls
@@ -290,6 +311,7 @@ export function createDevsquadOrchestrationWorker(options: {
           receipt = await createSandcastleOrchestrationWorker({
             agent: copilot(capability.model.id, {
               agent: capability.agentName,
+              pluginDirectory: capability.pluginDirectory,
               executionControls,
               fileScopes: captured.task.scopes,
             }),
@@ -328,6 +350,7 @@ export function createDevsquadOrchestrationWorker(options: {
     return createSandcastleOrchestrationWorker({
       agent: copilot(capability.model.id, {
         agent: capability.agentName,
+        pluginDirectory: capability.pluginDirectory,
         executionControls,
         fileScopes: request.task.scopes,
       }),

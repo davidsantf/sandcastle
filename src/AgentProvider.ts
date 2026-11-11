@@ -1,5 +1,5 @@
 import { mkdir, readFile, rm, writeFile, access } from "node:fs/promises";
-import { dirname, join, posix } from "node:path";
+import { dirname, join, posix, isAbsolute } from "node:path";
 import { tmpdir } from "node:os";
 import {
   claudeHostSessionPath,
@@ -1118,6 +1118,8 @@ const parseCopilotStreamLine = (line: string): ParsedStreamEvent[] => {
 export interface CopilotOptions {
   /** Installed custom agent selected using the CLI's --agent flag. */
   readonly agent?: string;
+  /** Explicit host-selected local plugin; does not install or enable it globally. */
+  readonly pluginDirectory?: string;
   /** Reasoning effort level. Maps to the CLI's --effort flag. */
   readonly effort?: "low" | "medium" | "high";
   /** Environment variables injected by this agent provider. */
@@ -1137,6 +1139,13 @@ export const copilot = (
     : undefined;
   const scopes = options?.fileScopes ? [...options.fileScopes] : [];
   if (controls) assertCopilotFileScopes(scopes);
+  if (
+    options?.pluginDirectory &&
+    (!controls || !isAbsolute(options.pluginDirectory))
+  )
+    throw new Error(
+      "local Copilot plugin loading requires absolute host path and explicit execution controls",
+    );
   if (
     options?.agent !== undefined &&
     !/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,199}$/.test(options.agent)
@@ -1175,6 +1184,8 @@ export const copilot = (
           model,
         ];
         if (options?.agent) args.push("--agent", options.agent);
+        if (options?.pluginDirectory)
+          args.push("--plugin-dir", options.pluginDirectory);
         if (options?.effort) args.push("--reasoning-effort", options.effort);
         args.push(
           "--max-ai-credits",

@@ -175,6 +175,10 @@ export function createOrchestrationNativeTick(options: {
     context: OrchestrationNativeTickContext,
     signal: AbortSignal,
   ) => Promise<{ receipt: string }>;
+  policyDecision?: (
+    item: OrchestrationDiscoveredItem,
+    proposal: OrchestrationProposal,
+  ) => { policyDigest: string; templateDigest: string } | undefined;
   transport?: (
     source: OrchestrationDiscoverySource,
   ) => OrchestrationDiscoveryTransport | undefined;
@@ -374,14 +378,40 @@ export function createOrchestrationNativeTick(options: {
       .sort(
         (a, b) => projectRank(a.item.projectId) - projectRank(b.item.projectId),
       );
-    for (const { item, proposal } of proposals) {
+    for (const { item, proposal: retainedProposal } of proposals) {
+      let proposal = retainedProposal;
       signal.throwIfAborted();
       if (!adapters.has(item.sourceId)) continue;
-      let verified = item;
       if (
-        hasNativeScope(configuration.focus) &&
-        (proposal.status === "observed" || proposal.status === "approved")
+        options.policyDecision &&
+        ["observed", "ready"].includes(proposal.status) &&
+        queue
+          .list()
+          .some(
+            ({ proposal: prior }) =>
+              prior.id !== proposal.id &&
+              prior.source.sourceId === item.sourceId &&
+              prior.source.id === item.id &&
+              (["planning", "dispatching", "unknown", "dispatched"].includes(
+                prior.status,
+              ) ||
+                prior.supersededFrom),
+          )
       ) {
+        diagnostics.push(
+          `Proposal ${proposal.id}: earlier issue execution or unknown outcome requires reconciliation; automatic progression suppressed`,
+        );
+        continue;
+      }
+      if (proposal.status === "approved") {
+        const permission = allowed(item, "implement");
+        if (!permission.allowed) {
+          diagnostics.push(`Proposal ${proposal.id}: ${permission.reason}`);
+          continue;
+        }
+      }
+      let verified = item;
+      if (["observed", "ready", "approved"].includes(proposal.status)) {
         try {
           verified = await adapters.get(item.sourceId)!.refresh(item, signal);
         } catch (error) {
@@ -462,7 +492,31 @@ export function createOrchestrationNativeTick(options: {
         if (result.state === "blocked") diagnostics.push(result.diagnostic);
         else if (result.value.diagnostic)
           diagnostics.push(result.value.diagnostic);
-      } else if (proposal.status === "approved" && options.dispatch) {
+      }
+      // Planning and dispatch are separate passes. Policy decisions are host
+      // authority, never a synthetic human review or worker-provided permission.
+      if (
+        proposal.status === "ready" &&
+        options.policyDecision &&
+        configuration.focus.mode === "execute" &&
+        allowed(verified, "implement").allowed
+      ) {
+        const decision = options.policyDecision(verified, proposal);
+        if (decision) {
+          proposal = queue.decideByPolicy({
+            proposalId: proposal.id,
+            proposalDigest: proposal.digest!,
+            sourceRevision: proposal.sourceRevision,
+            configurationRevision: configuration.revision,
+            ...decision,
+          });
+        } else {
+          diagnostics.push(
+            `Proposal ${proposal.id}: outside bounded local policy; trusted host decision required`,
+          );
+        }
+      }
+      if (proposal.status === "approved" && options.dispatch) {
         const policy = allowed(verified, "implement");
         if (!policy.allowed) {
           diagnostics.push(`Proposal ${proposal.id}: ${policy.reason}`);
@@ -567,7 +621,7 @@ export function createDevsquadProposalPlanner(options: {
         throw new Error(
           `DevSquad ${purpose} did not produce an authorized completed receipt`,
         );
-      return receipt.artifact;
+      return receipt.amendments?.[stage] ?? receipt.artifact;
     };
     const investigation = await phase(
       "specify",
@@ -640,7 +694,11 @@ export function createOrchestrationNativeSetup(options: {
     : undefined;
   const controlsSupported = async (signal: AbortSignal) => {
     const help = await probeCommand(command, ["--help"], signal);
-    return copilotControlledFlags.every((flag) => help.includes(flag));
+    return (
+      copilotControlledFlags.every((flag) => help.includes(flag)) &&
+      (!definitions.some((definition) => definition.pluginDirectory) ||
+        help.includes("--plugin-dir"))
+    );
   };
   const resolveDefinition = async (
     stage: DevsquadPhaseCapability["stage"],
@@ -682,6 +740,35 @@ export function createOrchestrationNativeSetup(options: {
       `devsquad:${installedName}` !== definition.agentName
     )
       return null;
+    let plugin:
+      | { pluginDirectory: string; pluginManifestDigest: string }
+      | undefined;
+    if (definition.pluginDirectory) {
+      if (!executionControls) return null;
+      const directory = await realpath(definition.pluginDirectory);
+      if (
+        directory.toLowerCase() !==
+          path.resolve(definition.pluginDirectory).toLowerCase() ||
+        path.dirname(canonical).toLowerCase() !==
+          path.join(directory, "agents").toLowerCase()
+      )
+        return null;
+      const manifestBody = await readFile(
+        path.join(directory, ".github", "plugin", "plugin.json"),
+        "utf8",
+      );
+      const manifest = JSON.parse(manifestBody);
+      if (
+        manifest.name !== "devsquad" ||
+        !["agents", "agents/"].includes(manifest.agents)
+      )
+        return null;
+      const pluginManifestDigest = createHash("sha256")
+        .update(manifestBody)
+        .digest("hex");
+      if (pluginManifestDigest !== definition.pluginManifestDigest) return null;
+      plugin = { pluginDirectory: directory, pluginManifestDigest };
+    }
     return {
       framework: "devsquad",
       provider: "copilot",
@@ -689,6 +776,7 @@ export function createOrchestrationNativeSetup(options: {
       capabilityId: `installed:${definition.definitionDigest}`,
       agentName: definition.agentName,
       definitionDigest: definition.definitionDigest,
+      ...plugin,
       model: { ...definition.model },
       available: true,
     };
@@ -729,6 +817,13 @@ export function createOrchestrationNativeSetup(options: {
               .exec(version)?.[1]
               ?.replace(/\.$/, "") ?? null;
           const help = await probeCommand(command, ["--help"], signal);
+          if (
+            definitions.some((definition) => definition.pluginDirectory) &&
+            !help.includes("--plugin-dir")
+          )
+            missingCapabilities.push(
+              "Installed Copilot CLI lacks explicit local plugin loading",
+            );
           runtime.namedAgentFlag = help.includes("--agent");
           runtime.modelFlag = help.includes("--model");
           if (!runtime.namedAgentFlag || !runtime.modelFlag)
@@ -919,6 +1014,7 @@ export function createConfiguredDevsquadProposalPlanner(options: {
   recordLocalExecution?: (
     evidence: OrchestrationLocalExecutionEvidence,
   ) => Promise<void>;
+  invoke?: Parameters<typeof createDevsquadOrchestrationWorker>[0]["invoke"];
   transport?: (
     source: OrchestrationDiscoverySource,
   ) => OrchestrationDiscoveryTransport | undefined;
@@ -945,6 +1041,7 @@ export function createConfiguredDevsquadProposalPlanner(options: {
     },
     ...setup,
     recordLocalExecution: options.recordLocalExecution,
+    invoke: options.invoke,
   });
   const planner = createDevsquadProposalPlanner({
     execute: worker,
