@@ -64,6 +64,9 @@ export function workspaceProposalPolicyDecision(
         }).allowed,
     ) ||
     item.kind === "pull-request" ||
+    rule?.needsInputTerms?.some((term) =>
+      `${item.title}\n${item.body}`.toLowerCase().includes(term.toLowerCase()),
+    ) ||
     (item.labels ?? []).some((label) =>
       /^(needs-human|needs-input|do-not-autofix|critical|security|breaking-change)$/i.test(
         label,

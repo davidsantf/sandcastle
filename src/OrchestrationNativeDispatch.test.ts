@@ -360,6 +360,81 @@ describe("built-in native implementation lifecycle (fixture runner and hub)", ()
     timeoutMs: 2000,
     disabledMcpServers: ["fixture-server"],
   };
+  it.each(["passed", "failed"] as const)(
+    "runs the registered actual host check after implementation and records %s without granting independent proof",
+    async (state) => {
+      const f = await fixture("github", "execute", true, controls);
+      const check = {
+        projectId: "api",
+        label: "regression",
+        executable: process.execPath,
+        args: [
+          "-e",
+          `const fs=require('node:fs'); if(fs.readFileSync('src/value.txt','utf8')!=='fixture implementation\\n') process.exit(2); console.log(JSON.stringify({schemaVersion:1,state:'${state}',evaluatedScope:2}));process.exitCode=${state === "passed" ? 0 : 1};`,
+        ],
+        timeoutMs: 3000,
+      };
+      const configuration = updateWorkspaceConfiguration(
+        f.store,
+        f.configuration.revision,
+        (current) => ({
+          ...current,
+          taskTemplates: current.taskTemplates.map((task) => ({
+            ...task,
+            acceptance: [
+              {
+                label: check.label,
+                command: JSON.stringify([check.executable, ...check.args]),
+              },
+            ],
+          })),
+          runtime: { ...current.runtime, localValidation: [check] },
+        }),
+      );
+      const observed = f.queue.ingest(f.item, configuration.revision);
+      const planned = await f.queue.plan(
+        observed.id,
+        async () => ({
+          ...artifacts,
+          acceptance: [
+            {
+              criterion: "Trusted host check regression must pass",
+              verification: `Run configured host check: ${configuration.taskTemplates[0]!.acceptance[0]!.command}`,
+            },
+          ],
+        }),
+        signal(),
+      );
+      f.queue.review({
+        proposalId: planned.id,
+        proposalDigest: planned.digest!,
+        sourceRevision: planned.sourceRevision,
+        configurationRevision: configuration.revision,
+        decision: "approve",
+      });
+      const { result } = await f.pass(configuration);
+      const task = result!.lifecycles[0]!.tasks[0]!;
+      expect(task).toMatchObject({
+        implementationRecorded: true,
+        status: "needs-input",
+        localValidation: {
+          state,
+          evaluatedScope: 2,
+          checks: [{ name: "regression", state }],
+        },
+      });
+      expect(task.reason).toMatch(
+        state === "passed" ? /independent/ : /Local validation failed/,
+      );
+      await f.pass(configuration);
+      expect(f.requests).toHaveLength(1);
+      expect(
+        f.store
+          .events()
+          .filter((event) => event.kind === "native-local-validation-reserved"),
+      ).toHaveLength(1);
+    },
+  );
   it("loads an explicitly registered local plugin on every phase and rejects redirected manifest bindings", async () => {
     const f = await fixture("github", "propose", false, controls);
     const pluginDirectory = path.join(f.directory, "plugin");

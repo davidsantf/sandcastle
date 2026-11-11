@@ -40,6 +40,11 @@ import {
 import { evaluateOrchestrationFocus } from "./OrchestrationFocus.js";
 import { validateWorkspaceRepositories } from "./OrchestrationWorkspaceRepositories.js";
 import { noSandbox } from "./sandboxes/no-sandbox.js";
+import {
+  nativeValidationKey,
+  readNativeLocalValidation,
+  runNativeLocalValidation,
+} from "./OrchestrationNativeValidation.js";
 
 export type WorkspaceNativeTickContext =
   LocalOrchestrationTickContext<WorkspaceConfiguration> & {
@@ -355,13 +360,45 @@ export function createWorkspaceNativeDispatcher(options: {
           evidence: `native-source:${proposal.sourceRevision}`,
         };
       },
-      async assessPhase(_request, _receipt, revision) {
-        return {
-          state: "needs-human",
+      async assessPhase(request, _receipt, revision, abort) {
+        const validation = await runNativeLocalValidation({
+          configuration,
+          proposalId: id,
+          projectId: project.id,
+          repositoryRoot: project.repositoryRoot,
           revision,
-          evaluatedScope: 0,
-          checks: [],
+          signal: abort,
+          store,
+          write,
+          assertCurrent: async () => {
+            await assertCurrent();
+            if (
+              (await resolveOrchestrationGitRevision(
+                project,
+                task,
+                abort,
+                request.baseRevision,
+              )) !== revision
+            )
+              throw new Error("Implementation changed during local validation");
+          },
+        });
+        return {
+          state:
+            validation && validation.state !== "passed"
+              ? validation.state === "failed"
+                ? "blocked"
+                : "unknown"
+              : "needs-human",
+          revision,
+          evaluatedScope: validation?.evaluatedScope ?? 0,
+          checks:
+            validation?.checks.map(({ name, state }) => ({ name, state })) ??
+            [],
           evidence:
+            (validation
+              ? `Local validation ${validation.state}; evaluated scope ${validation.evaluatedScope}. ${validation.diagnostic ?? ""} `
+              : "") +
             "Native implementation recorded; independent phase-critic/critical approval proof is unavailable. Verification, publication and completion remain blocked.",
         };
       },
@@ -531,6 +568,17 @@ export function createWorkspaceNativeDispatcher(options: {
                   status: state.status,
                   reason: state.reason,
                   implementationRecorded: Boolean(state.artifacts.implement),
+                  ...(readNativeLocalValidation(
+                    store,
+                    nativeValidationKey(configuration.id, id),
+                  )
+                    ? {
+                        localValidation: readNativeLocalValidation(
+                          store,
+                          nativeValidationKey(configuration.id, id),
+                        ),
+                      }
+                    : {}),
                 }))
               : [],
           };

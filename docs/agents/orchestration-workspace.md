@@ -333,6 +333,60 @@ artifact seeding are idempotent. Current approval, actual source scope/labels,
 Git root/origin, trust policy and implementation permission are rechecked before
 launch. `needs-human`/`do-not-autofix` labels block work.
 
+### Trusted local code validation
+
+The public native lifecycle can run optional `runtime.localValidation` after
+the actual local implementation commit, before retaining its independent-proof
+gate. Register through the existing revision-checked `workspace runtime` CLI:
+
+```json
+"localValidation": [{
+  "projectId": "api",
+  "label": "offline-regression",
+  "executable": "C:\\trusted-tools\\python.exe",
+  "args": ["-I", "-B", "C:\\trusted-tools\\check-offline.py"],
+  "timeoutMs": 120000
+}]
+```
+
+The project's sole trusted template must cover every registered check and have
+exact matching acceptance `command: JSON.stringify([executable,...args])`.
+Executables are absolute; argv is data, never shell text or issue/model commands.
+Explicit bounded execution controls are required. Omitting this registry
+preserves the legacy independent-proof stop without claiming tests ran.
+
+Checks run shell-free on a host-created detached snapshot of the exact verified
+implementation SHA. Source revision, configuration, current permission and
+exclusive owner are checked around execution. Hard deadlines/cancellation use
+the existing owned-process-tree runner. Credential environment variables are
+not inherited; only OS/path/temp environment plus offline/no-bytecode settings
+are forwarded. This reduces exposure, **not** filesystem/network isolation:
+tests execute code on the trusted host and must be appropriate for this lane.
+Keep the checker and pinned baseline test bodies outside worker-editable scope.
+Do not grant credential, security, infrastructure, deployment or destructive
+work merely because it fits a file path; configure conservative request
+exclusions and require trusted decisions for unsupported intent.
+
+The check's last stdout line must be JSON exactly shaped as:
+
+```json
+{ "schemaVersion": 1, "state": "passed", "evaluatedScope": 45 }
+```
+
+Scope is a positive actual evaluated-test count, not the number of configured
+commands. `passed` requires exit zero; `failed` requires nonzero. Empty, malformed,
+inconsistent or zero-scope receipts cannot be green. A failing check records
+failure and stops the lane. Timeout, interruption, lost binding, or a mutated
+snapshot records unknown evidence. Each proposal gets a same-journal admission
+before execution plus exact configuration/revision/command bindings, bounded
+output digests, exit codes and counts in its lifecycle summary. A reserved crash
+outcome is held, never automatically rerun. Checks cannot edit their snapshot,
+grant implementation/review/publication authority or claim independent evidence.
+Passing local tests still leaves needs-input for unavailable independent
+phase-critic/critical proof; no CI, remote policy or publication is fabricated.
+
+### Retained lifecycle recovery
+
 `lastPass.result.lifecycles` retains old configurations and actual core task
 states even when discovery/focus is removed. An admission receipt is not a
 completion receipt. After local implementation the built-in host records

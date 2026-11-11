@@ -172,6 +172,27 @@ describe("composed workspace host", () => {
       expect(decide()).toBeUndefined();
     }
     configuration.focus.mode = "execute";
+    configuration.runtime.proposalPolicy!.rules[0]!.needsInputTerms = [
+      "credentials",
+      "authentication",
+      "security",
+      "deployment",
+      "infrastructure",
+      "delete repository",
+    ];
+    for (const term of configuration.runtime.proposalPolicy!.rules[0]!
+      .needsInputTerms!) {
+      expect(
+        workspaceProposalPolicyDecision(
+          configuration,
+          {
+            ...item,
+            body: `Please change ${term.toUpperCase()} in the allowed source file`,
+          },
+          planned,
+        ),
+      ).toBeUndefined();
+    }
     expect(
       workspaceProposalPolicyDecision(
         configuration,

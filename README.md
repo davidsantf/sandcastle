@@ -106,6 +106,13 @@ Only the registered template supplies scopes and acceptance; source text grants
 no authority. Independent review, critical-change and publication gates still stop
 at needs-input. See [automatic local policy](docs/agents/orchestration-intake.md#automatic-bounded-local-policy).
 
+Optional revisioned `runtime.localValidation` registers exact shell-free host
+check argv against the implementation's pinned detached Git snapshot. Each
+check must match trusted template acceptance and return a nonzero structured
+test scope. Actual pass/fail/unknown evidence is journaled without automatic
+replay; passing local tests never substitutes for independent review or permits
+publication. See [local code validation](docs/agents/orchestration-workspace.md#trusted-local-code-validation).
+
 For bounded native local editing, configure the optional revision-bound
 `runtime.executionControls` **local-files** profile. It propagates credit and
 continuation limits, file-only tools, named MCP disables and a host process

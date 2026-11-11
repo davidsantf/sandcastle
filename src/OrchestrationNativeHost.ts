@@ -512,7 +512,7 @@ export function createOrchestrationNativeTick(options: {
           });
         } else {
           diagnostics.push(
-            `Proposal ${proposal.id}: outside bounded local policy; trusted host decision required`,
+            `Proposal ${proposal.id}: needs-input; outside bounded local policy; trusted host decision required`,
           );
         }
       }

@@ -340,7 +340,10 @@ describe("explicit trusted-local execution", () => {
       updated_at: "2026-11-09T08:00:00Z",
       assignees: [{ login: "owner" }],
     };
-    const transport = vi.fn(async () => ({ status: 200, body: [item] }));
+    const transport = vi.fn(async (request: { url: string }) => ({
+      status: 200,
+      body: request.url.includes("/issues/1") ? item : [item],
+    }));
     vi.mocked(run).mockImplementation(async (options) => {
       if (options.branchStrategy?.type !== "branch")
         throw new Error("Expected explicit branch strategy");
@@ -356,6 +359,7 @@ describe("explicit trusted-local execution", () => {
       },
     });
     expect(status.state).toBe("stopped");
+    expect(pass?.diagnostics).toEqual([]);
     expect(pass?.proposals[0]?.status).toBe("ready");
     expect(run).toHaveBeenCalledTimes(3);
     expect(

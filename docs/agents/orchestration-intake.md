@@ -38,6 +38,12 @@ Attempted operations with unknown results are never automatically repeated.
    races, cancellation, denied policy, and real callback invocation. Live checks
    are read-only and scoped to this configured repository; fixture results are
    not evidence of live framework execution.
+5. Optional native local checks execute trusted shell-free argv against the
+   exact implementation snapshot, measure nonzero test scope and retain
+   pass/fail/unknown evidence once per proposal. Exercise actual failure,
+   missing/zero-scope receipts, cancellation/deadline, source/configuration
+   mutation, snapshot mutation and reserved-outcome recovery. Local success
+   must not bypass independent critic/critical or publication needs-input.
 
 ## Runtime and rollout boundaries
 
@@ -363,6 +369,21 @@ It writes no human `approval` and conveys no independent acceptance/review,
 critical or publication evidence. The existing core lifecycle therefore retains
 genuine needs-input gates after an edit; an admission receipt is not completion.
 Trusted host acceptance helpers remain separate from model assertions.
+Rules can additionally register `needsInputTerms` (bounded literal,
+case-insensitive substring matches against source title/body). A matching
+request cannot receive automatic implementation authority and is reported as
+needs-input for a trusted host decision. This conservative host-owned exclusion
+can include credential, security, infrastructure, deployment and destructive
+operations; it is not semantic intent detection and can intentionally hold
+negated mentions too. Its configuration/digest binding cannot be changed by
+source text or a worker.
+
+For ordinary code lanes, register explicit source/test file scopes and
+[native local validation](orchestration-workspace.md#trusted-local-code-validation)
+instead of unrestricted repository scopes or documentation-only substitutes.
+Pinned host-owned baseline tests can run against the edited code separately
+from editable current tests, preventing removal of a regression check from
+silently turning acceptance green.
 
 Older planning/dispatching/unknown/admitted work for the same source/item blocks
 automatic progression of a later revision. Supersession preserves earlier
@@ -438,6 +459,34 @@ Python was selected per process with automatic setup disabled; no runtime or
 dependency installation, credential change, remote write or primary-checkout
 edit was performed. These results prove bounded local progression, not live
 LLMLab issue execution or unrestricted work readiness.
+
+### Actual ordinary code and test validation
+
+A separate 2026-11-11 isolated fixture exercised the same shipped public native
+path with real DevSquad investigation, specification, planning and implementation.
+The model fixed a Python arithmetic-mean implementation and added a regression
+test to its existing test module. The host committed exactly those two scoped
+files and automatically ran the registered shell-free Python checker on a
+detached snapshot of that commit. Frozen host assertions plus the edited
+unittest suite evaluated four tests and passed. An independent invocation failed
+before the edit (exit 1, three tests) and passed afterward (exit 0, four tests).
+Both same-process and fresh-process journal reopens retained four native launch
+admissions and one validation admission: no model or check replay.
+
+The lifecycle remained needs-input for unavailable independent critic/critical
+proof. Only hub source/data was synthetic; no substituted runner, seeded model
+artifacts, manual approval, remote write or publication was used. This is actual
+local model/code/test/validation evidence, not execution of a live LLMLab issue.
+
+The real LLMLab offline baseline was separately exercised with the existing
+Python 3.14.3: 45 frozen-baseline tests and 45 current tests passed without
+dependency installation. The configured coding lane names six offline Python
+helper/test pairs (dashboard URL, query templates, portable HTML, static Plotly
+HTML, artifact validation, WSR validation), not a repository-wide wildcard.
+Credential/security, infrastructure/deployment, live collectors/MCPs, dependency
+or manifest changes and destructive work remain outside that lane and require
+trusted input. Local tests do not supply independent review or publication
+authority.
 
 ## Bounded polling and recovery
 

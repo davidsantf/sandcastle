@@ -167,6 +167,23 @@ export const workspacePhaseDefinitionSchema = z.strictObject({
     family: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,199}$/),
   }),
 });
+export const workspaceLocalValidationSchema = z.strictObject({
+  projectId: identifier,
+  label: z.string().trim().min(1).max(200),
+  executable: z
+    .string()
+    .min(1)
+    .refine(path.isAbsolute, "absolute validation executable required"),
+  args: z
+    .array(
+      z
+        .string()
+        .max(8000)
+        .refine((value) => !value.includes("\0")),
+    )
+    .max(100),
+  timeoutMs: z.number().int().min(1000).max(240000),
+});
 export interface WorkspaceConfiguration {
   schemaVersion: 1;
   revision: number;
@@ -183,9 +200,14 @@ export interface WorkspaceConfiguration {
     command: string;
     executionTrust?: "independent-backend" | "trusted-local";
     executionControls?: import("./CopilotExecutionControls.js").CopilotExecutionControls;
+    localValidation?: z.infer<typeof workspaceLocalValidationSchema>[];
     proposalPolicy?: {
       kind: "bounded-local";
-      rules: { sourceId: string; taskTemplateId: string }[];
+      rules: {
+        sourceId: string;
+        taskTemplateId: string;
+        needsInputTerms?: string[];
+      }[];
     };
     phaseDefinitions: z.infer<typeof workspacePhaseDefinitionSchema>[];
   };
@@ -223,6 +245,11 @@ export const workspaceConfigurationSchema = z.strictObject({
       .refine((value) => !/[\u0000-\u001f]/.test(value), "invalid executable"),
     executionTrust: z.enum(["independent-backend", "trusted-local"]).optional(),
     executionControls: copilotExecutionControlsSchema.optional(),
+    localValidation: z
+      .array(workspaceLocalValidationSchema)
+      .min(1)
+      .max(100)
+      .optional(),
     proposalPolicy: z
       .strictObject({
         kind: z.literal("bounded-local"),
@@ -231,6 +258,11 @@ export const workspaceConfigurationSchema = z.strictObject({
             z.strictObject({
               sourceId: identifier,
               taskTemplateId: identifier,
+              needsInputTerms: z
+                .array(z.string().trim().min(3).max(100))
+                .min(1)
+                .max(50)
+                .optional(),
             }),
           )
           .min(1)
@@ -285,6 +317,52 @@ export function parseWorkspaceConfiguration(
     if (new Set(values).size !== values.length)
       throw new Error(`duplicate ${label}`);
   };
+  if (config.runtime.localValidation) {
+    if (!config.runtime.executionControls)
+      throw new Error(
+        "local validation requires explicit bounded execution controls",
+      );
+    unique(
+      config.runtime.localValidation.map(
+        (check) => `${check.projectId}:${check.label}`,
+      ),
+      "local validation",
+    );
+    for (const check of config.runtime.localValidation) {
+      const templates = config.taskTemplates.filter(
+        (task) => task.projectId === check.projectId,
+      );
+      if (
+        !ids.has(check.projectId) ||
+        templates.length !== 1 ||
+        templates[0]!.acceptance.find((item) => item.label === check.label)
+          ?.command !== JSON.stringify([check.executable, ...check.args])
+      )
+        throw new Error(
+          "local validation must match one exact trusted template acceptance argv",
+        );
+    }
+    for (const projectId of new Set(
+      config.runtime.localValidation.map((check) => check.projectId),
+    )) {
+      const template = config.taskTemplates.find(
+        (task) => task.projectId === projectId,
+      )!;
+      if (
+        template.acceptance.some(
+          (criterion) =>
+            !config.runtime.localValidation!.some(
+              (check) =>
+                check.projectId === projectId &&
+                check.label === criterion.label,
+            ),
+        )
+      )
+        throw new Error(
+          "local validation must cover every trusted acceptance criterion",
+        );
+    }
+  }
   unique(config.focus.projectIds, "focused project");
   unique(
     config.focus.permissions.map(
