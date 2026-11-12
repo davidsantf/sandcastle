@@ -90,6 +90,13 @@ unknown launches, local validation (not independent review), and recent events.
 Source text is rendered as text; runtime secrets and raw issue bodies are omitted.
 Keep this personal host configuration outside the repository. Stop the
 dashboard with Ctrl+C; restart with the same command and canonical databases.
+For Windows current-user sign-in startup of **only the read-only dashboard**,
+run `node scripts\dashboard-startup\build.mjs`, then
+`.\scripts\dashboard-startup\Install-Dashboard.ps1 -Configuration <absolute-dashboard.json>`.
+This installs a standalone user-local runtime and a least-privilege interactive
+logon task (Startup-folder shortcut if task registration is unavailable), without
+stored passwords or starting agents. See
+[dashboard sign-in startup and controls](docs/agents/orchestration-workspace.md#windows-dashboard-sign-in-startup).
 See [native intake and live-readiness boundaries](docs/agents/orchestration-intake.md).
 Native sources support a single deduplicated assignment-or-exact-tag selector;
 ADO can also restrict exact work-item types within native team-area scope.

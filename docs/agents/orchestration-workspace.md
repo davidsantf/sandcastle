@@ -515,3 +515,71 @@ See [service and controls](local-orchestration-service.md) for user-local
 ownership, cooperative cancellation and startup-artifact boundaries. Existing
 trusted-host and offline Cowork paths remain available; a fixture does not
 prove live identity, hub writes, performance or deployment.
+
+## Windows dashboard sign-in startup
+
+The execution service's `workspace startup` command remains preview-only.
+The separate opt-in installer below registers **only the read-only dashboard**:
+
+```powershell
+node scripts\dashboard-startup\build.mjs
+.\scripts\dashboard-startup\Install-Dashboard.ps1 -Configuration C:\work\dashboard.json
+Start-ScheduledTask -TaskName 'Sandcastle Read-only Dashboard'
+```
+
+Use the existing project dependencies to build; no installation is performed.
+The standalone Node22+ bundle, launcher, configuration and logs live under
+`$env:LOCALAPPDATA\Sandcastle\Dashboard`, with access limited to the current user,
+SYSTEM and Administrators. No worktree or `node_modules` is needed at sign-in.
+The installed Node executable must remain available. The copied dashboard
+configuration still references the **original canonical ledgers**: those files
+must remain available; databases and credential/control files are never copied.
+Rebuild and reinstall explicitly to update the pinned runtime, after stopping it.
+
+The task uses the current user's interactive logon, Limited privileges,
+IgnoreNew instance policy, no password, and no maximum execution time. It does
+not start LLMLab/LLMAPI workers, poll hubs or grant execution rights. The fixed
+installation binds `127.0.0.1:4318` with the dashboard's existing read-only and
+same-origin checks. If task registration is unavailable, the installer prints
+the reason and creates only `Sandcastle Dashboard.lnk` in the current-user
+Startup folder. Invoke that shortcut instead of `Start-ScheduledTask` in that case.
+This is sign-in startup, not a pre-logon Windows service.
+
+An exclusive OS file handle prevents duplicate supervisors, including repeated
+task/shortcut/manual launches; an unrelated port listener is reported, not killed
+or adopted. Each supervisor allows at most **three total child launches**, with
+5s and15s backoff. Exit/readiness failures exhaust that allowance rather than
+looping indefinitely. Stop requests are honored during readiness/backoff.
+`logs\supervisor.jsonl` records PID, readiness, exit, retry and exhaustion;
+separate timestamped stdout/stderr logs retain startup errors. The supervisor log
+rotates at1MB; each new owner retains the20 most recent child log files before
+creating its own. Logs are local diagnostics, not agent reasoning or completion
+evidence. Agent offline/unknown states remain visible without repair.
+
+```powershell
+$homeDir = Join-Path $env:LOCALAPPDATA 'Sandcastle\Dashboard'
+Get-ScheduledTask -TaskName 'Sandcastle Read-only Dashboard'
+Get-ScheduledTaskInfo -TaskName 'Sandcastle Read-only Dashboard'
+Get-Content "$homeDir\logs\supervisor.jsonl" -Tail 20
+Invoke-RestMethod http://127.0.0.1:4318/api/state
+
+# Stop this dashboard and its supervised child, not any agent:
+Set-Content "$homeDir\stop.request" 'stop'
+# Wait for the task to become Ready before restarting:
+Start-ScheduledTask -TaskName 'Sandcastle Read-only Dashboard'
+
+# Disable future sign-in startup (does not itself stop an existing process):
+Disable-ScheduledTask -TaskName 'Sandcastle Read-only Dashboard'
+# Re-enable:
+Enable-ScheduledTask -TaskName 'Sandcastle Read-only Dashboard'
+# Uninstall only this startup registration, after stopping:
+Unregister-ScheduledTask -TaskName 'Sandcastle Read-only Dashboard' -Confirm:$false
+```
+
+The Startup-folder fallback can be disabled by renaming that exact shortcut to
+`Sandcastle Dashboard.lnk.disabled`, re-enabled by restoring `.lnk`, and
+uninstalled by deleting only that shortcut. Keep the local runtime/config/logs
+for diagnosis or remove their specific files after confirming the supervisor
+stopped. Do not remove canonical ledgers. A successful current invocation
+verifies the registered action; the next actual sign-in is not tested by
+simulating reboot or signing the user out.
