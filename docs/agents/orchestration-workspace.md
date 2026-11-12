@@ -3,7 +3,8 @@
 Requires Node 22.13+ and Git. The local SQLite file is the configuration source
 of truth and also holds service, discovery and proposal records. Use the same
 absolute file for every command and the core journal; do not copy it while a
-service owns it. GitHub uses the current native `gh` account. The CLI's ADO read
+service owns it. GitHub sources can explicitly link an allowed named `gh` account;
+legacy unbound sources retain the current native account. The CLI's ADO read
 transport uses an existing host-only `AZURE_DEVOPS_EXT_PAT`; embedded trusted
 hosts may instead inject a bearer/PAT transport. Never put credentials in
 configuration or generated prompts. This command does not log in or install tools.
@@ -43,6 +44,48 @@ an atomic version comparison against its initial read.
 Pass plain local JSON files with `--file`. These files are host configuration,
 not work-item instructions. Unknown fields in focus/routes/runtime/sources fail
 validation. No executable authority module is loaded by workspace onboarding.
+
+## Linked allowed accounts
+
+For GitHub sources, configure a specific existing account and its allowlist:
+
+```json
+{
+  "kind": "github-cli",
+  "account": "configured_user",
+  "allowedAccounts": ["configured_user"]
+}
+```
+
+Save this credential-free JSON locally and apply it with the current exact
+configuration revision and source ID:
+
+```powershell
+sandcastle orchestrate workspace discovery-authentication --database C:\work\orchestration.sqlite --revision 4 --id github-source --file C:\work\github-account.json
+```
+
+This updates only the source authentication through the existing revision fence;
+it does not remove/recreate the source, change focus or grant permissions.
+All sources for the same GitHub repository must agree on their selected account.
+The selected account must be in the nonempty allowlist; duplicates, unregistered
+source IDs, stale revisions and provider mismatches fail validation.
+Configuration changes invalidate old approval bindings, never migrate approval or
+clear unknown invocations. Do not edit active unknown evidence to force recovery.
+
+Native discovery and workflow reads/writes retrieve only the selected account's
+existing `gh` credential and verify its actual `/user` identity before repository
+requests. Ambient tokens cannot override this selection. Credentials stay in
+process memory, not configuration, prompts, logs or journals; no global
+`gh auth switch`, login, installation or account fallback is performed.
+Missing credentials, identity mismatch and repository403 are genuine blockers,
+even if another installed account is an administrator. An approver is a workflow
+role, not an automatic choice of execution credential.
+
+Legacy sources without a binding preserve their existing ambient-account behavior
+for compatibility; they do not claim account enforcement. Azure DevOps retains
+its separate `azure-cli`/`expectedIdentity` authentication and Observe/write gates.
+This GitHub binding does not select or repair the inference provider's account,
+and does not change the Copilot app's own PR-tool account selection.
 
 ## GitHub label workflow
 

@@ -24,6 +24,7 @@ export * from "./OrchestrationProposal.js";
 export * from "./OrchestrationNativeHost.js";
 export * from "./OrchestrationWorkspaceHost.js";
 export * from "./OrchestrationAzureCliTransport.js";
+export * from "./OrchestrationGithubAccount.js";
 export * from "./OrchestrationNativeDispatch.js";
 export * from "./OrchestrationNativeReview.js";
 export * from "./OrchestrationPlanningRecovery.js";

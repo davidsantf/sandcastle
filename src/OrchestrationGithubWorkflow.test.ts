@@ -209,6 +209,35 @@ const approvingComment = () => ({
   created_at: "2026-11-11T21:01:00Z",
   updated_at: "2026-11-11T21:01:00Z",
 });
+it("carries the source account binding through every workflow read/write without substituting the approver", async () => {
+  const f = await fixture();
+  const authentication = {
+    kind: "github-cli" as const,
+    account: "owner",
+    allowedAccounts: ["owner"],
+  };
+  f.config.discovery[0]!.authentication = authentication;
+  await f.workflow().ready(f.planned, signal());
+  expect(f.comments).toHaveLength(1);
+  expect(
+    f.transport.mock.calls.every((call) => call[4] === authentication),
+  ).toBe(true);
+});
+it("refuses workflow writes when an injected transport identifies a different configured account", async () => {
+  const f = await fixture();
+  f.config.discovery[0]!.authentication = {
+    kind: "github-cli",
+    account: "different_user",
+    allowedAccounts: ["different_user"],
+  };
+  await expect(f.workflow().ready(f.planned, signal())).rejects.toThrow(
+    "account identity mismatch",
+  );
+  expect(f.transport.mock.calls.every(([, method]) => method === "GET")).toBe(
+    true,
+  );
+  expect(f.comments).toHaveLength(0);
+});
 it("approves an exact new unedited comment through the existing durable plan binding and exclusive stages", async () => {
   const f = await fixture(true);
   await f.workflow().ready(f.planned, signal());

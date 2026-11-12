@@ -28,6 +28,7 @@ import {
 import {
   workspaceContractRouteSchema,
   workspaceDiscoverySourceSchema,
+  workspaceDiscoveryAuthenticationSchema,
   workspaceFocusSchema,
   workspaceConfigurationSchema,
   parseWorkspaceConfiguration,
@@ -245,6 +246,26 @@ const discoveryRemove = Command.make(
         },
       ),
     ),
+);
+const discoveryAuthentication = Command.make(
+  "discovery-authentication",
+  { database, revision: Options.integer("revision"), id, file },
+  (args) =>
+    withWorkspace(args.database, (store) => {
+      const authentication = workspaceDiscoveryAuthenticationSchema.parse(
+        readJson(args.file),
+      );
+      return updateWorkspaceConfiguration(store, args.revision, (config) => {
+        if (!config.discovery.some((source) => source.id === args.id))
+          throw new Error("unknown discovery source");
+        return {
+          ...config,
+          discovery: config.discovery.map((source) =>
+            source.id === args.id ? { ...source, authentication } : source,
+          ),
+        };
+      });
+    }),
 );
 const discoveryRetry = Command.make(
   "discovery-retry",
@@ -477,6 +498,7 @@ export const orchestrationWorkspaceCommand = Command.make("workspace").pipe(
     focus,
     discoveryAdd,
     discoveryRemove,
+    discoveryAuthentication,
     discoveryRetry,
     runtime,
     templateAdd,

@@ -77,6 +77,9 @@ For versioned local onboarding without a pre-existing PR, start with
 `sandcastle orchestrate workspace init --database <local-sqlite-file>`.
 See [workspace setup and exact permissions](docs/agents/orchestration-workspace.md)
 and [user-local service controls](docs/agents/local-orchestration-service.md).
+GitHub sources support [linked allowed accounts](docs/agents/orchestration-workspace.md#linked-allowed-accounts):
+pin an existing named account for discovery and workflow writes, with identity
+verification and no silent fallback to another owner when access is denied.
 Use `workspace start/status/pause/resume/stop` for local polling and
 `workspace proposals/proposal/review` for revision-bound local proposal review.
 For a local read-only activity UI, run

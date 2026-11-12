@@ -14,7 +14,10 @@ import {
   registerWorkspaceRoute,
   removeWorkspaceRoute,
 } from "./OrchestrationWorkspace.js";
-import { parseWorkspaceConfiguration } from "./OrchestrationWorkspaceContract.js";
+import {
+  parseWorkspaceConfiguration,
+  workspaceDiscoverySourceSchema,
+} from "./OrchestrationWorkspaceContract.js";
 import { digest, parseOrchestrationCatalog } from "./MultiProjectProtocol.js";
 import { MultiProjectJournal } from "./MultiProjectJournal.js";
 import {
@@ -58,6 +61,50 @@ const route = {
 };
 
 describe("versioned orchestration workspace", () => {
+  it("rejects ambiguous account bindings across sources for the same repository", () => {
+    const { store, directory } = setup();
+    const config = initializeWorkspace(store);
+    const api = project("api", directory);
+    const source = workspaceDiscoverySourceSchema.parse({
+      id: "first",
+      projectId: "api",
+      hub: api.hub,
+      selector: { assignedTo: "owner" },
+      authentication: {
+        kind: "github-cli",
+        account: "configured_user",
+        allowedAccounts: ["configured_user"],
+      },
+    });
+    const configured = { ...config, projects: [api], discovery: [source] };
+    expect(() => parseWorkspaceConfiguration(configured)).not.toThrow();
+    expect(() =>
+      parseWorkspaceConfiguration({
+        ...configured,
+        discovery: [
+          source,
+          { ...source, id: "second", authentication: undefined },
+        ],
+      }),
+    ).toThrow("consistent account binding");
+    expect(() =>
+      parseWorkspaceConfiguration({
+        ...configured,
+        discovery: [
+          source,
+          {
+            ...source,
+            id: "second",
+            authentication: {
+              kind: "github-cli",
+              account: "other",
+              allowedAccounts: ["other"],
+            },
+          },
+        ],
+      }),
+    ).toThrow("consistent account binding");
+  });
   it("defaults the strict review loop to ten and rejects invalid configured limits", () => {
     const { store } = setup();
     const config = initializeWorkspace(store);

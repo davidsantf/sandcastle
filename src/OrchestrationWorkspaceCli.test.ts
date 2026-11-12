@@ -50,6 +50,98 @@ const invoke = (database: string, command: string, ...args: string[]) => {
 };
 
 describe("compiled workspace CLI", () => {
+  it("binds source authentication by exact revision without removing its source or broadening focus", () => {
+    const directory = fs.mkdtempSync(
+      path.join(os.tmpdir(), "workspace-account-"),
+    );
+    const database = path.join(directory, "state.sqlite");
+    const store = new OrchestrationWorkspaceStore(database);
+    try {
+      initializeWorkspace(store);
+      const hub = { kind: "github" as const, repository: "fixture/project" };
+      updateWorkspaceConfiguration(store, 1, (config) => ({
+        ...config,
+        projects: [
+          {
+            id: "fixture",
+            repositoryRoot: process.cwd(),
+            mode: "individual",
+            hub,
+          },
+        ],
+        discovery: [
+          {
+            id: "read",
+            projectId: "fixture",
+            hub,
+            selector: { assignedTo: "owner" },
+            pageSize: 10,
+            maxPages: 1,
+            includeReviewFeedback: false,
+            includeDependencies: false,
+          },
+        ],
+      }));
+      const authentication = {
+        kind: "github-cli",
+        account: "configured_user",
+        allowedAccounts: ["configured_user"],
+      };
+      const file = path.join(directory, "authentication.json");
+      fs.writeFileSync(file, JSON.stringify(authentication));
+      expect(() =>
+        invoke(
+          database,
+          "discovery-authentication",
+          "--revision",
+          "1",
+          "--id",
+          "read",
+          "--file",
+          file,
+        ),
+      ).toThrow();
+      const result = invoke(
+        database,
+        "discovery-authentication",
+        "--revision",
+        "2",
+        "--id",
+        "read",
+        "--file",
+        file,
+      );
+      expect(result.revision).toBe(3);
+      expect(result.discovery).toEqual([
+        expect.objectContaining({
+          id: "read",
+          selector: { assignedTo: "owner" },
+          authentication,
+        }),
+      ]);
+      expect(result.focus).toEqual(
+        expect.objectContaining({
+          mode: "observe",
+          permissions: [],
+        }),
+      );
+      expect(() =>
+        invoke(
+          database,
+          "discovery-authentication",
+          "--revision",
+          "2",
+          "--id",
+          "read",
+          "--file",
+          file,
+        ),
+      ).toThrow();
+    } finally {
+      store.close();
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
   it("rearms one failed read under the current configuration without deleting its cursor or failure history", async () => {
     const directory = fs.mkdtempSync(
       path.join(os.tmpdir(), "workspace-retry-"),

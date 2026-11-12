@@ -1,5 +1,6 @@
 import path from "node:path";
 import { z } from "zod";
+import { githubAccountAuthenticationSchema } from "./OrchestrationGithubAccount.js";
 import {
   assertCopilotFileScopes,
   copilotExecutionControlsSchema,
@@ -86,6 +87,13 @@ export const workspaceContractRouteSchema = z.strictObject({
 export type WorkspaceContractRoute = z.infer<
   typeof workspaceContractRouteSchema
 >;
+export const workspaceDiscoveryAuthenticationSchema = z.union([
+  z.strictObject({
+    kind: z.literal("azure-cli"),
+    expectedIdentity: z.string().trim().min(1).max(200).email(),
+  }),
+  githubAccountAuthenticationSchema,
+]);
 export const workspaceDiscoverySourceSchema = z
   .strictObject({
     id: identifier,
@@ -121,12 +129,7 @@ export const workspaceDiscoverySourceSchema = z
         "duplicate work item type",
       )
       .optional(),
-    authentication: z
-      .strictObject({
-        kind: z.literal("azure-cli"),
-        expectedIdentity: z.string().trim().min(1).max(200).email(),
-      })
-      .optional(),
+    authentication: workspaceDiscoveryAuthenticationSchema.optional(),
     pageSize: z.number().int().min(1).max(20).default(10),
     maxPages: z.number().int().min(1).max(20).default(5),
     includeReviewFeedback: z.boolean().default(true),
@@ -149,8 +152,12 @@ export const workspaceDiscoverySourceSchema = z
     "workItemTypes requires an ADO discovery source",
   )
   .refine(
-    (source) => !source.authentication || source.hub.kind === "ado",
-    "Azure CLI authentication requires an ADO discovery source",
+    (source) =>
+      !source.authentication ||
+      (source.authentication.kind === "azure-cli"
+        ? source.hub.kind === "ado"
+        : source.hub.kind === "github"),
+    "discovery authentication must match its hub provider",
   );
 export type WorkspaceDiscoverySource = z.infer<
   typeof workspaceDiscoverySourceSchema
@@ -489,7 +496,23 @@ export function parseWorkspaceConfiguration(
         );
     }
   }
+  const githubAccounts = new Map<string, string>();
   for (const source of config.discovery) {
+    if (source.hub.kind === "github") {
+      const repository = source.hub.repository.toLowerCase();
+      const account =
+        source.authentication?.kind === "github-cli"
+          ? source.authentication.account.toLowerCase()
+          : "";
+      if (
+        githubAccounts.has(repository) &&
+        githubAccounts.get(repository) !== account
+      )
+        throw new Error(
+          "GitHub repository sources require one consistent account binding",
+        );
+      githubAccounts.set(repository, account);
+    }
     const project = config.projects.find(
       (project) => project.id === source.projectId,
     );

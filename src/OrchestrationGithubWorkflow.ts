@@ -1,4 +1,8 @@
 import { execFile } from "node:child_process";
+import {
+  createGithubAccountEnvironment,
+  type GithubAccountAuthentication,
+} from "./OrchestrationGithubAccount.js";
 import { z } from "zod";
 import { digest } from "./MultiProjectProtocol.js";
 import type {
@@ -29,14 +33,19 @@ export type GithubWorkflowTransport = (
   method: "GET" | "POST" | "DELETE",
   body: unknown,
   signal: AbortSignal,
+  authentication?: GithubAccountAuthentication,
 ) => Promise<unknown>;
-export const githubWorkflowTransport: GithubWorkflowTransport = (
+export const githubWorkflowTransport: GithubWorkflowTransport = async (
   endpoint,
   method,
   body,
   signal,
-) =>
-  new Promise((resolve, reject) => {
+  authentication,
+) => {
+  const env = authentication
+    ? await createGithubAccountEnvironment(authentication)(signal)
+    : undefined;
+  return new Promise((resolve, reject) => {
     const child = execFile(
       "gh",
       [
@@ -46,7 +55,7 @@ export const githubWorkflowTransport: GithubWorkflowTransport = (
         method,
         ...(body === undefined ? [] : ["--input", "-"]),
       ],
-      { signal, timeout: 30000, maxBuffer: 1024 * 1024 },
+      { env, signal, timeout: 30000, maxBuffer: 1024 * 1024 },
       (error, stdout, stderr) => {
         if (error) {
           const status = /HTTP (403|404|429)\b/.exec(stderr)?.[1];
@@ -66,6 +75,7 @@ export const githubWorkflowTransport: GithubWorkflowTransport = (
     );
     if (body !== undefined) child.stdin?.end(JSON.stringify(body));
   });
+};
 export const githubWorkflowKey = (
   namespace: string,
   sourceId: string,
@@ -206,7 +216,33 @@ export function createGithubWorkflow(options: {
   ) => OrchestrationDiscoveryTransport | undefined;
 }) {
   const { configuration: config, store } = options;
-  const transport = options.transport ?? githubWorkflowTransport;
+  const selectedTransport = options.transport ?? githubWorkflowTransport;
+  const transport: GithubWorkflowTransport = (
+    endpoint,
+    method,
+    body,
+    signal,
+    authentication,
+  ) => {
+    const repository = /^\/?repos\/([^/]+\/[^/?]+)(?:\/|\?|$)/.exec(
+      endpoint,
+    )?.[1];
+    const source = repository
+      ? config.discovery.find(
+          (source) =>
+            source.hub.kind === "github" &&
+            source.hub.repository.toLowerCase() === repository.toLowerCase(),
+        )
+      : undefined;
+    const binding =
+      authentication ??
+      (source?.authentication?.kind === "github-cli"
+        ? source.authentication
+        : undefined);
+    return binding
+      ? selectedTransport(endpoint, method, body, signal, binding)
+      : selectedTransport(endpoint, method, body, signal);
+  };
   const queue = createOrchestrationProposalQueue({
     store,
     namespace: config.id,
@@ -266,7 +302,7 @@ export function createGithubWorkflow(options: {
     proposal: OrchestrationProposal,
     signal: AbortSignal,
   ) => {
-    const { repository } = sourceFor(proposal);
+    const { repository, source } = sourceFor(proposal);
     const fresh = await currentSource(proposal, signal);
     if (
       config.focus.mode !== "execute" ||
@@ -294,8 +330,23 @@ export function createGithubWorkflow(options: {
         "GitHub workflow requires repository issue/label write permission",
       );
     const identity = actor.parse(
-      await transport("user", "GET", undefined, signal),
+      await transport(
+        "user",
+        "GET",
+        undefined,
+        signal,
+        source.authentication?.kind === "github-cli"
+          ? source.authentication
+          : undefined,
+      ),
     ).login;
+    if (
+      source.authentication?.kind === "github-cli" &&
+      identity.toLowerCase() !== source.authentication.account.toLowerCase()
+    )
+      throw new Error(
+        "Configured GitHub workflow account identity mismatch; no write attempted",
+      );
     return { fresh, identity };
   };
   const pages = async (endpoint: string, signal: AbortSignal) => {

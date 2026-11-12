@@ -1,4 +1,9 @@
 import { execFile } from "node:child_process";
+import {
+  createGithubAccountEnvironment,
+  OrchestrationGithubAccountError,
+  type GithubAccountAuthentication,
+} from "./OrchestrationGithubAccount.js";
 import { z } from "zod";
 import { digest } from "./MultiProjectProtocol.js";
 import { orchestrationWorkflowLabels } from "./OrchestrationWorkflowContract.js";
@@ -154,10 +159,15 @@ const safeUrl = (v: unknown): string => {
   return url.href;
 };
 
-/** Uses the existing gh account. Error bodies and credentials are never logged. */
-export const orchestrationGithubReadTransport: OrchestrationDiscoveryTransport =
-  (request, signal) =>
-    new Promise((resolve, reject) => {
+export function createOrchestrationGithubReadTransport(
+  authentication?: GithubAccountAuthentication,
+): OrchestrationDiscoveryTransport {
+  const environment = authentication
+    ? createGithubAccountEnvironment(authentication)
+    : undefined;
+  return async (request, signal) => {
+    const env = await environment?.(signal);
+    return new Promise((resolve, reject) => {
       if (
         request.method !== "GET" ||
         !/^\/repos\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:\/|\?|$)/.test(
@@ -179,7 +189,7 @@ export const orchestrationGithubReadTransport: OrchestrationDiscoveryTransport =
           "-H",
           "Accept: application/vnd.github+json",
         ],
-        { signal, timeout: 30_000, maxBuffer: 4 * 1024 * 1024 },
+        { env, signal, timeout: 30_000, maxBuffer: 4 * 1024 * 1024 },
         (error, stdout) => {
           const split = stdout.search(/\r?\n\r?\n/);
           const header = stdout.slice(0, split);
@@ -212,6 +222,7 @@ export const orchestrationGithubReadTransport: OrchestrationDiscoveryTransport =
             for (const token of [
               process.env.GH_TOKEN,
               process.env.GITHUB_TOKEN,
+              env?.GH_TOKEN,
             ])
               if (token) body = body.replaceAll(token, "[redacted]");
             resolve({ status, body: JSON.parse(body) });
@@ -221,6 +232,11 @@ export const orchestrationGithubReadTransport: OrchestrationDiscoveryTransport =
         },
       );
     });
+  };
+}
+/** Legacy callers retain the current gh account unless explicitly bound. */
+export const orchestrationGithubReadTransport =
+  createOrchestrationGithubReadTransport();
 
 /** WIQL POST is a read operation; arbitrary ADO mutations are not supported. */
 export function createOrchestrationAdoReadTransport(credential: {
@@ -320,7 +336,11 @@ export function createOrchestrationDiscoveryAdapter(
   const native =
     transport ??
     (source.hub.kind === "github"
-      ? orchestrationGithubReadTransport
+      ? createOrchestrationGithubReadTransport(
+          source.authentication?.kind === "github-cli"
+            ? source.authentication
+            : undefined,
+        )
       : undefined);
   const hub = source.hub;
   const selector = source.selector;
@@ -369,6 +389,11 @@ export function createOrchestrationDiscoveryAdapter(
     } catch (error) {
       if (error instanceof OrchestrationDiscoveryError || signal.aborted)
         throw error;
+      if (error instanceof OrchestrationGithubAccountError) {
+        const denied = new OrchestrationDiscoveryError("access");
+        denied.message = `${error.message} Source cursor was not advanced.`;
+        throw denied;
+      }
       throw new OrchestrationDiscoveryError("transport");
     }
     if (response.status === 429) {
