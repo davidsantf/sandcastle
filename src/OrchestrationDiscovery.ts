@@ -303,6 +303,11 @@ export function createOrchestrationDiscoveryAdapter(
   input: OrchestrationDiscoverySource,
   transport?: OrchestrationDiscoveryTransport,
   focus: OrchestrationDiscoveryScope = {},
+  workflowAdmission?: (item: OrchestrationDiscoveredItem) => boolean,
+  workflowRevision?: (
+    item: OrchestrationDiscoveredItem,
+    compatibleRevisions: readonly string[],
+  ) => string | undefined,
 ) {
   const source = orchestrationDiscoverySourceSchema.parse(input);
   if (!sourceScopeReadiness(source, focus).supported)
@@ -393,6 +398,7 @@ export function createOrchestrationDiscoveryAdapter(
   const observeGithub = async (
     item: Record<string, unknown>,
     signal: AbortSignal,
+    previousRevision?: string,
   ) => {
     const number = positive(item.number);
     const feedback: unknown[] = [];
@@ -482,15 +488,13 @@ export function createOrchestrationDiscoveryAdapter(
         .map((label) => text(label.name, 200))
         .sort(),
     };
-    const revision = source.workflow
+    let revision = source.workflow
       ? digest(
           JSON.stringify({
             ...snapshot,
             updatedAt: undefined,
             labels: snapshot.labels.filter(
-              (label) =>
-                label === "orchestration-ready" ||
-                !orchestrationWorkflowLabels.includes(label),
+              (label) => !orchestrationWorkflowLabels.includes(label),
             ),
             assignees: rows(item.assignees ?? [])
               .map((actor) => text(actor.login, 100))
@@ -498,6 +502,32 @@ export function createOrchestrationDiscoveryAdapter(
           }),
         )
       : digest(JSON.stringify(snapshot));
+    if (source.workflow) {
+      // Older plans included ready in the binding. Recompute it from fresh
+      // semantic facts, never from retained issue content or remote stage intent.
+      const compatible = [
+        revision,
+        digest(
+          JSON.stringify({
+            ...snapshot,
+            updatedAt: undefined,
+            labels: [
+              ...snapshot.labels.filter(
+                (label) => !orchestrationWorkflowLabels.includes(label),
+              ),
+              "orchestration-ready",
+            ].sort(),
+            assignees: rows(item.assignees ?? [])
+              .map((actor) => text(actor.login, 100))
+              .sort(),
+          }),
+        ),
+      ];
+      const retained =
+        previousRevision ??
+        workflowRevision?.({ ...snapshot, revision }, compatible);
+      if (retained && compatible.includes(retained)) revision = retained;
+    }
     return { ...snapshot, revision };
   };
   const quote = (v: string) => `'${v.replaceAll("'", "''")}'`;
@@ -901,9 +931,15 @@ export function createOrchestrationDiscoveryAdapter(
       const value = obj(await request(`${base}/issues/${item.id}`, signal));
       if (positive(value.number) !== positive(Number(item.id)))
         throw new OrchestrationDiscoveryError("invalid");
-      if (!githubEligible(value) || value.state !== "open")
+      if (value.state !== "open")
         throw new OrchestrationDiscoveryError("access");
-      return observeGithub(value, signal);
+      const observed = await observeGithub(value, signal, item.revision);
+      if (
+        !githubEligible(value) &&
+        !(source.workflow && workflowAdmission?.(observed))
+      )
+        throw new OrchestrationDiscoveryError("access");
+      return observed;
     },
     async preflight(signal: AbortSignal) {
       const value = obj(

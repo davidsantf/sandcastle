@@ -37,6 +37,7 @@ import { createOrchestrationAzureCliReadTransport } from "./OrchestrationAzureCl
 import { digest } from "./MultiProjectProtocol.js";
 import type { OrchestrationProposal } from "./OrchestrationProposal.js";
 import type { OrchestrationDiscoveredItem } from "./OrchestrationDiscovery.js";
+import { retainedGithubWorkflowAdmission } from "./OrchestrationWorkflowContract.js";
 
 export function workspaceProposalPolicyDecision(
   configuration: WorkspaceConfiguration,
@@ -190,6 +191,9 @@ export function configuredWorkspacePlanner(
       projectIds.has(task.projectId),
     ),
     evaluateFocus: evaluateOrchestrationFocus,
+    workflowAdmission: store
+      ? retainedGithubWorkflowAdmission(configuration, store)
+      : undefined,
     transport,
     invoke,
     ...(configuration.runtime.executionTrust === "trusted-local"
@@ -383,6 +387,23 @@ export function createWorkspaceNativeTick(
     if (configuration.focus.mode === "execute")
       for (const { proposal } of queue.list()) {
         if (
+          proposal.status !== "superseded" ||
+          proposal.configurationRevision !== configuration.revision ||
+          !workflow.enabled(proposal)
+        )
+          continue;
+        try {
+          await workflow.reconcilePublishedPlan(proposal, signal);
+        } catch {
+          signal.throwIfAborted();
+          diagnostics.push(
+            `Proposal ${proposal.id}: retained published-plan compatibility could not be verified; existing uncertainty holds preserved`,
+          );
+        }
+      }
+    if (configuration.focus.mode === "execute")
+      for (const { proposal } of queue.list()) {
+        if (
           proposal.status !== "ready" ||
           !workflow.enabled(proposal) ||
           proposal.configurationRevision !== configuration.revision ||
@@ -394,11 +415,11 @@ export function createWorkspaceNativeTick(
           continue;
         try {
           await workflow.ready(proposal, signal);
-        } catch {
+        } catch (error) {
           signal.throwIfAborted();
-          workflow.syncFailure(proposal);
+          const diagnostic = workflow.syncFailure(proposal, error);
           diagnostics.push(
-            `Proposal ${proposal.id}: GitHub plan/approval synchronization failed or is uncertain; no approval inferred`,
+            `Proposal ${proposal.id}: ${diagnostic}; no approval inferred`,
           );
         }
       }
@@ -438,10 +459,11 @@ export function createWorkspaceNativeTick(
                   "planning",
                   abort,
                 );
-              } catch {
+              } catch (error) {
                 abort.throwIfAborted();
+                const diagnostic = workflow.syncFailure(proposal, error);
                 throw new OrchestrationProposalBlockedError(
-                  "GitHub planning stage synchronization failed or is uncertain; no worker launched",
+                  `GitHub planning stage synchronization failed or is uncertain; no worker launched${diagnostic.includes("publish-item") ? `: ${diagnostic}` : ""}`,
                 );
               }
             }

@@ -53,7 +53,7 @@ it("keeps label-workflow bookkeeping stable while real content, assignment and u
   );
   const initial = (await adapter.poll(null, signal())).items[0]!;
   raw.updated_at = "2026-11-11T21:00:00Z";
-  raw.labels.push({ name: "orchestration-planning" });
+  raw.labels = [{ name: "orchestration-planning" }];
   expect((await adapter.refresh(initial, signal())).revision).toBe(
     initial.revision,
   );

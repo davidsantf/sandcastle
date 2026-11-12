@@ -40,12 +40,14 @@ import {
 export { getOrchestrationNativeScopeReadiness } from "./OrchestrationDiscovery.js";
 import {
   createOrchestrationProposalQueue,
+  retainedGithubWorkflowRevision,
   priorProposalExecutionHold,
   OrchestrationProposalBlockedError,
   type OrchestrationIntakeStore,
   type OrchestrationProposal,
   type OrchestrationProposalArtifacts,
 } from "./OrchestrationProposal.js";
+import { retainedGithubWorkflowAdmission } from "./OrchestrationWorkflowContract.js";
 
 export type OrchestrationIntakeAction = WorkspaceAction;
 export type OrchestrationNativeConfiguration = Pick<
@@ -278,6 +280,8 @@ export function createOrchestrationNativeTick(options: {
         source,
         options.transport?.(source),
         configuration.focus,
+        retainedGithubWorkflowAdmission(configuration, store),
+        retainedGithubWorkflowRevision(configuration, store),
       );
       if (!hasNativeScope(configuration.focus))
         adapters.set(source.id, adapter);
@@ -1004,6 +1008,7 @@ export function createOrchestrationLocalExecutionRecorder(options: {
 /** Data-only setup for the existing executor; never invents task or backend authority. */
 export function createConfiguredDevsquadProposalPlanner(options: {
   configuration: WorkspaceConfiguration;
+  workflowAdmission?: (item: OrchestrationDiscoveredItem) => boolean;
   evaluateFocus: OrchestrationIntakeFocusEvaluator;
   tasks?: OrchestrationTask[];
   sandbox?: (request: OrchestrationWorkerRequest) => SandboxProvider;
@@ -1147,6 +1152,7 @@ export function createConfiguredDevsquadProposalPlanner(options: {
             source,
             options.transport?.(source),
             currentConfiguration.focus,
+            options.workflowAdmission,
           ).refresh(item, signal);
         } catch {
           signal.throwIfAborted();

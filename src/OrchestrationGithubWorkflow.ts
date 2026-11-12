@@ -17,7 +17,12 @@ import {
   createOrchestrationDiscoveryAdapter,
   type OrchestrationDiscoveryTransport,
 } from "./OrchestrationDiscovery.js";
-import { orchestrationWorkflowLabels } from "./OrchestrationWorkflowContract.js";
+import {
+  githubWorkflowAdmissionKey,
+  orchestrationWorkflowLabels,
+  retainedGithubWorkflowAdmission,
+} from "./OrchestrationWorkflowContract.js";
+import { evaluateOrchestrationFocus } from "./OrchestrationFocus.js";
 
 export type GithubWorkflowTransport = (
   endpoint: string,
@@ -80,6 +85,9 @@ const commentSchema = z.object({
   user: actor,
   created_at: z.string().datetime({ offset: true }),
 });
+const approvalCommentSchema = commentSchema.extend({
+  updated_at: z.string().datetime({ offset: true }),
+});
 export const githubPlanPublicationSchema = z.object({
   proposalId: z.string(),
   proposalDigest: z.string(),
@@ -91,6 +99,67 @@ export const githubPlanPublicationSchema = z.object({
   bodyDigest: z.string(),
   approver: z.string(),
 });
+const publicationMatches = (
+  p: z.infer<typeof githubPlanPublicationSchema>,
+  proposal: OrchestrationProposal,
+  publishedBody: string,
+) =>
+  p.proposalId === proposal.id &&
+  p.proposalDigest === proposal.digest &&
+  p.sourceRevision === proposal.sourceRevision &&
+  p.configurationRevision === proposal.configurationRevision &&
+  proposal.digest ===
+    digest(
+      JSON.stringify({
+        id: proposal.id,
+        sourceRevision: proposal.sourceRevision,
+        configurationRevision: proposal.configurationRevision,
+        artifacts: proposal.artifacts,
+      }),
+    ) &&
+  digest(publishedBody) === p.bodyDigest;
+
+const commentApprovalProofSchema = z.object({
+  kind: z.literal("comment"),
+  approvalCommentId: z.number().int().positive(),
+  approvalBodyDigest: z.string(),
+  actor: z.string(),
+  at: z.string(),
+  publication: githubPlanPublicationSchema,
+});
+class GithubWorkflowWriteAuthorityError extends Error {}
+
+export function attributedWorkflowCommentApproval(input: {
+  publication: z.infer<typeof githubPlanPublicationSchema>;
+  proposal: OrchestrationProposal;
+  comments: unknown[];
+  publishedBody: string;
+}) {
+  const { publication: p } = input;
+  if (!publicationMatches(p, input.proposal, input.publishedBody)) return null;
+  const match = input.comments
+    .map((row) => approvalCommentSchema.safeParse(row))
+    .filter((row) => row.success)
+    .map((row) => row.data)
+    .filter(
+      (row) =>
+        /^plan approved$/i.test(row.body.trim()) &&
+        row.user.login.toLowerCase() === p.approver.toLowerCase() &&
+        row.id > p.commentId &&
+        Date.parse(row.created_at) > Date.parse(p.publishedAt) &&
+        Date.parse(row.updated_at) === Date.parse(row.created_at),
+    )
+    .sort((a, b) => a.id - b.id)[0];
+  return match
+    ? {
+        kind: "comment" as const,
+        approvalCommentId: match.id,
+        approvalBodyDigest: digest(match.body),
+        actor: match.user.login,
+        at: match.created_at,
+      }
+    : null;
+}
 export function attributedWorkflowApproval(input: {
   publication: z.infer<typeof githubPlanPublicationSchema>;
   proposal: OrchestrationProposal;
@@ -100,11 +169,7 @@ export function attributedWorkflowApproval(input: {
 }) {
   const { publication: p, proposal } = input;
   if (
-    p.proposalId !== proposal.id ||
-    p.proposalDigest !== proposal.digest ||
-    p.sourceRevision !== proposal.sourceRevision ||
-    p.configurationRevision !== proposal.configurationRevision ||
-    digest(input.publishedBody) !== p.bodyDigest ||
+    !publicationMatches(p, proposal, input.publishedBody) ||
     !input.labels.includes("orchestration-implementation-ready")
   )
     return null;
@@ -174,15 +239,16 @@ export function createGithubWorkflow(options: {
       endpoint: `repos/${source.hub.repository}/issues/${proposal.source.id}`,
     };
   };
-  const current = async (
+  const currentSource = async (
     proposal: OrchestrationProposal,
     signal: AbortSignal,
   ) => {
-    const { source, repository } = sourceFor(proposal);
+    const { source } = sourceFor(proposal);
     const fresh = await createOrchestrationDiscoveryAdapter(
       source,
       options.discoveryTransport?.(source),
       config.focus,
+      retainedGithubWorkflowAdmission(config, store),
     ).refresh(proposal.source, signal);
     if (
       fresh.revision !== proposal.sourceRevision ||
@@ -193,6 +259,25 @@ export function createGithubWorkflow(options: {
     )
       throw new Error(
         "Source changed or prior execution remains unresolved; workflow effect blocked",
+      );
+    return fresh;
+  };
+  const current = async (
+    proposal: OrchestrationProposal,
+    signal: AbortSignal,
+  ) => {
+    const { repository } = sourceFor(proposal);
+    const fresh = await currentSource(proposal, signal);
+    if (
+      config.focus.mode !== "execute" ||
+      !evaluateOrchestrationFocus(config.focus, {
+        projectId: fresh.projectId,
+        action: "publish-item",
+        ...("scope" in fresh ? fresh.scope : {}),
+      }).allowed
+    )
+      throw new GithubWorkflowWriteAuthorityError(
+        "GitHub workflow requires configured issue write authority: execute mode and an exact publish-item grant in the configured focus; no provider write attempted",
       );
     const permissions = z
       .object({
@@ -233,6 +318,8 @@ export function createGithubWorkflow(options: {
       "GitHub workflow evidence pagination limit; cannot infer approval/outcome",
     );
   };
+  const effectKey = (proposal: OrchestrationProposal, id: string) =>
+    `hub-workflow-effect/${digest([config.id, proposal.source.sourceId, proposal.source.id, id])}`;
   const effect = async (
     proposal: OrchestrationProposal,
     id: string,
@@ -240,7 +327,7 @@ export function createGithubWorkflow(options: {
     mutate: () => Promise<unknown>,
     signal: AbortSignal,
   ) => {
-    const key = `hub-workflow-effect/${digest([config.id, proposal.source.sourceId, proposal.source.id, id])}`;
+    const key = effectKey(proposal, id);
     if (await inspect()) {
       if (digest(store.read(key).value) !== digest({ state: "confirmed", id }))
         write(
@@ -256,7 +343,18 @@ export function createGithubWorkflow(options: {
         "GitHub workflow effect uncertain or changed; no blind retry",
       );
     await current(proposal, signal);
-    write(key, { state: "reserved", id }, "github-workflow-effect-reserved");
+    if (
+      !store.compareAndSwap(
+        key,
+        existing.version,
+        { state: "reserved", id },
+        {
+          kind: "github-workflow-effect-reserved",
+          at: new Date().toISOString(),
+        },
+      )
+    )
+      throw new Error("GitHub workflow effect reservation changed");
     await mutate();
     if (!(await inspect()))
       throw new Error("GitHub workflow effect not confirmed");
@@ -294,15 +392,22 @@ export function createGithubWorkflow(options: {
     next: string,
     cycle: string,
     signal: AbortSignal,
+    attributedApproval?: "label" | "comment",
   ) => {
     if (
       !orchestrationWorkflowLabels.includes(next) ||
-      next === "orchestration-implementation-ready" ||
+      next === "orchestration-ready" ||
+      (next === "orchestration-implementation-ready" && !attributedApproval) ||
       next === "orchestration-finished"
     )
       throw new Error("Host cannot fabricate user approval or finished proof");
-    const { repository, endpoint } = sourceFor(proposal);
+    const { source, repository, endpoint } = sourceFor(proposal);
     await current(proposal, signal);
+    state(proposal, {
+      sync: "blocked",
+      diagnostic:
+        "Stage transition is in progress or uncertain; exclusive remote stage confirmation is required.",
+    });
     const names = z
       .array(z.object({ name: z.string() }))
       .parse(
@@ -341,19 +446,39 @@ export function createGithubWorkflow(options: {
         signal,
       );
     }
-    await effect(
-      proposal,
-      `${proposal.id}:${cycle}:add:${next}`,
-      async () => (await labels(endpoint, signal)).includes(next),
-      () => transport(`${endpoint}/labels`, "POST", { labels: [next] }, signal),
-      signal,
-    );
-    for (const old of (await labels(endpoint, signal)).filter(
+    if (
+      next === "orchestration-implementation-ready" &&
+      attributedApproval === "label"
+    ) {
+      if (!(await labels(endpoint, signal)).includes(next))
+        throw new Error("Attributed user approval label is no longer present");
+    } else {
+      await effect(
+        proposal,
+        `${proposal.id}:${cycle}:add:${next}`,
+        async () => (await labels(endpoint, signal)).includes(next),
+        () =>
+          transport(`${endpoint}/labels`, "POST", { labels: [next] }, signal),
+        signal,
+      );
+    }
+    const previous = await labels(endpoint, signal);
+    for (const old of orchestrationWorkflowLabels.filter(
       (name) =>
         name !== next &&
-        name !== "orchestration-ready" &&
-        orchestrationWorkflowLabels.includes(name),
+        (previous.includes(name) ||
+          store.read(
+            effectKey(proposal, `${proposal.id}:${cycle}:remove:${name}`),
+          ).value !== null),
     )) {
+      if (old === "orchestration-ready" && previous.includes(old)) {
+        await current(proposal, signal);
+        write(
+          githubWorkflowAdmissionKey(config, source, proposal.source.id),
+          { admitted: true },
+          "github-workflow-admitted-continuity",
+        );
+      }
       await effect(
         proposal,
         `${proposal.id}:${cycle}:remove:${old}`,
@@ -368,6 +493,11 @@ export function createGithubWorkflow(options: {
         signal,
       );
     }
+    const actual = (await labels(endpoint, signal)).filter((name) =>
+      orchestrationWorkflowLabels.includes(name),
+    );
+    if (actual.length !== 1 || actual[0] !== next)
+      throw new Error("GitHub workflow stage changed before confirmation");
     state(proposal, { stage: next, sync: "confirmed", diagnostic: "" });
   };
   const comment = async (
@@ -416,13 +546,17 @@ export function createGithubWorkflow(options: {
       ),
     async assertApproved(proposal: OrchestrationProposal, signal: AbortSignal) {
       const { endpoint } = sourceFor(proposal);
+      await currentSource(proposal, signal);
       const key = `${githubWorkflowKey(config.id, proposal.source.sourceId, proposal.source.id)}/plan/${proposal.id}`;
       const proof = z
-        .object({
-          eventId: z.number(),
-          actor: z.string(),
-          publication: githubPlanPublicationSchema,
-        })
+        .union([
+          commentApprovalProofSchema,
+          z.object({
+            eventId: z.number(),
+            actor: z.string(),
+            publication: githubPlanPublicationSchema,
+          }),
+        ])
         .parse(store.read(`${key}/approval`).value);
       const published = commentSchema.parse(
         await transport(
@@ -432,46 +566,76 @@ export function createGithubWorkflow(options: {
           signal,
         ),
       );
-      const approvalEvents = (await pages(`${endpoint}/events`, signal)).map(
-        (row) => eventSchema.parse(row),
-      );
-      const latest = approvalEvents
-        .filter(
-          (event) =>
-            ["labeled", "unlabeled"].includes(event.event) &&
-            event.label?.name === "orchestration-implementation-ready",
-        )
-        .sort((a, b) => b.id - a.id)[0];
-      const removalId = `${proposal.id}:initial-implementation:remove:orchestration-implementation-ready`;
-      const removal = store.read(
-        `hub-workflow-effect/${digest([
-          config.id,
-          proposal.source.sourceId,
-          proposal.source.id,
-          removalId,
-        ])}`,
-      ).value;
-      const removedByHost =
-        latest?.event === "unlabeled" &&
-        latest.actor.login.toLowerCase() ===
-          actor
-            .parse(await transport("user", "GET", undefined, signal))
-            .login.toLowerCase() &&
-        digest(removal) === digest({ state: "confirmed", id: removalId });
-      if (latest?.id !== proof.eventId && !removedByHost)
-        throw new Error(
-          "User approval was removed or replaced; dispatch is blocked",
-        );
-      const verified = attributedWorkflowApproval({
-        publication: proof.publication,
-        proposal,
-        publishedBody: published.body,
-        labels: ["orchestration-implementation-ready"],
-        events: approvalEvents.filter((row) => row.id === proof.eventId),
-      });
       if (
-        !verified ||
-        verified.actor !== proof.actor ||
+        published.id !== proof.publication.commentId ||
+        published.created_at !== proof.publication.publishedAt
+      )
+        throw new Error(
+          "Published plan identity or creation timestamp changed",
+        );
+      let verifiedActor: string | undefined;
+      if ("kind" in proof) {
+        const approval = await transport(
+          `${endpoint.split("/issues/")[0]}/issues/comments/${proof.approvalCommentId}`,
+          "GET",
+          undefined,
+          signal,
+        );
+        const verified = attributedWorkflowCommentApproval({
+          publication: proof.publication,
+          proposal,
+          publishedBody: published.body,
+          comments: [approval],
+        });
+        if (
+          verified?.approvalCommentId === proof.approvalCommentId &&
+          verified.approvalBodyDigest === proof.approvalBodyDigest &&
+          verified.at === proof.at
+        )
+          verifiedActor = verified.actor;
+      } else {
+        const approvalEvents = (await pages(`${endpoint}/events`, signal)).map(
+          (row) => eventSchema.parse(row),
+        );
+        const latest = approvalEvents
+          .filter(
+            (event) =>
+              ["labeled", "unlabeled"].includes(event.event) &&
+              event.label?.name === "orchestration-implementation-ready",
+          )
+          .sort((a, b) => b.id - a.id)[0];
+        const removalId = `${proposal.id}:initial-implementation:remove:orchestration-implementation-ready`;
+        const removal = store.read(
+          `hub-workflow-effect/${digest([
+            config.id,
+            proposal.source.sourceId,
+            proposal.source.id,
+            removalId,
+          ])}`,
+        ).value;
+        const removedByHost =
+          latest?.event === "unlabeled" &&
+          latest.actor.login.toLowerCase() ===
+            actor
+              .parse(await transport("user", "GET", undefined, signal))
+              .login.toLowerCase() &&
+          digest(removal) === digest({ state: "confirmed", id: removalId });
+        if (latest?.id !== proof.eventId && !removedByHost)
+          throw new Error(
+            "User approval was removed or replaced; dispatch is blocked",
+          );
+        const verified = attributedWorkflowApproval({
+          publication: proof.publication,
+          proposal,
+          publishedBody: published.body,
+          labels: ["orchestration-implementation-ready"],
+          events: approvalEvents.filter((row) => row.id === proof.eventId),
+        });
+        verifiedActor = verified?.actor;
+      }
+      if (
+        !verifiedActor ||
+        verifiedActor !== proof.actor ||
         proposal.policyDecision ||
         !proposal.approval ||
         config.runtime.planningOverrides?.some(
@@ -484,13 +648,79 @@ export function createGithubWorkflow(options: {
           "Exact attributed user approval is missing, changed or investigation-only",
         );
     },
-    stage,
-    syncFailure(proposal: OrchestrationProposal) {
+    stage: (
+      proposal: OrchestrationProposal,
+      next: string,
+      cycle: string,
+      signal: AbortSignal,
+    ) => stage(proposal, next, cycle, signal),
+    syncFailure(proposal: OrchestrationProposal, error?: unknown) {
+      const diagnostic =
+        error instanceof GithubWorkflowWriteAuthorityError
+          ? error.message
+          : "GitHub stage/comment synchronization failed or is uncertain; inspect retained effect evidence. No approval or completion inferred.";
+      state(proposal, {
+        sync: "blocked",
+        diagnostic,
+      });
+      return diagnostic;
+    },
+    async reconcilePublishedPlan(
+      proposal: OrchestrationProposal,
+      signal: AbortSignal,
+    ) {
+      if (
+        config.focus.mode !== "execute" ||
+        proposal.status !== "superseded" ||
+        !proposal.artifacts ||
+        !proposal.digest ||
+        proposal.configurationRevision !== config.revision
+      )
+        return false;
+      const { endpoint } = sourceFor(proposal);
+      const key = `${githubWorkflowKey(config.id, proposal.source.sourceId, proposal.source.id)}/plan/${proposal.id}`;
+      const stored = store.read(key).value;
+      if (stored === null) return false;
+      const publication = githubPlanPublicationSchema.parse(stored);
+      const fresh = await currentSource(proposal, signal);
+      if (
+        !evaluateOrchestrationFocus(config.focus, {
+          projectId: fresh.projectId,
+          action: "discover",
+          ...("scope" in fresh ? fresh.scope : {}),
+        }).allowed
+      )
+        throw new Error(
+          "Published plan restoration is outside current discovery scope",
+        );
+      const published = commentSchema.parse(
+        await transport(
+          `${endpoint.split("/issues/")[0]}/issues/comments/${publication.commentId}`,
+          "GET",
+          undefined,
+          signal,
+        ),
+      );
+      if (
+        published.id !== publication.commentId ||
+        published.created_at !== publication.publishedAt ||
+        !publicationMatches(publication, proposal, published.body)
+      )
+        throw new Error(
+          "Published plan restoration lacks exact unchanged remote publication evidence",
+        );
+      queue.restorePublishedWorkflowPlan({
+        proposalId: proposal.id,
+        configurationRevision: config.revision,
+        item: fresh,
+        publicationDigest: digest(publication),
+      });
       state(proposal, {
         sync: "blocked",
         diagnostic:
-          "GitHub stage/comment synchronization failed or is uncertain; inspect retained effect evidence. No approval or completion inferred.",
+          "Exact published plan restored after verified workflow-only revision migration; current attributed approval and configured write authority must still be checked",
       });
+      return true;
     },
     async blocked(
       proposal: OrchestrationProposal,
@@ -565,9 +795,11 @@ export function createGithubWorkflow(options: {
       if (
         !proposal.artifacts ||
         !proposal.digest ||
-        proposal.status !== "ready"
+        proposal.status !== "ready" ||
+        queue.get(proposal.id)?.proposal.status !== "ready"
       )
         return;
+      await current(proposal, signal);
       const key = `${githubWorkflowKey(config.id, proposal.source.sourceId, proposal.source.id)}/plan/${proposal.id}`;
       let publication =
         store.read(key).value === null
@@ -590,7 +822,7 @@ export function createGithubWorkflow(options: {
           ...proposal.artifacts.acceptance.map(
             (check) => `- ${check.criterion}: ${check.verification}`,
           ),
-          `Only **${approver}** can approve this exact, unchanged plan by adding \`orchestration-implementation-ready\` after this comment. Removing \`orchestration-user-approval\` is optional. A stale/pre-existing/third-party label is not approval. Keep \`orchestration-ready\` as the opt-in eligibility marker when unassigned.`,
+          `Only **${approver}** can approve this exact, unchanged plan by posting a new comment containing only \`plan approved\` (case-insensitive, surrounding whitespace allowed), or by adding \`orchestration-implementation-ready\`, after this comment. Approval comments must have a provider creation timestamp strictly later than this plan and must never have been edited. Quoted phrases, additional text, old comments and other authors are not approval. The next verified host transition adds implementation-ready and removes previous workflow stages. The host retains admission when it removes \`orchestration-ready\`; unrelated labels are preserved.`,
           "This does not authorize scope expansion, uploads, credentials changes, push, pull requests, merge or deployment. Investigation-only issues remain implementation-blocked.",
         ]
           .join("\n\n")
@@ -635,18 +867,42 @@ export function createGithubWorkflow(options: {
           signal,
         ),
       );
-      const proof = attributedWorkflowApproval({
+      const approvalLabels = await labels(endpoint, signal);
+      if (
+        published.id !== publication.commentId ||
+        published.created_at !== publication.publishedAt ||
+        publication.approver.toLowerCase() !== approver.toLowerCase()
+      )
+        throw new Error(
+          "Published plan identity, creation timestamp or configured approver changed",
+        );
+      const labelProof = attributedWorkflowApproval({
         publication,
         proposal,
         publishedBody: published.body,
-        labels: await labels(endpoint, signal),
+        labels: approvalLabels,
         events: await pages(`${endpoint}/events`, signal),
       });
+      const proof =
+        (store.read(`${key}/comment-approval-transition`).value === null
+          ? labelProof
+          : null) ??
+        attributedWorkflowCommentApproval({
+          publication,
+          proposal,
+          publishedBody: published.body,
+          comments: await pages(`${endpoint}/comments`, signal),
+        });
       if (!proof) {
+        const stages = approvalLabels.filter((name) =>
+          orchestrationWorkflowLabels.includes(name),
+        );
+        const synchronized =
+          stages.length === 1 && stages[0] === "orchestration-user-approval";
         state(proposal, {
           stage: "orchestration-user-approval",
-          sync: "confirmed",
-          diagnostic: `Waiting for ${approver} to approve published plan ${proposal.digest}`,
+          sync: synchronized ? "confirmed" : "blocked",
+          diagnostic: `Waiting for ${approver} to approve published plan ${proposal.digest}${synchronized ? "" : "; remote workflow stages are not synchronized, and no approval is inferred"}`,
         });
         return;
       }
@@ -664,11 +920,83 @@ export function createGithubWorkflow(options: {
         );
         return;
       }
-      write(
-        `${key}/approval`,
-        { ...proof, publication },
-        "github-attributed-plan-approved",
+      let consumptionKey: string | undefined;
+      const binding = { ...proof, publication };
+      if ("kind" in proof) {
+        consumptionKey = `hub-workflow-comment-approval/${digest([
+          config.id,
+          proposal.source.sourceId,
+          proposal.source.id,
+          proof.approvalCommentId,
+        ])}`;
+        const consumed = store.read(consumptionKey);
+        if (consumed.value !== null) {
+          const existing = z
+            .object({
+              state: z.enum(["reserved", "confirmed"]),
+              binding: commentApprovalProofSchema,
+            })
+            .parse(consumed.value);
+          if (digest(existing.binding) !== digest(binding))
+            throw new Error(
+              "Approval comment is already bound to another published plan",
+            );
+        } else if (
+          !store.compareAndSwap(
+            consumptionKey,
+            consumed.version,
+            { state: "reserved", binding },
+            {
+              kind: "github-comment-approval-reserved",
+              at: new Date().toISOString(),
+            },
+          )
+        )
+          throw new Error(
+            "Concurrent approval comment reservation; no workflow effect replayed",
+          );
+        write(
+          `${key}/comment-approval-transition`,
+          binding,
+          "github-comment-approval-stage-reserved",
+        );
+      }
+      await stage(
+        proposal,
+        "orchestration-implementation-ready",
+        "kind" in proof
+          ? `attributed-comment-approval-${proof.approvalCommentId}`
+          : `attributed-approval-${proof.eventId}`,
+        signal,
+        "kind" in proof ? "comment" : "label",
       );
+      if ("kind" in proof) {
+        const freshProof = attributedWorkflowCommentApproval({
+          publication,
+          proposal,
+          publishedBody: commentSchema.parse(
+            await transport(
+              `${endpoint.split("/issues/")[0]}/issues/comments/${publication.commentId}`,
+              "GET",
+              undefined,
+              signal,
+            ),
+          ).body,
+          comments: [
+            await transport(
+              `${endpoint.split("/issues/")[0]}/issues/comments/${proof.approvalCommentId}`,
+              "GET",
+              undefined,
+              signal,
+            ),
+          ],
+        });
+        if (digest(freshProof) !== digest(proof))
+          throw new Error(
+            "Approval comment changed during stage synchronization; no plan approval granted",
+          );
+      }
+      write(`${key}/approval`, binding, "github-attributed-plan-approved");
       queue.review({
         proposalId: proposal.id,
         proposalDigest: proposal.digest,
@@ -676,6 +1004,12 @@ export function createGithubWorkflow(options: {
         configurationRevision: config.revision,
         decision: "approve",
       });
+      if (consumptionKey)
+        write(
+          consumptionKey,
+          { state: "confirmed", binding },
+          "github-comment-approval-confirmed",
+        );
       state(proposal, {
         stage: "orchestration-implementation-ready",
         sync: "confirmed",

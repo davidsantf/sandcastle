@@ -46,6 +46,7 @@ import {
   runNativeLocalValidation,
 } from "./OrchestrationNativeValidation.js";
 import type { createGithubWorkflow } from "./OrchestrationGithubWorkflow.js";
+import { retainedGithubWorkflowAdmission } from "./OrchestrationWorkflowContract.js";
 import {
   nativeReviewKey,
   runNativeReviewLoop,
@@ -252,6 +253,7 @@ export function createWorkspaceNativeDispatcher(options: {
           currentSource,
           options.transport(currentSource),
           configuration.focus,
+          retainedGithubWorkflowAdmission(configuration, context.store),
         ).refresh(proposal.source, signal);
       if (
         item.revision !== proposal.sourceRevision ||

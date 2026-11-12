@@ -14,6 +14,7 @@ function Write-Event($eventName, $details) {
 }
 $lock = $null
 $child = $null
+$watchdog = $null
 try {
     try {
         $lock = [IO.File]::Open((Join-Path $directory 'supervisor.lock'), 'OpenOrCreate', 'ReadWrite', 'None')
@@ -32,6 +33,12 @@ try {
     }
     $stop = Join-Path $directory 'stop.request'
     Remove-Item -LiteralPath $stop -Force -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath (Join-Path $directory 'worker-watchdog.json')) {
+        Remove-Item -LiteralPath (Join-Path $directory 'worker-watchdog.stop.request') -Force -ErrorAction SilentlyContinue
+        $watchdog = Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -ArgumentList ('-NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + (Join-Path $directory 'Watch-Workers.ps1') + '"') -WorkingDirectory $directory -WindowStyle Hidden -PassThru
+        $null = $watchdog.Handle
+        Write-Event 'worker-watchdog-started' @{ watchdogPid = $watchdog.Id }
+    }
     $statePath = Join-Path $directory 'process.json'
     $bundle = Join-Path $directory 'dashboard.mjs'
     $config = Join-Path $directory 'dashboard.json'
@@ -55,6 +62,11 @@ try {
         $ready = $false
         $deadline = [DateTime]::UtcNow.AddSeconds(30)
         while (-not $child.WaitForExit(1000)) {
+            if ($watchdog -and $watchdog.HasExited) {
+                Write-Event 'worker-watchdog-exited' @{ exitCode = $watchdog.ExitCode; action = 'Inspect watchdog logs; no rapid watchdog restart' }
+                $watchdog.Dispose()
+                $watchdog = $null
+            }
             if (Test-Path -LiteralPath $stop) {
                 Write-Event 'stop-requested' @{ childPid = $child.Id }
                 $child.Kill()
@@ -97,6 +109,13 @@ try {
     Write-Event 'supervisor-failed' @{ error = $_.Exception.Message }
     exit 1
 } finally {
+    if ($lock -and (Test-Path -LiteralPath (Join-Path $directory 'worker-watchdog.json'))) {
+        Set-Content (Join-Path $directory 'worker-watchdog.stop.request') 'dashboard supervisor stopping'
+    }
+    if ($watchdog) {
+        if (-not $watchdog.WaitForExit(40000)) { Write-Event 'worker-watchdog-stop-unconfirmed' @{ watchdogPid = $watchdog.Id } }
+        $watchdog.Dispose()
+    }
     if ($child) {
         if (-not $child.HasExited) { $child.Kill(); $child.WaitForExit() }
         $child.Dispose()

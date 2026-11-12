@@ -58,6 +58,35 @@ const itemSchema = z.object({
   labels: z.array(z.string().max(200)).max(1_000).optional(),
   scope: orchestrationDiscoveryScopeFactsSchema.optional(),
 });
+export const retainedGithubWorkflowRevision =
+  (
+    configuration: { id: string; revision: number },
+    store: OrchestrationIntakeStore,
+  ) =>
+  (item: OrchestrationDiscoveredItem, compatible: readonly string[]) =>
+    createOrchestrationProposalQueue({ store, namespace: configuration.id })
+      .list()
+      .find(({ proposal }) => {
+        const publication = store.read(
+          `hub-workflow/${digest([configuration.id, item.sourceId, item.id])}/plan/${proposal.id}`,
+        ).value;
+        return (
+          proposal.configurationRevision === configuration.revision &&
+          proposal.source.sourceId === item.sourceId &&
+          proposal.source.projectId === item.projectId &&
+          proposal.source.id === item.id &&
+          proposal.artifacts &&
+          proposal.digest &&
+          ["ready", "approved", "superseded"].includes(proposal.status) &&
+          compatible.includes(proposal.sourceRevision) &&
+          publication !== null &&
+          typeof publication === "object" &&
+          "proposalId" in publication &&
+          publication.proposalId === proposal.id &&
+          "proposalDigest" in publication &&
+          publication.proposalDigest === proposal.digest
+        );
+      })?.proposal.sourceRevision;
 const proposalSchema = z
   .strictObject({
     id: z.string().regex(/^[a-f0-9]{64}$/),
@@ -99,6 +128,12 @@ const proposalSchema = z
       })
       .optional(),
     diagnostic: z.string().optional(),
+    workflowPlanRestoration: z
+      .strictObject({
+        publicationDigest: z.string().regex(/^[a-f0-9]{64}$/),
+        at: z.number(),
+      })
+      .optional(),
     planningSettlement: z
       .strictObject({
         kind: z.enum(["not-started", "read-only-invalid-receipt"]),
@@ -208,6 +243,72 @@ export function createOrchestrationProposalQueue(options: {
     get(proposalId: string) {
       const { proposal } = find(read().queue, proposalId);
       return { item: snapshot(proposal.source), proposal: snapshot(proposal) };
+    },
+    /** Restore artifacts only after the workflow verifies the exact remote publication. */
+    restorePublishedWorkflowPlan(request: {
+      proposalId: string;
+      configurationRevision: number;
+      item: OrchestrationDiscoveredItem;
+      publicationDigest: string;
+    }) {
+      z.string()
+        .regex(/^[a-f0-9]{64}$/)
+        .parse(request.publicationDigest);
+      return update("intake-published-workflow-plan-restored", (queue) => {
+        const { entry, proposal } = find(queue, request.proposalId);
+        const peers = entry.proposals.filter((p) => p.id !== proposal.id);
+        if (
+          proposal.status !== "superseded" ||
+          proposal.configurationRevision !== request.configurationRevision ||
+          proposal.sourceRevision !== request.item.revision ||
+          keyFor(proposal.source) !== keyFor(request.item) ||
+          !proposal.artifacts ||
+          !proposal.digest ||
+          proposal.digest !==
+            digest(
+              JSON.stringify({
+                id: proposal.id,
+                sourceRevision: proposal.sourceRevision,
+                configurationRevision: proposal.configurationRevision,
+                artifacts: proposal.artifacts,
+              }),
+            ) ||
+          proposal.approval ||
+          proposal.policyDecision ||
+          proposal.dispatchReceipt ||
+          proposal.supersededFrom ||
+          proposal.planningSettlement ||
+          peers.some(
+            (p) =>
+              !p.planningSettlement &&
+              (p.artifacts ||
+                p.approval ||
+                p.policyDecision ||
+                p.dispatchReceipt ||
+                p.supersededFrom ||
+                !["observed", "blocked", "superseded"].includes(p.status) ||
+                (p.status === "blocked" &&
+                  !p.diagnostic?.startsWith(
+                    "GitHub planning stage synchronization failed or is uncertain; no worker launched",
+                  ))),
+          )
+        )
+          throw new Error(
+            "Published plan restoration requires unchanged artifacts and proven nonexecuted replacement observations",
+          );
+        for (const peer of peers) peer.status = "superseded";
+        proposal.status = "ready";
+        proposal.source = itemSchema.parse(request.item);
+        proposal.diagnostic =
+          "Exact published plan restored after verified workflow-only revision migration; user approval remains required";
+        proposal.workflowPlanRestoration = {
+          publicationDigest: request.publicationDigest,
+          at: now(),
+        };
+        entry.item = proposal.source;
+        entry.proposals = [...peers, proposal];
+        return snapshot(proposal);
+      });
     },
     /** Host settlement only; never resets or reopens the original proposal. */
     settlePlanningOutcome(

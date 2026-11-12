@@ -32,7 +32,10 @@ $lock = $null
 try {
     $lock = [IO.File]::Open((Join-Path $InstallDirectory 'supervisor.lock'), 'OpenOrCreate', 'ReadWrite', 'None')
     Copy-Item -LiteralPath $bundle -Destination (Join-Path $InstallDirectory 'dashboard.mjs') -Force
-    Copy-Item -LiteralPath $sourceConfig -Destination (Join-Path $InstallDirectory 'dashboard.json') -Force
+    $destinationConfig = Join-Path $InstallDirectory 'dashboard.json'
+    if (-not [String]::Equals($sourceConfig, $destinationConfig, [StringComparison]::OrdinalIgnoreCase)) {
+        Copy-Item -LiteralPath $sourceConfig -Destination $destinationConfig -Force
+    }
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Start-Dashboard.ps1') -Destination $InstallDirectory -Force
     @{ nodeExe = $node } | ConvertTo-Json | Set-Content (Join-Path $InstallDirectory 'launcher.json') -Encoding UTF8
 } finally {
@@ -53,7 +56,7 @@ try {
     $trigger = New-ScheduledTaskTrigger -AtLogOn -User $identity.User.Value
     $principal = New-ScheduledTaskPrincipal -UserId $identity.User.Value -LogonType Interactive -RunLevel Limited
     $settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
-    Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description 'Current-user read-only loopback dashboard only. Does not start agents. Launcher caps attempts at three.' -Force | Out-Null
+    Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description 'Current-user read-only loopback dashboard. Optional separately installed trusted worker watchdog; child attempts are bounded.' -Force | Out-Null
 } catch {
     if ($existing) { throw }
     $registration = 'startup-folder'
@@ -68,7 +71,7 @@ try {
     $shortcut.Arguments = $arguments
     $shortcut.WorkingDirectory = $InstallDirectory
     $shortcut.WindowStyle = 7
-    $shortcut.Description = 'Read-only loopback Sandcastle dashboard; never starts agents'
+    $shortcut.Description = 'Read-only loopback dashboard; optional separately installed trusted worker watchdog'
     $shortcut.Save()
 }
 @{
@@ -83,6 +86,6 @@ try {
     bundleSha256 = (Get-FileHash (Join-Path $InstallDirectory 'dashboard.mjs') -Algorithm SHA256).Hash
     launcherSha256 = (Get-FileHash $launcher -Algorithm SHA256).Hash
     configurationSource = $sourceConfig
-    scope = 'read-only-dashboard-only'
+    scope = if (Test-Path (Join-Path $InstallDirectory 'worker-watchdog.json')) { 'read-only-http-dashboard-and-trusted-worker-watchdog' } else { 'read-only-dashboard-only' }
 } | ConvertTo-Json | Set-Content (Join-Path $InstallDirectory 'installation.json') -Encoding UTF8
 Write-Output "Installed $registration in $InstallDirectory. No agent services started. Invoke the registered task or Startup shortcut to start."

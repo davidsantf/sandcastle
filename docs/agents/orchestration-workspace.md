@@ -49,29 +49,70 @@ validation. No executable authority module is loaded by workspace onboarding.
 Opt a GitHub issue source into `workflow: {"kind":"github-labels","approver":"exact-login"}`
 with `includeReviewFeedback:false`. Native source refresh excludes host stage/comment
 churn from the approval revision, but changes to title/body/assignment/unrelated
-labels invalidate it. Existing assignment OR exact opt-in eligibility is unchanged.
-`orchestration-ready` remains an eligibility marker when unassigned; the other
-stage label represents the current lifecycle.
+labels invalidate it. Initial admission still requires assignment OR the exact
+configured opt-in label. Each verified host stage transition adds the next stage
+and removes all previous workflow stages, including `orchestration-ready`, while
+preserving unrelated labels. The intermediate add/remove sequence is journaled;
+only an exclusive, remotely verified stage is confirmed.
 
-| Label                                | Owner/action                                                                                                             |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
-| `orchestration-ready`                | User makes an issue eligible; assignment also remains valid eligibility                                                  |
-| `orchestration-planning`             | Agent begins actual named investigation/specification/planning                                                           |
-| `orchestration-user-approval`        | User reviews the published exact source/configuration/plan digest                                                        |
-| `orchestration-implementation-ready` | Configured GitHub user adds this label after that plan comment                                                           |
-| `orchestration-implementing`         | Host validates approval and dispatches implementation or an approved-scope fix                                           |
-| `orchestration-reviewing`            | Separate read-only reviewer examines the exact implementation commit, approved artifacts and actual local validation     |
-| `orchestration-finished`             | Reserved for genuine implementation, validation and required review/proof completion; not admission, merge or deployment |
+Before removing ready, the host journals admission for that exact issue, source
+configuration and configuration revision. Retained label-only work is refreshed
+directly even when it no longer appears in the ready discovery lane. Continuity
+requires that journal evidence and a remaining workflow stage; a stage label
+alone never admits new work. Fresh open-issue, native scope, content revision,
+approval and unresolved-execution checks still apply. Configuration changes
+require fresh assignment/opt-in admission; continuity is not approval.
+
+| Label                                | Owner/action                                                                                                                                                        |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `orchestration-ready`                | User makes an issue eligible; host removes it on the next verified stage transition; assignment also remains valid eligibility                                      |
+| `orchestration-planning`             | Agent begins actual named investigation/specification/planning                                                                                                      |
+| `orchestration-user-approval`        | User reviews the published exact source/configuration/plan digest                                                                                                   |
+| `orchestration-implementation-ready` | Configured GitHub user adds this label after that plan comment, or host adds it after verifying that user's exact new approval comment; previous stages are removed |
+| `orchestration-implementing`         | Host validates approval and dispatches implementation or an approved-scope fix                                                                                      |
+| `orchestration-reviewing`            | Separate read-only reviewer examines the exact implementation commit, approved artifacts and actual local validation                                                |
+| `orchestration-finished`             | Reserved for genuine implementation, validation and required review/proof completion; not admission, merge or deployment                                            |
 
 This source does **not** use automatic bounded-local policy approval. Pre-existing,
 third-party or stale labels cannot approve. Approval is bound to the exact
-published comment and attributed immutable label event. Removing/replacing
-approval before dispatch blocks it; host stage cleanup is journaled separately.
+published comment and attributed immutable label event, or the exact provider
+approval comment. Removing/replacing label approval before dispatch blocks it;
+host stage cleanup is journaled separately.
+
+The configured approver may instead post a **new issue comment containing only
+`plan approved`** (case-insensitive; surrounding whitespace is allowed).
+Its provider-created timestamp must be strictly later than the current published
+plan's timestamp, and its provider-updated timestamp must equal its creation
+timestamp. Missing timestamps, quoted/negated/incidental phrases, extra text,
+other authors, edits, equal/older comments and stale source/configuration/plan
+bindings cannot approve. Approval is journaled against that exact publication
+and comment ID, never reused for another plan. The host then adds
+`orchestration-implementation-ready` and removes previous stages. It rereads
+both comments before granting approval and before dispatch; editing/deleting
+the approval comment invalidates its proof. A label added by this host transition
+cannot be reinterpreted as independent user approval after comment revocation.
+Investigation-only restrictions still block implementation, regardless of either
+approval form. Comments never execute commands or widen scope.
+
+For retained older plans whose source hash included `orchestration-ready`, fresh
+GitHub facts must reproduce that exact legacy hash before preserving the binding.
+Recovery of a superseded published plan additionally verifies its journaled
+comment ID, body digest and provider creation timestamp, unchanged configuration
+and artifacts, and proven nonexecuted replacements. This preserves the original
+plan and approval requirement rather than publishing a replacement plan for
+stage-only churn. Changed content, assignment or unrelated labels and unresolved
+invocations remain blocked; uncertain provider reservations are never cleared.
 Unknown prior invocations across issue revisions block duplicate launch.
 The host may create only the seven workflow labels and post necessary plan,
 status and actionable findings comments. Issue text never grants write authority.
 Remote effects reserve before mutation; exact retained remote evidence can
 confirm an uncertain write, otherwise it is held rather than blindly retried.
+Existing stale stage combinations are cleaned only by a supported, freshly
+verified transition, not by guessing approval or replaying old effects. Provider
+stage/comment mutations require execute mode and an exact `publish-item` grant
+inside the current focus. Observe mode grants no board writes or execution;
+this GitHub workflow does not add Azure DevOps tag mutation or comment-approval
+support. An Azure DevOps Observe source remains discover-only.
 
 Findings produce one deduplicated issue comment tied to reviewed commit/plan and
 local validation, then automatically return to implementing and a fresh review.
@@ -583,3 +624,102 @@ for diagnosis or remove their specific files after confirming the supervisor
 stopped. Do not remove canonical ledgers. A successful current invocation
 verifies the registered action; the next actual sign-in is not tested by
 simulating reboot or signing the user out.
+
+## Windows worker sign-in startup
+
+Worker startup is separate from dashboard startup and requires an explicit opt-in
+for each existing canonical workspace. It does not initialize/copy a ledger,
+change configuration, grant permissions, approve a plan or enable ADO execution.
+
+```powershell
+node scripts\worker-startup\build.mjs
+.\scripts\worker-startup\Install-Worker.ps1 -Name MyProject -Database C:\work\orchestration.sqlite
+Start-ScheduledTask -TaskName 'Sandcastle Worker MyProject'
+```
+
+The standalone bundle reuses the public native workspace CLI, service, authenticated
+control channel and journal. It lives with its supervisor/settings/private logs in
+`$env:LOCALAPPDATA\Sandcastle\Workers\MyProject`, without a worktree or `node_modules`
+dependency. Existing canonical DBs, repositories, installed agents, selected
+executables and validation resources must remain available. Registered command
+directories are added only to this process's PATH. No credentials or global
+configuration are copied or changed; current-user hub sign-in is reused, and an
+expired/incorrect identity remains a real authentication blocker.
+
+For an already configured Python-backed local lane, pass `-PythonExe` with the
+existing installed interpreter and `-GitConfig` with its existing process-local
+Git configuration. The optional `-PythonVersion` defaults to `3.14.3`. Startup
+verifies that exact version, sets `LLMLAB_PYTHON_EXE` and disables automatic/offline
+dependency setup only inside that worker process. It never installs/upgrades
+Python or dependencies.
+
+Each task is interactive current-user, Limited, password-free, IgnoreNew, and has
+no execution limit. An exclusive OS handle protects its supervisor; public
+canonical status must prove the previous owner released or dead before launch.
+Unreachable/unconfirmed owners fail closed, and native acquisition also protects
+against races with other launchers. At most three unexpected crash launches are
+allowed per invocation, with5s/15s delays. A normal stop or durable blocked exit2
+is **not** retried. Unknown model outcomes retain their journal holds across
+restart; this limit does not reset implementation/review budgets.
+
+```powershell
+$homeDir = Join-Path $env:LOCALAPPDATA 'Sandcastle\Workers\MyProject'
+$node = (Get-Content "$homeDir\launcher.json" -Raw | ConvertFrom-Json).nodeExe
+$db = 'C:\work\orchestration.sqlite'
+Get-ScheduledTask -TaskName 'Sandcastle Worker MyProject'
+Get-Content "$homeDir\logs\supervisor.jsonl" -Tail 20
+& $node "$homeDir\worker.mjs" orchestrate workspace status --database $db
+
+# Supported intentional stop; no crash-restart:
+Set-Content "$homeDir\stop.request" 'stop'
+# Wait for task Ready and canonical owner released before starting again.
+Start-ScheduledTask -TaskName 'Sandcastle Worker MyProject'
+Disable-ScheduledTask -TaskName 'Sandcastle Worker MyProject'
+Enable-ScheduledTask -TaskName 'Sandcastle Worker MyProject'
+# After stopping, remove only startup registration:
+Unregister-ScheduledTask -TaskName 'Sandcastle Worker MyProject' -Confirm:$false
+```
+
+The stop marker invokes cooperative canonical stop. A control/settlement timeout
+is logged and the existing child is retained, never forcibly killed/replayed.
+Inspect canonical status and outstanding operations in that case. Disabling a
+task alone does not stop its current process; use stop first. Direct canonical
+`workspace stop` also exits normally without supervisor restart. Paused state is
+preserved, not automatically resumed. Runtime updates require stopped ownership,
+rebuild and explicit reinstallation. A verified task invocation/poll is not proof
+that a future real Windows sign-in has happened.
+
+### Optional dashboard-owned worker watchdog
+
+After installing the desired worker tasks, stop the dashboard supervisor and run:
+
+```powershell
+.\scripts\worker-startup\Install-WorkerWatchdog.ps1 -Names LLMLab,LLMAPI
+Start-ScheduledTask -TaskName 'Sandcastle Read-only Dashboard'
+```
+
+This adds supervision to the **trusted local dashboard launcher**, not its HTTP
+API. Browser routes remain read-only. Every 30 seconds it checks canonical public
+worker status and the registered task action. Only a **proven dead owner** whose
+worker supervisor is not running can trigger the existing task. It rechecks at
+the start boundary; native journal ownership remains the final dispatch fence.
+Healthy/paused workers, released owners, unreachable controls, unknown outcomes,
+normal stops, durable blocks and exhausted worker supervisors are not restarted.
+Approval waits and retained model holds are not crashes.
+
+The watchdog permits at most three task restarts in its persisted installation
+state, with 30/60/120-second backoff. Each task still has its own three-child
+crash cap; the watchdog never overrides an exhausted or blocked child supervisor.
+Counts survive dashboard restarts. Inspect the cause before an explicit operator
+recovery; reinstalling does not reset the watchdog state or any journal budget.
+
+Health and bounded restart counts are in
+`Dashboard\worker-watchdog-state.json`; sanitized events are in
+`Dashboard\logs\worker-watchdog.jsonl`. Set `Dashboard\worker-watchdog.disabled`
+to disable all recovery without stopping the read-only UI, or set
+`Workers\<Name>\watchdog.disabled` for one worker. Remove that exact marker to
+re-enable. A disabled worker task or its `stop.request` also prevents recovery.
+Canonical `workspace stop` releases ownership and is respected without automatic
+resume. Explicitly starting a worker task clears its stop marker. Stopping the
+dashboard stops its watchdog, **not** the workers. No additional scheduled task,
+credentials, hub authority, ledger copy, push or merge permission is introduced.

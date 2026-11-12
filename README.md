@@ -97,6 +97,16 @@ This installs a standalone user-local runtime and a least-privilege interactive
 logon task (Startup-folder shortcut if task registration is unavailable), without
 stored passwords or starting agents. See
 [dashboard sign-in startup and controls](docs/agents/orchestration-workspace.md#windows-dashboard-sign-in-startup).
+
+Worker sign-in startup is a separate explicit opt-in:
+`node scripts\worker-startup\build.mjs`, then
+`.\scripts\worker-startup\Install-Worker.ps1 -Name MyProject -Database <existing-canonical.sqlite>`.
+It preserves canonical modes, permissions, approvals and unknown-outcome holds;
+see [worker startup and controls](docs/agents/orchestration-workspace.md#windows-worker-sign-in-startup).
+After installing workers, explicitly opt into the dashboard launcher's bounded
+watchdog with `.\scripts\worker-startup\Install-WorkerWatchdog.ps1` while the
+dashboard is stopped. It respects intentional stops and unknown outcomes;
+browser routes remain read-only.
 See [native intake and live-readiness boundaries](docs/agents/orchestration-intake.md).
 Native sources support a single deduplicated assignment-or-exact-tag selector;
 ADO can also restrict exact work-item types within native team-area scope.
