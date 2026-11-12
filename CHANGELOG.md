@@ -1,5 +1,174 @@
 # @ai-hero/sandcastle
 
+## 0.13.0
+
+### Minor Changes
+
+- 71403c7: Add a bounded single-source assigned-to-user OR exact opt-in selector for GitHub
+  and Azure DevOps, retaining one item/proposal identity across overlapping lanes.
+  Intersect optional exact ADO work-item types with native project/team-area scope
+  and recheck eligibility and type before planning or dispatch. Preserve legacy
+  selectors and all separate execution/publication approval gates.
+- df3225d: Add opt-in GitHub issue label stages with journaled plan/status/findings comments,
+  exact attributed user approval, and separate read-only DevSquad review/fix cycles.
+  Default to ten durable implementation/review iterations, preserving uncertainty,
+  scope, validation and independent-proof gates. Show effective cross-revision holds
+  and review findings in the local dashboard. Add evidence-backed reconciliation
+  for proven never-started Windows long-path planning failures.
+- 4f4ce27: Add opt-in bounded-local automatic investigation, specification, planning and
+  implementation using exact configured sources/templates and durable
+  revision-bound policy decisions, without fabricating human approval or bypassing
+  independent review, critical-change and publication gates. Refresh current
+  eligibility before effects and retain older uncertain/admitted execution holds.
+  Support explicit process-local loading of existing named DevSquad plugins with
+  pinned manifest/definition bindings and required native execution controls.
+- c519844: Run host-registered local checks on pinned implementation snapshots with
+  nonzero test receipts, durable no-repeat outcomes and independent review gates.
+  Add revision-bound request exclusions for bounded-local policies.
+- 79fcbec: Add a bounded host-selected DevSquad/ADO phase runner with fenced reservations,
+  explicit runtime authorization, Sandcastle execution, validation, and read-only
+  recovery.
+- a217f4a: Add explicit fenced operator recovery for failed read-only discovery without clearing cursors or failure evidence or increasing automatic retry limits. Correct Windows Azure CLI launcher selection when an extensionless shell script precedes the supported MSI launcher.
+- 1731773: Add injectable deterministic engineering-signal and cross-project compatibility factories, host-approved GitHub/ADO publication with uncertain-write recovery, executed negative-control and measured quality gates, and read-only release correlation. External effects remain preview-default; production persistence and provider execution require trusted host integration.
+- 496daf5: Add host-side staged review policy and scoped instruction and TypeScript dependency
+  governance evaluators. Critical human approval and canonical reviewer-family checks
+  remain host-owned; scheduler and public export integration are separate.
+- f544863: Allow the configured GitHub approver to approve the current published plan with
+  an exact new, unedited `plan approved` comment. Bind provider timestamps and comment
+  identity to the existing revision-bound approval audit, reject stale/replayed
+  approval, and synchronize exclusive workflow stages without widening scope,
+  granting write authority or enabling Azure DevOps Observe execution.
+- 479daa9: Add an offline immutable design approval gate with host-injected publication,
+  receipt verification, complete immutable decision-prefix evidence and event-specific
+  human authorization. Reserve one durable publication attempt per occurrence;
+  uncertainty, replay and restart never grant a retry, accepting permanent publication
+  loss. Bind approval or changes requested to one immutable design, preserve exact
+  ledger capability/CAS boundaries, and return independent descriptive current-target
+  verification without execution authority. Include bounded cancellation/deadline
+  handling, minimized recovery outcomes, public typed APIs and an uncertainty runbook.
+  No live tracker transport, phase runner, ledger schema change or production Windows
+  durability support is introduced.
+- 98722a5: Add a bounded offline DevSquad/ADO workflow watch pass that turns injected read-only observations into durably checkpointed intake signals. Candidate ordering is deterministic; checkpoint operation identifiers are scoped to the cursor advance they publish so a retry replays instead of duplicating, while claim-lifecycle identifiers are scoped to a random per-acquisition epoch so the same `passId` always stays retryable and capability tokens stay independently random. An observation invalidated between its record read and its claim is abandoned rather than written, so a cursor never moves backwards. Injected ledger faults resolve as typed, redacted candidate failures with truthful cleanup evidence. Delivery is at-most-once and may lose signals after durable unacknowledged writes or host crashes. Budgets cover poll count, poll-start elapsed time, per-observation timeouts, and cooperative cancellation; ledger recovery categories stay fail-closed and every result projection is token-free.
+
+  Add explicit host-injected discovery while preserving supplied-mode inference and runtime shapes. Evaluate complete exact matching over bounded normalized facts and resolved teams; pause excluded/missing-fact items without effects and resume from durable anchors, failing closed on explicit retention loss. Admit authorized missing records without comments or claims only after fresh acknowledged initialization; replay reconciles acceptance without redelivery and uncertainty or crashes can permanently lose admission intake. Traverse bounded stable pages at most once per poll, with invocation-local continuation, truthful terminal-versus-retry accounting, acknowledgement-preserving cancellation and no eventual tail-progress guarantee from prefix rescans. Publish typed offline examples, documented inclusive defaults/byte ceilings and host responsibilities, minimized policy-versioned evidence, and guardians for all watcher production modules. No live transport, lifecycle authority, durable continuation, outbox or ledger schema change is added; liveness still requires cooperating, settling dependencies.
+
+  Fix discovery admission routing to require initial validated missing-read evidence, preserving existing-record checkpoint failures and failed or indeterminate claim cleanup.
+
+  Contain executable signal-listener failures in both modes without losing earlier acknowledgements or bypassing retained claim finalization.
+
+  Snapshot supplied-mode clock timestamps so mutable caller Dates cannot bypass elapsed poll-start limits or rewrite pass metadata.
+
+  Restore the approved minimized discovery validation summary by keeping prepared policy and authorization context private, without changing supplied validation types or adding preflight effects. These are bugfixes within the unreleased discovery feature; its existing minor release entry is retained.
+
+- cd9a5a8: Add a typed DevSquad Sandcastle execution adapter API for running one selected implementation task through fakeable Sandcastle execution and validation seams, including structured status, validation, commit, log, session, and failure result types.
+- 3562d38: Add a durable DevSquad multi-project orchestration host, transactional SQLite
+  reservations and recovery, dependency/contract scheduling, normalized read-only
+  GitHub/ADO evidence adapters, Sandcastle worker integration, a CLI entrypoint,
+  and an offline multi-project demonstration.
+
+  Add fenced same-database host record CAS and append-only evidence, transactional
+  schema upgrades, and atomic catalog generations that preserve original config
+  and running intents while scheduling appended tasks after restart.
+
+  Add explicit installed DevSquad phase routing through Copilot CLI named agents,
+  host-bound capability authorization and execution attestation, without generic
+  fallback. Allow independent and qualified cross-project contract review contexts.
+
+  Compose fenced Cowork critic/review history and governance with the same-DB
+  factory, deterministic signal intake, verified downstream compatibility tasks,
+  independent issue-to-PR registration, measured-loop and read-only release hooks.
+  Export native GitHub/ADO item JSON mapping and a runnable `--cowork-demo` fixture.
+  Declare the TypeScript compiler required by component dependency gates as a
+  runtime dependency, preserving native ESM/CJS interoperability and public types.
+
+- 8c03291: Add an offline, provenance-bound DevSquad ADO comment feedback coordinator that
+  delegates explicitly authorized phase re-entry to the existing phase runner.
+- 03ee91e: Link native GitHub discovery and workflow requests to a configured allowed
+  account. Verify its existing named credential before repository operations,
+  reject identity mismatches and access failures without account fallback, and
+  update source authentication through a revision-fenced CLI command.
+- 1e777e0: Add a current-user polling service with journal-fenced manual/service ownership,
+  immutable focus and exact action authorization, durable at-most-once operation
+  admission, conservative interrupted-effect accounting, cooperative shutdown,
+  authenticated local controls, and preview-only login-startup artifacts.
+- f369498: Add opt-in native GitHub/ADO discovery and durable, revision-bound proposal intake
+  with fenced workspace storage, explicit focus authorization, review actions,
+  priority-ordered replay-safe intake budgets, independently verified ADO iteration,
+  team-area and saved-query scope mappings, and fail-closed installed DevSquad setup
+  controls.
+- 9ff6e8e: Add an offline repository-local DevSquad/ADO workflow ledger with durable checkpoints, idempotent fenced claims, strict recovery, and token-free public projections.
+- ce16380: Support explicit identity-bound Azure CLI Bearer authentication for native ADO workspace discovery, with expiry-aware in-memory refresh and redacted fail-closed errors. Preserve the existing PAT default and all scope and operation gates.
+- 9fa9c0f: Add offline human-authorized workflow controls, bounded status and audit
+  projections, and explicit uncertain phase adjudication.
+- 1205e7f: Add a loopback-only read-only orchestration activity dashboard with canonical journal inspection, scoped proposal history, native phase evidence, local validation and stale/offline states.
+- 3c650f0: Add an injected, allowlisted, bounded host-side Azure DevOps MCP control-plane
+  adapter with separate read-only and write-capable surfaces.
+- 052dfdc: Add opt-in Windows current-user sign-in startup for the read-only dashboard,
+  with a standalone user-local runtime, least-privilege registration, persistent
+  logs, singleton ownership and bounded crash recovery. Agent execution services
+  are not started or reconfigured.
+- f544863: Add opt-in current-user Windows sign-in tasks for canonical orchestration workers
+  with standalone runtimes, private logs, exclusive ownership, bounded crash
+  recovery and intentional-stop controls. Preserve existing workspace modes,
+  approval gates and unknown-outcome reservations.
+
+  Add a dashboard-owned worker watchdog with persistent bounded restart counts,
+  canonical dead-owner fences, backoff and intentional-stop/disable controls.
+
+- 940a41d: Add typed Azure DevOps team orchestration foundations, including a host-side control-plane factory seam for fake and injected adapters, a deterministic one-work-item demo helper flow, a PR publishing helper, bounded CI/review feedback-loop plumbing, and a bounded ADO agent-team runner over typed local-execution and control-plane seams. Add an `azure-devops` init issue-tracker template that uses Azure CLI plus the Azure DevOps extension for CLI-only list, view, and close commands with sandbox install and environment scaffolding.
+- cbc03dd: Add versioned user-local orchestration workspace configuration, repository and
+  contract-route registration, guarded same-database state, CLI onboarding,
+  attached service/control commands and revision-bound local proposal review.
+  Expose native discovery and explicit configuration/capability readiness through
+  the public host path; block unavailable execution before effect reservation.
+  Allow project discovery without an unrelated pre-existing pull request while
+  retaining host-owned change-request registration and fail-closed verification.
+  Add opt-in trusted-local proposal execution with atomic, fenced host launch
+  provenance and explicit no-sandbox warnings, without claiming backend attestation
+  or weakening independent review and publication gates.
+  Register approved, revision/source/configuration-bound native implementation
+  through public run/service commands using the existing fenced core lifecycle.
+  Retain atomic admission, recoverable pre-invocation checkpoints, uncertain
+  invocations and unresolved file-scope holds without granting publication or
+  fabricating independent review and acceptance evidence.
+  Add opt-in revision-bound native local-file execution controls with soft CLI
+  credit/continuation bounds, scoped tool approvals, configured/builtin MCP
+  disables and shell-free hard process deadlines/tree cancellation. Reject
+  unsupported controls instead of falling back to an uncontrolled launch.
+  Allow the host to record exact scoped local model edits without granting
+  publication or claiming independent acceptance, review or sandbox isolation.
+
+### Patch Changes
+
+- 38443f2: Persist bounded, redacted local-service failure causes in the canonical journal.
+  Retain the latest cause across restart, expose offline failure evidence and useful
+  CLI diagnostics, and report unacknowledged failure persistence explicitly.
+  Accept exact grants for currently inactive projects without authorizing effects
+  outside the active focus.
+  Handle disappearing old control descriptors during restart without suppressing
+  privacy failures or deleting a successor owner's descriptor.
+- f544863: Remove previous orchestration stage labels, including ready, on verified GitHub
+  workflow transitions while preserving unrelated labels. Retain journal-backed
+  label-only admission without weakening fresh scope, approval, write-authority or
+  uncertain-effect guards.
+  Preserve verified legacy published-plan bindings through stage-only revision
+  churn without replanning, granting approval or replaying uncertain effects.
+- 2303113: Omit absent proposal diagnostics from native workspace pass summaries so
+  successful Observe discovery can persist through the strict SQLite JSON journal.
+- 5391a54: Request Azure DevOps tokens using the verified tenant without the mutually exclusive subscription selector. Distinguish redacted CLI invocation and network errors from interactive reauthentication failures.
+- ad280d5: Check both rename sources and destinations when verifying orchestration file
+  scopes and recording local edits, so Git rename detection cannot hide an
+  out-of-scope source deletion.
+- d5aecf0: Fix the offline workflow watcher's runtime ledger validation, bounded unique observation windows, and cooperative cancellation. Report mandatory claim-cleanup evidence and independent cleanup counts without retracting acknowledged cursor changes or intake signals. Preserve original replay revisions, fail closed on malformed acknowledgements, and document at-most-once delivery and host reconciliation.
+
+  Isolate adapter requests from validation and pending cursors, reject contradictory replay acknowledgements, sanitize observation accessor failures as invalid windows, and report cancellation even after the final acknowledged checkpoint or during cleanup.
+
+  Enforce array ceilings during indexed traversal despite accessor mutation, ignore custom iterators, sanitize signal/configuration getters before side effects while preserving live cancellation, and snapshot only public ledger response fields without touching unrelated payload getters.
+
+  Validate ambiguous checkpoint history with the same acknowledgement guard against the original submitted request. Reject contradictory accepted revisions and same-revision cursors, state, timestamps, or authority while preserving valid historical acceptance after later mutations and renewal-aware retries.
+
+- 27e09de: Fix checkpoint ID collisions when a work item switches pull requests and the same pass observes identical PR-local thread/comment IDs. Newly prepared checkpoints involving PR observation now include the observed PR destination, even for work-item-only cursor advances. Add a checkpoint-only namespace overload while preserving the legacy one-argument helper, no-PR and claim-lifecycle IDs, discovery initialization, and original-ID recovery. No ledger or receipt migration is required.
+
 ## 0.12.0
 
 ### Minor Changes
