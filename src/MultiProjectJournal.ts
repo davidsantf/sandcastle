@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import { randomUUID } from "node:crypto";
 import { mkdirSync, realpathSync } from "node:fs";
 import path from "node:path";
+import type { WorkspaceStoreGuard } from "./OrchestrationWorkspaceContract.js";
 import {
   digest,
   taskKey,
@@ -124,6 +125,7 @@ export class MultiProjectJournal {
   constructor(
     filename: string,
     private readonly now: () => number = Date.now,
+    private readonly workspaceGuards: readonly WorkspaceStoreGuard[] = [],
   ) {
     if (filename !== ":memory:") {
       if (!path.isAbsolute(filename) || filename.startsWith("\\\\"))
@@ -218,9 +220,32 @@ export class MultiProjectJournal {
     this.db.close();
   }
 
+  hasRun(run: string): boolean {
+    const exists = !!this.db.prepare("SELECT id FROM runs WHERE id=?").get(run);
+    if (exists) this.catalog(run);
+    return exists;
+  }
+
   private transaction<T>(fn: () => T): T {
     this.db.exec("BEGIN IMMEDIATE");
     try {
+      for (const guard of this.workspaceGuards) {
+        const row = this.db
+          .prepare(
+            "SELECT r.version,r.value,r.digest,e.value AS evidence,e.digest AS evidenceDigest FROM workspace_records r JOIN workspace_events e ON e.key=r.key AND e.version=r.version WHERE r.key=?",
+          )
+          .get(guard.key);
+        if (
+          !row ||
+          Number(row.version) !== guard.version ||
+          digest(JSON.parse(String(row.value))) !== guard.valueDigest ||
+          row.digest !== guard.valueDigest ||
+          row.evidence !== row.value ||
+          row.evidenceDigest !== row.digest ||
+          (guard.expiresAt !== undefined && guard.expiresAt <= this.now())
+        )
+          throw new Error("workspace ownership guard is stale");
+      }
       const result = fn();
       this.db.exec("COMMIT");
       return result;
@@ -633,7 +658,12 @@ export class MultiProjectJournal {
             states.some(
               (s) =>
                 s.key === taskKey(task) &&
-                ["running", "unknown"].includes(s.status),
+                (["running", "unknown"].includes(s.status) ||
+                  (s.status === "needs-input" &&
+                    task.sourceItem?.cause.recordKey.startsWith(
+                      "native-proposal:",
+                    ) &&
+                    Boolean(s.invocation))),
             ),
           )
           .map((task) => ({

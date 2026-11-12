@@ -1,10 +1,18 @@
 import { execFile } from "node:child_process";
+import { lstat, mkdtemp, realpath, rmdir } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import {
+  copilotExecutionControlsSchema,
+  type CopilotExecutionControls,
+} from "./CopilotExecutionControls.js";
 import { copilot, type AgentProvider } from "./AgentProvider.js";
 import type { SandboxProvider } from "./SandboxProvider.js";
 import { run, type RunResult } from "./run.js";
 import { Output } from "./Output.js";
 import {
   parseWorkerReceipt,
+  digest,
   workerReceiptSchema,
   type OrchestrationProject,
   type OrchestrationTask,
@@ -45,8 +53,10 @@ leave no uncommitted changes. Do not approve your own implementation.
 Host request (JSON data):
 ${JSON.stringify(request, null, 2)}
 
-Return exactly one <orchestration-receipt> JSON object:
-{"kind":"completed","artifact":"substantive markdown artifact or implementation/review evidence","contracts":{},"findings":[]}
+Return exactly one complete tagged JSON object, with no prose before or after:
+<orchestration-receipt>{"kind":"completed","artifact":"substantive markdown artifact or implementation/review evidence","contracts":{},"findings":[]}</orchestration-receipt>
+Receipt findings MUST be an array of plain strings, never objects. Include severity
+and concrete evidence inside each string. Do not add fields outside this schema.
 For a known failure use {"kind":"failed","signature":"stable failure category","evidence":"actionable evidence"}.
 For an uncertain external outcome use {"kind":"unknown","reason":"explanation"}.
 Contract values, if supplied, are SHA-256 hashes, never permissions.
@@ -54,12 +64,14 @@ Planning/repair receipts may include an "amendments" object containing substanti
 "specify", "plan", or "decompose" artifact replacements within this same scope.
 These are proposals; the host must authorize the next exact artifact-bound intent.
 Do not invent acceptance results; the host evaluates them independently.
-</orchestration-receipt>`;
+The response must end with the exact ASCII closing delimiter </orchestration-receipt>.
+Missing or altered delimiters are uncertain outcomes, not successful receipts.`;
 
 export function createSandcastleOrchestrationWorker(options: {
   agent: AgentProvider;
   sandbox: (request: OrchestrationWorkerRequest) => SandboxProvider;
   invoke?: typeof run;
+  executionControls?: CopilotExecutionControls;
   attestExecution?: (
     request: OrchestrationWorkerRequest,
     result: RunResult,
@@ -81,7 +93,13 @@ export function createSandcastleOrchestrationWorker(options: {
         branch: request.task.branch,
         baseBranch: request.task.baseBranch,
       },
-      prompt: buildMultiProjectWorkerPrompt(request),
+      prompt:
+        buildMultiProjectWorkerPrompt(request) +
+        (options.executionControls
+          ? ["implement", "fix"].includes(request.stage)
+            ? "\nLocal-files profile: only view/read_file/apply_patch are available. Do not invoke shell, MCPs or delegation. Make the scoped edit, then return the receipt. The host records any scoped local commit after you settle; do not claim independent acceptance or review.\n"
+            : "\nRead-only local-files profile: only view/read_file are available. Do not edit files or invoke shell, MCPs or delegation. Return the structured receipt; you cannot attest independent backend execution or acceptance.\n"
+          : ""),
       maxIterations: 1,
       idleTimeoutSeconds: 300,
       completionTimeoutSeconds: 30,
@@ -92,12 +110,25 @@ export function createSandcastleOrchestrationWorker(options: {
       }),
       signal,
     });
-    if (result.branch !== request.task.branch || result.preservedWorktreePath)
+    if (result.branch !== request.task.branch)
       return {
         kind: "unknown",
         reason: "unexpected branch or uncommitted worktree",
       };
     const receipt = parseWorkerReceipt(result.output);
+    if (result.preservedWorktreePath) {
+      if (
+        !options.executionControls ||
+        receipt.kind !== "completed" ||
+        !["implement", "fix"].includes(request.stage)
+      )
+        return { kind: "unknown", reason: "unexpected uncommitted worktree" };
+      await recordScopedLocalChanges(
+        result.preservedWorktreePath,
+        request,
+        signal,
+      );
+    }
     if (
       signal.aborted ||
       (options.attestExecution &&
@@ -115,8 +146,32 @@ export interface DevsquadPhaseCapability {
   readonly capabilityId: string;
   readonly agentName: string;
   readonly definitionDigest: string;
+  readonly pluginDirectory?: string;
+  readonly pluginManifestDigest?: string;
   readonly model: { readonly id: string; readonly family: string };
   readonly available: boolean;
+}
+
+export interface OrchestrationLocalExecutionEvidence {
+  schemaVersion: 1;
+  trust: "trusted-local";
+  backendAttested: false;
+  invocation: string;
+  intent: string;
+  requestDigest: string;
+  projectId: string;
+  taskId: string;
+  stage: DevsquadPhaseCapability["stage"];
+  revision?: string;
+  branch: string;
+  baseBranch: string;
+  requestedAgent: string;
+  configuredDefinitionDigest: string;
+  pluginDirectory?: string;
+  pluginManifestDigest?: string;
+  requestedModel: { readonly id: string; readonly family: string };
+  outcome: "reserved" | "admitted" | "completed" | "failed" | "unknown";
+  executionControlsDigest?: string;
 }
 
 export function createDevsquadOrchestrationWorker(options: {
@@ -136,8 +191,16 @@ export function createDevsquadOrchestrationWorker(options: {
     result: RunResult,
     signal: AbortSignal,
   ) => Promise<boolean>;
+  executionTrust?: "independent-backend" | "trusted-local";
+  recordLocalExecution?: (
+    evidence: OrchestrationLocalExecutionEvidence,
+  ) => Promise<void>;
   invoke?: typeof run;
+  executionControls?: CopilotExecutionControls;
 }) {
+  const executionControls = options.executionControls
+    ? copilotExecutionControlsSchema.parse(options.executionControls)
+    : undefined;
   return async (
     request: OrchestrationWorkerRequest,
     signal: AbortSignal,
@@ -157,7 +220,11 @@ export function createDevsquadOrchestrationWorker(options: {
       !resolved.model ||
       !identifier.test(resolved.model.id) ||
       !identifier.test(resolved.model.family) ||
-      !/^[a-f0-9]{64}$/.test(resolved.definitionDigest)
+      !/^[a-f0-9]{64}$/.test(resolved.definitionDigest) ||
+      (resolved.pluginDirectory !== undefined &&
+        (!executionControls ||
+          !path.isAbsolute(resolved.pluginDirectory) ||
+          !/^[a-f0-9]{64}$/.test(resolved.pluginManifestDigest ?? "")))
     )
       return {
         kind: "failed",
@@ -172,6 +239,12 @@ export function createDevsquadOrchestrationWorker(options: {
       capabilityId: resolved.capabilityId,
       agentName: resolved.agentName,
       definitionDigest: resolved.definitionDigest,
+      ...(resolved.pluginDirectory
+        ? {
+            pluginDirectory: resolved.pluginDirectory,
+            pluginManifestDigest: resolved.pluginManifestDigest,
+          }
+        : {}),
       model: Object.freeze({
         id: resolved.model.id,
         family: resolved.model.family,
@@ -187,8 +260,111 @@ export function createDevsquadOrchestrationWorker(options: {
       };
     if (signal.aborted)
       return { kind: "unknown", reason: "DevSquad dispatch canceled" };
+    if (options.executionTrust === "trusted-local") {
+      if (!options.recordLocalExecution)
+        return {
+          kind: "failed",
+          signature: "local-execution-recorder-unavailable",
+          evidence:
+            "Trusted-local execution requires durable host launch evidence.",
+        };
+      const captured = structuredClone(request);
+      const evidence: OrchestrationLocalExecutionEvidence = {
+        schemaVersion: 1,
+        trust: "trusted-local",
+        backendAttested: false,
+        invocation: captured.invocation,
+        intent: captured.intent,
+        requestDigest: digest(captured),
+        projectId: captured.project.id,
+        taskId: captured.task.id,
+        stage: capability.stage,
+        ...(captured.revision ? { revision: captured.revision } : {}),
+        branch: captured.task.branch,
+        baseBranch: captured.task.baseBranch,
+        requestedAgent: capability.agentName,
+        configuredDefinitionDigest: capability.definitionDigest,
+        ...(capability.pluginDirectory
+          ? {
+              pluginDirectory: capability.pluginDirectory,
+              pluginManifestDigest: capability.pluginManifestDigest!,
+            }
+          : {}),
+        requestedModel: { ...capability.model },
+        outcome: "reserved",
+        ...(executionControls
+          ? { executionControlsDigest: digest(executionControls) }
+          : {}),
+      };
+      await options.recordLocalExecution(structuredClone(evidence));
+      let receipt: OrchestrationWorkerReceipt;
+      try {
+        if (
+          signal.aborted ||
+          !(await options.authorizeCapability(captured, capability, signal))
+        )
+          receipt = {
+            kind: "unknown",
+            reason: "Trusted-local launch authorization changed",
+          };
+        else {
+          await options.recordLocalExecution({
+            ...evidence,
+            outcome: "admitted",
+          });
+          receipt = await createSandcastleOrchestrationWorker({
+            agent: copilot(capability.model.id, {
+              agent: capability.agentName,
+              pluginDirectory: capability.pluginDirectory,
+              executionControls,
+              fileScopes: captured.task.scopes,
+              readOnly: ["specify", "plan", "decompose", "review"].includes(
+                captured.stage,
+              ),
+            }),
+            executionControls,
+            sandbox: options.sandbox,
+            invoke: options.invoke,
+          })(captured, signal);
+          if (
+            signal.aborted ||
+            !(await options.authorizeCapability(captured, capability, signal))
+          )
+            receipt = {
+              kind: "unknown",
+              reason: "Trusted-local execution binding changed",
+            };
+        }
+      } catch {
+        receipt = {
+          kind: "unknown",
+          reason: "Trusted-local invocation outcome is unknown",
+        };
+      }
+      try {
+        await options.recordLocalExecution({
+          ...evidence,
+          outcome: receipt.kind,
+        });
+      } catch {
+        return {
+          kind: "unknown",
+          reason: "Trusted-local result evidence is unacknowledged",
+        };
+      }
+      return receipt;
+    }
     return createSandcastleOrchestrationWorker({
-      agent: copilot(capability.model.id, { agent: capability.agentName }),
+      agent: copilot(capability.model.id, {
+        agent: capability.agentName,
+        pluginDirectory: capability.pluginDirectory,
+        executionControls,
+        fileScopes: request.task.scopes,
+        readOnly: ["specify", "plan", "decompose", "review"].includes(
+          request.stage,
+        ),
+      }),
+      executionControls,
       sandbox: options.sandbox,
       invoke: options.invoke,
       attestExecution: (request, result, signal) =>
@@ -213,6 +389,119 @@ const git = (
       },
     );
   });
+
+/** File-only workers cannot run Git. Commit only inspected edits on the exact owned branch. */
+async function recordScopedLocalChanges(
+  root: string,
+  request: OrchestrationWorkerRequest,
+  signal: AbortSignal,
+) {
+  const canonical = await realpath(root);
+  const commonDirectory = async (directory: string) =>
+    realpath(
+      (
+        await git(
+          directory,
+          ["rev-parse", "--path-format=absolute", "--git-common-dir"],
+          signal,
+        )
+      ).trim(),
+    );
+  const normalizePath = (value: string) =>
+    process.platform === "win32" ? value.toLowerCase() : value;
+  if (
+    normalizePath(await commonDirectory(canonical)) !==
+    normalizePath(await commonDirectory(request.project.repositoryRoot))
+  )
+    throw new Error("Local-files commit repository mismatch");
+  if (
+    (
+      await git(canonical, ["symbolic-ref", "--short", "HEAD"], signal)
+    ).trim() !== request.task.branch ||
+    normalizePath(
+      (await git(canonical, ["rev-parse", "--show-toplevel"], signal))
+        .trim()
+        .replace(/\\/g, "/"),
+    ) !== normalizePath(canonical.replace(/\\/g, "/"))
+  )
+    throw new Error("Local-files commit worktree/branch mismatch");
+  const changed = [
+    ...(
+      await git(
+        canonical,
+        ["diff", "--no-renames", "HEAD", "--name-only", "-z"],
+        signal,
+      )
+    ).split("\0"),
+    ...(
+      await git(
+        canonical,
+        ["ls-files", "--others", "--exclude-standard", "-z"],
+        signal,
+      )
+    ).split("\0"),
+  ].filter(Boolean);
+  if (!changed.length)
+    throw new Error("Local-files worker produced no changes");
+  for (const file of changed) {
+    const parts = file.split("/");
+    if (
+      parts.some((part) => part === ".." || part.toLowerCase() === ".git") ||
+      !request.task.scopes.some((scope) => {
+        const normalized = scope.replace(/\\/g, "/").replace(/\/$/, "");
+        return file === normalized || file.startsWith(`${normalized}/`);
+      })
+    )
+      throw new Error("Local-files edit exceeds approved task scope");
+    let target = canonical;
+    for (const part of parts) {
+      target = path.join(target, part);
+      try {
+        if ((await lstat(target)).isSymbolicLink())
+          throw new Error("Local-files commit refuses symbolic links");
+      } catch (error) {
+        if (
+          !(
+            error instanceof Error &&
+            "code" in error &&
+            error.code === "ENOENT"
+          )
+        )
+          throw error;
+      }
+    }
+  }
+  // Per-command overrides disable hooks/signing without changing repository/user configuration.
+  const hooks = await mkdtemp(
+    path.join(os.tmpdir(), "orchestration-empty-hooks-"),
+  );
+  try {
+    await git(canonical, ["add", "--", ...changed], signal);
+    await git(
+      canonical,
+      [
+        "-c",
+        "core.hooksPath=" + hooks,
+        "-c",
+        "commit.gpgSign=false",
+        "-c",
+        "user.name=Sandcastle local orchestration",
+        "-c",
+        "user.email=orchestration@example.invalid",
+        "commit",
+        "-m",
+        "Record host-scoped local orchestration edit",
+        "-m",
+        "Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>",
+      ],
+      signal,
+    );
+  } finally {
+    await rmdir(hooks);
+  }
+  if ((await git(canonical, ["status", "--porcelain"], signal)).trim())
+    throw new Error("Local-files worktree changed during host commit");
+}
 
 /** Read-only host verification; never executes worker-supplied commands. */
 export async function resolveOrchestrationGitRevision(
@@ -253,7 +542,14 @@ export async function resolveOrchestrationGitRevision(
   ).trim();
   const files = await git(
     project.repositoryRoot,
-    ["diff", "--name-only", "-z", `${task.baseBranch}...${ref}`, "--"],
+    [
+      "diff",
+      "--no-renames",
+      "--name-only",
+      "-z",
+      `${task.baseBranch}...${ref}`,
+      "--",
+    ],
     signal,
   );
   if (baseRevision && !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(baseRevision))
@@ -261,7 +557,14 @@ export async function resolveOrchestrationGitRevision(
   const sinceBaseline = baseRevision
     ? await git(
         project.repositoryRoot,
-        ["diff", "--name-only", "-z", `${baseRevision}...${ref}`, "--"],
+        [
+          "diff",
+          "--no-renames",
+          "--name-only",
+          "-z",
+          `${baseRevision}...${ref}`,
+          "--",
+        ],
         signal,
       )
     : "";

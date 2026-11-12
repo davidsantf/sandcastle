@@ -11,7 +11,9 @@
  * permissions themselves.
  */
 
-import { spawn, type StdioOptions } from "node:child_process";
+import { spawn, execFile, type StdioOptions } from "node:child_process";
+import path from "node:path";
+import { access, lstat, realpath } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import type {
   NoSandboxProvider,
@@ -20,6 +22,7 @@ import type {
   InteractiveExecOptions,
 } from "../SandboxProvider.js";
 import { BoundedTail, MAX_TAIL_CHARS } from "../boundedTail.js";
+import { assertCopilotFileScopes } from "../CopilotExecutionControls.js";
 
 export interface NoSandboxOptions {
   /** Environment variables injected by this provider. Merged at launch time. */
@@ -33,6 +36,19 @@ export interface NoSandboxOptions {
    * overflowing V8's max string length and crashing the run.
    */
   readonly maxOutputTailChars?: number;
+}
+
+const windowsTreeTerminator = path.join(
+  process.env.SystemRoot ?? "C:\\Windows",
+  "System32",
+  "taskkill.exe",
+);
+export async function assertDirectProcessSupport(): Promise<void> {
+  if (!["win32", "linux", "darwin"].includes(process.platform))
+    throw new Error(
+      "Bounded process-tree execution is unsupported on this platform",
+    );
+  if (process.platform === "win32") await access(windowsTreeTerminator);
 }
 
 /**
@@ -50,9 +66,171 @@ export const noSandbox = (options?: NoSandboxOptions): NoSandboxProvider => ({
     const worktreePath = createOptions.worktreePath;
     const processEnv = { ...process.env, ...createOptions.env };
     const maxOutputTailChars = options?.maxOutputTailChars ?? MAX_TAIL_CHARS;
+    const active = new Map<AbortController, Promise<ExecResult>>();
 
     const handle: NoSandboxHandle = {
       worktreePath,
+      execFile: async (file, args, opts) => {
+        opts.signal.throwIfAborted();
+        if (!Number.isSafeInteger(opts.timeoutMs) || opts.timeoutMs < 1)
+          throw new Error("Direct process timeout must be a positive integer");
+        await assertDirectProcessSupport();
+        const cwd = opts.cwd ?? worktreePath;
+        const argv = [...args];
+        if (opts.scopedFiles) {
+          assertCopilotFileScopes(opts.scopedFiles);
+          const canonical = await realpath(cwd);
+          if (/[\u0000-\u001f()*?[\]{}]/.test(canonical))
+            throw new Error(
+              "Local file root cannot be represented by literal tool approvals",
+            );
+          for (const scope of opts.scopedFiles) {
+            let target = canonical;
+            let directory = false;
+            for (const part of scope.split(/[\\/]/)) {
+              target = path.join(target, part);
+              try {
+                const metadata = await lstat(target);
+                if (metadata.isSymbolicLink())
+                  throw new Error(
+                    "Symbolic links are not supported in local file scopes",
+                  );
+                directory = metadata.isDirectory();
+              } catch (error) {
+                if (
+                  !(
+                    error instanceof Error &&
+                    "code" in error &&
+                    error.code === "ENOENT"
+                  )
+                )
+                  throw error;
+                directory = false;
+              }
+            }
+            for (const kind of ["read", "write"])
+              argv.push(
+                "--allow-tool",
+                `${kind}(${target}${directory ? `${path.sep}**` : ""})`,
+              );
+          }
+        }
+        opts.signal.throwIfAborted();
+        const controller = new AbortController();
+        const abort = () => controller.abort(opts.signal.reason);
+        opts.signal.addEventListener("abort", abort, { once: true });
+        const execution = new Promise<ExecResult>((resolve, reject) => {
+          const stdout = new BoundedTail(maxOutputTailChars, "\n");
+          const stderr = new BoundedTail(maxOutputTailChars, "");
+          // A separate POSIX group permits cancellation of descendants as well as the CLI.
+          const proc = spawn(file, argv, {
+            cwd,
+            env: processEnv,
+            shell: false,
+            detached: process.platform !== "win32",
+            stdio: [
+              opts.stdin === undefined ? "ignore" : "pipe",
+              "pipe",
+              "pipe",
+            ],
+          });
+          let canceled = false;
+          let termination: Promise<void> | undefined;
+          const terminate = () => {
+            if (canceled) return;
+            canceled = true;
+            if (proc.pid === undefined) return;
+            const pid = proc.pid;
+            termination = new Promise<void>((done, fail) => {
+              if (process.platform === "win32") {
+                // /PID and /T target only this owned child and its descendants.
+                execFile(
+                  windowsTreeTerminator,
+                  ["/PID", String(pid), "/T", "/F"],
+                  { windowsHide: true, timeout: 10000 },
+                  (error) => {
+                    if (
+                      error &&
+                      proc.exitCode === null &&
+                      proc.signalCode === null
+                    )
+                      fail(new Error("Owned process-tree termination failed"));
+                    else done();
+                  },
+                );
+              } else {
+                try {
+                  process.kill(-pid, "SIGKILL");
+                  done();
+                } catch (error) {
+                  if (
+                    error instanceof Error &&
+                    "code" in error &&
+                    error.code === "ESRCH"
+                  )
+                    done();
+                  else fail(error);
+                }
+              }
+            });
+            // Observe rejection immediately; settlement below reports it.
+            void termination.catch((error) => {
+              cleanup();
+              reject(error);
+            });
+          };
+          controller.signal.addEventListener("abort", terminate, {
+            once: true,
+          });
+          const timer = setTimeout(
+            () =>
+              controller.abort(new Error("Direct process deadline exceeded")),
+            opts.timeoutMs,
+          );
+          const cleanup = () => {
+            clearTimeout(timer);
+            controller.signal.removeEventListener("abort", terminate);
+          };
+          if (opts.stdin !== undefined) proc.stdin!.end(opts.stdin);
+          const lines = createInterface({ input: proc.stdout! });
+          lines.on("line", (line) => {
+            stdout.push(line);
+            opts.onLine?.(line);
+          });
+          proc.stderr!.on("data", (chunk: Buffer) =>
+            stderr.push(chunk.toString()),
+          );
+          proc.once("error", (error) => {
+            cleanup();
+            reject(new Error(`Direct process launch failed: ${error.message}`));
+          });
+          proc.once("close", async (code) => {
+            cleanup();
+            try {
+              await termination;
+              if (canceled)
+                throw new Error(
+                  "Direct process canceled or deadline exceeded; outcome is unknown",
+                );
+              resolve({
+                stdout: stdout.toString(),
+                stderr: stderr.toString(),
+                exitCode: code ?? 1,
+              });
+            } catch (error) {
+              reject(error);
+            }
+          });
+          if (controller.signal.aborted) terminate();
+        });
+        active.set(controller, execution);
+        try {
+          return await execution;
+        } finally {
+          opts.signal.removeEventListener("abort", abort);
+          active.delete(controller);
+        }
+      },
 
       exec: (
         command: string,
@@ -162,7 +340,20 @@ export const noSandbox = (options?: NoSandboxOptions): NoSandboxProvider => ({
       },
 
       close: async (): Promise<void> => {
-        // No-op — no container to tear down
+        const pending = [...active];
+        for (const [controller] of pending) controller.abort();
+        const settled = await Promise.allSettled(
+          pending.map(([, execution]) => execution),
+        );
+        if (
+          settled.some(
+            (result) =>
+              result.status === "rejected" &&
+              result.reason instanceof Error &&
+              result.reason.message === "Owned process-tree termination failed",
+          )
+        )
+          throw new Error("Owned process-tree termination failed");
       },
     };
 

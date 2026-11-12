@@ -1,0 +1,795 @@
+# Native discovery and proposal intake
+
+## Specification
+
+Discovery reads only explicitly configured GitHub repositories or Azure DevOps
+projects. A source must select an exact assignee or an explicit opt-in label/tag.
+Repository access alone is not consent. The trusted focus policy must additionally
+grant `discover`; `investigate`, `implement`, and publication are separate grants.
+Hub descriptions, comments, relations, and model artifacts are untrusted data.
+
+One canonical workspace CAS store retains source cursors, latest item revisions,
+proposal artifacts, review decisions, dispatch reservations, and uncertain
+outcomes. The service supplies its fenced store; adapters must never retain an
+unguarded store or open another database. Replayed observations do not redispatch.
+Changed revisions supersede earlier proposals and invalidate their approvals.
+
+An investigation produces an investigation artifact, specification, implementation
+plan, and measurable acceptance proposal using installed named DevSquad phase
+routes. An approval binds the complete proposal digest, source revision, and
+configuration revision. It does not publish an artifact, create an item or PR,
+or grant downstream permission. Implementation additionally requires current
+focus authority and the existing executor's exact intent/proof/receipt checks.
+Attempted operations with unknown results are never automatically repeated.
+
+## Implementation plan and acceptance
+
+1. Ship bounded native GitHub CLI and ADO authenticated transports. Persist
+   pagination cursors only after all observations in a page are retained. Fetch
+   review feedback and dependency relations into the revision; reject partial
+   evidence, invalid selectors, oversized responses, and rate-limited reads.
+2. Store one source/item aggregate with latest revision and bounded proposal
+   history using CAS. Reserve planning and dispatch before invoking callbacks.
+   Keep unknown outcomes explicit after exceptions or process interruption.
+3. Use trusted focus policy and the service operation ledger at every effect.
+   Execute real named phase workers through the existing DevSquad worker adapter;
+   never relabel generic workers or synthesize successful identity/validation.
+4. Test page replay/restart, revision changes, stale approvals, rejected proposals,
+   races, cancellation, denied policy, and real callback invocation. Live checks
+   are read-only and scoped to this configured repository; fixture results are
+   not evidence of live framework execution.
+5. Optional native local checks execute trusted shell-free argv against the
+   exact implementation snapshot, measure nonzero test scope and retain
+   pass/fail/unknown evidence once per proposal. Exercise actual failure,
+   missing/zero-scope receipts, cancellation/deadline, source/configuration
+   mutation, snapshot mutation and reserved-outcome recovery. Local success
+   must not bypass independent critic/critical or publication needs-input.
+
+## Runtime and rollout boundaries
+
+Node 22.13+ and existing authenticated `gh` are used for GitHub discovery. ADO
+uses an existing host-only bearer/PAT credential supplied to its transport.
+Credentials never enter source catalogs, stored intents, prompts, or diagnostics.
+No runtime, Python interpreter, agent, or authentication configuration is installed
+or upgraded. The reported LLMLab Python 3.14.3 requirement is independent of this
+Node-based host: select an already installed matching interpreter explicitly for
+LLMLab; these adapters do not bypass that requirement.
+
+Installed agent definition hashes prove configuration integrity, not execution
+identity. If the selected backend has no independent agent/model execution
+evidence, setup reports that gap and dispatch remains blocked. Worker output is
+never accepted as host attestation. Acceptance commands must be trusted host
+configuration, not commands copied from discovered work.
+
+## Concrete host composition
+
+The central workspace configuration owns `discovery`, `runtime.phaseDefinitions`,
+focus permissions, and trusted task templates. These modules do not write another
+configuration file or workflow database. Register the source against an existing
+project with the exact same hub:
+
+```json
+{
+  "id": "assigned-work",
+  "projectId": "api",
+  "hub": { "kind": "github", "repository": "your-org/your-repo" },
+  "selector": { "optedInLabel": "orchestration-opt-in" },
+  "pageSize": 10,
+  "maxPages": 5,
+  "includeReviewFeedback": true,
+  "includeDependencies": true
+}
+```
+
+Use `assignedTo`, `optedInLabel`, or a single-source union:
+`"selector":{"assignedToOrLabel":{"assignedTo":"your-identity","optedInLabel":"orchestration-ready"}}`.
+There is no unrestricted selector. The union means **within the configured
+project/scope AND (assigned to the identity OR carrying the exact tag)**, not AND.
+GitHub reads two bounded filtered pages and deduplicates item numbers within the
+same source; durable source/item identity also deduplicates replay and overlap
+across pages. Both lanes advance together only after the combined page is
+retained; partial intake keeps the original cursor. A combined page has at most
+twice `pageSize` items and two listing requests. ADO uses one parenthesized OR
+predicate. Do not emulate this with two registered sources: source identity is
+part of proposal/task identity, so separate sources do not deduplicate each other.
+Native refresh rechecks current assignment/tag membership before planning and
+dispatch. A tag proves presence, **not who applied it**, and cannot grant
+implementation, publication, or any other permission. A nonexistent tag safely
+matches nothing until someone applies it; setup does not create labels/tags.
+
+ADO sources can additionally set `"workItemTypes":["User Story"]` to intersect
+the configured exact work-item types (1–20 unique nonempty names) with native
+project/team-area/query restrictions and assignment-or-tag eligibility. The
+adapter pushes this into WIQL and checks the actual `System.WorkItemType` on
+every refresh; type changes, Task/Bug rows and unknown/missing types cannot pass
+an exact User Story restriction. This is a fixed type allowlist, not dynamic
+backlog-category resolution or arbitrary board UI filters; confirm the team's
+current category/type mapping when configuring it. Team areas still come from
+native team settings, including secondary areas and native `includeChildren`
+flags, never only the configured default area. `workItemTypes` is rejected for
+GitHub sources.
+
+GitHub
+uses the existing `gh` account. For ADO, register
+`{kind:"ado",organization,project,repository}` and provide
+`createOrchestrationAdoReadTransport({kind:"bearer"|"pat",token})` from the existing
+trusted host credential context. The token stays in that transport closure.
+There is deliberately no credential lookup from work item text or catalog data.
+For public `workspace run/start`, omitted source authentication preserves the
+existing `AZURE_DEVOPS_EXT_PAT` transport. Alternatively, explicitly register
+this ADO-only source property through `workspace discovery-add`:
+
+```json
+"authentication": {
+  "kind": "azure-cli",
+  "expectedIdentity": "your-existing-account@example.com"
+}
+```
+
+This revision-bound selection uses the already installed, signed-in Azure CLI;
+it never falls back to a PAT, logs in, switches accounts, or changes global
+configuration. Before each read and after token acquisition, the host verifies
+the current account matches the configured identity. It requests only the
+[documented Azure DevOps resource](https://learn.microsoft.com/en-us/azure/devops/cli/entra-tokens?view=azure-devops),
+`499b84ac-1321-427f-aa17-267ca6975798`, using `az account get-access-token`.
+The request selects the verified account tenant only: Azure CLI forbids combining
+`--tenant` and `--subscription` here. Account context is still verified before
+and after acquisition, without a global subscription/account switch.
+Bearer tokens remain in memory, are refreshed within 60 seconds of expiry, and
+must carry the expected audience, tenant and user claims. These checks are
+credential sanity checks, not independent JWT signature verification or agent
+attestation; Azure DevOps validates the credential. Windows supports the
+installed official MSI `az.cmd` launcher through its existing Python module
+without a shell, or an `az.exe` executable. Unsupported launchers fail closed.
+Each CLI process has a 15-second deadline and honors pass cancellation.
+
+Missing/expired credentials, account changes, rejected access and refresh
+failures produce redacted diagnostics without subprocess output or token
+contents. There is no inline login/retry loop; the existing configured discovery
+failure budget applies. Inspect readiness with one `workspace run` before
+starting persistent polling. If reauthentication is required, the user must
+resolve the existing Azure CLI account outside the service; setup does not
+change credentials automatically. Authentication grants no discovery,
+implementation or publication permission and does not widen native filters.
+
+Size discovery pages to fit the existing pass deadline, including metadata,
+per-item hydration and an Azure CLI account check before each read. A successful
+manual page close to that deadline is not sufficient persistent-service evidence.
+If a larger page exhausts the deadline, stop the owner and reduce only
+`pageSize` through revision-checked source registration rather than increasing
+timeouts, retries or concurrency or weakening identity checks. Smaller pages
+continue through the same eligible scope. Source configuration changes create a
+new configuration-bound cursor; earlier history remains, replay is deduplicated
+and old approvals are invalidated. Retained proposals, including superseded
+revisions and not-yet-refreshed observations, are not a current eligible-item
+count. Verify completed scoped service passes and continuing authenticated
+control responsiveness after starting, not just the initial control response or
+a last successful manual pass.
+
+After repairing a failed read, a local operator can explicitly rearm its existing
+bounded budget with
+`workspace discovery-retry --database <same-file> --revision <current-revision> --id <source-id>`.
+This command requires the same exclusive service ownership and configuration
+fence as a manual pass: stop the service first. It honors retained provider
+backoff and rejects healthy/uninitialized sources. It preserves pagination,
+attempt counters, configuration, proposals and append-only failure evidence,
+records an operator-retry event, and makes no external call. The next
+`workspace run/start` again uses the unchanged automatic failure budget; this
+is not a continuous retry mode or recovery of an uncertain external write.
+
+A configured focus value is a restriction, never evidence that a discovered
+target satisfies it. Supported ADO mappings use independent native reads:
+
+| Focus selector | Supported ADO representation and evidence                                                                                                                                                                                                                                                      |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `iteration`    | Full native path, for example `proj\Sprint 1`; exact `System.IterationPath` equality, not a short sprint name or a configured-value echo.                                                                                                                                                      |
+| `team`         | Exact team name or GUID resolved through the project Teams API; verified project/team resource identities, native `System.AreaPath` team field settings, and the item's actual area. Descendants count only when native `includeChildren` is true, at a path boundary.                         |
+| `query`        | Exact saved flat-query GUID. Project-bound metadata is requested with `$expand=clauses` to obtain `queryType`; the native query-by-ID result must contain the item. The verified team ID supplies query context when team focus is selected; otherwise native project-default context applies. |
+
+Query membership is bounded to `min(1000, maxPages * 100)` results, requesting one
+extra row and rejecting overflow rather than treating truncated evidence as
+complete. Raw WIQL/freeform query focus, query names/paths, tree/link queries,
+foreign metadata identities, non-area team fields, and missing facts remain
+unsupported or blocked. Native team settings are bounded to 100 area values.
+No returned resource URLs are followed. Query results supply IDs only; primary
+work-item detail reads still require project-scoped WIQL membership and the
+configured assignee/opt-in selector. Query membership cannot authorize another
+project's item or broaden its trusted task scope.
+
+Preparatory reads require focused-project, mode and explicit `discover` grants;
+native project/iteration/team-area/query intersections constrain WIQL before
+item details are fetched. The full focus evaluator then receives only actual
+verified item facts. Facts are retained in the source snapshot/revision.
+Planning and dispatch refresh scope before operation admission, and execution
+refreshes again through the revision-bound queue. Missing/mismatched facts
+produce no planner, worker, dispatch or mutation reservation. Scope changes use
+separate durable poll cursors; changing a restriction cannot skip an earlier
+page. Revisions discovered during refresh obey the same per-pass intake budget.
+
+GitHub sources still have no supported native team/iteration/query mapping in
+this registration format; these selectors fail before transport or worker
+calls. This is separate from the backend execution-identity gap.
+`getOrchestrationNativeScopeReadiness({focus, discovery})`, exported by Discovery
+and re-exported by NativeHost, reports per-source `{sourceId, projectId,
+supported, diagnostics}` plus aggregate `hasSupportedSource` and `diagnostics`.
+It reports **static representability, not verified evidence or live access**.
+Hosts must not reject a supported ADO source just because another source is
+unsupported. `createOrchestrationDiscoveryAdapter(source, transport, focus)`
+accepts the optional third scope argument; pass it to both polling and direct
+refresh. The configured planner also accepts the same host-only `transport`
+factory as the native tick when it must independently refresh ADO facts.
+
+These mappings follow the official read-only APIs:
+[Teams Get](https://learn.microsoft.com/en-us/rest/api/azure/devops/core/teams/get?view=azure-devops-rest-7.1),
+[Team field values](https://learn.microsoft.com/en-us/rest/api/azure/devops/work/teamfieldvalues/get?view=azure-devops-rest-7.1),
+[Query metadata](https://learn.microsoft.com/en-us/rest/api/azure/devops/wit/queries/get?view=azure-devops-rest-7.1),
+and [Query by ID](https://learn.microsoft.com/en-us/rest/api/azure/devops/wit/wiql/query-by-id?view=azure-devops-rest-7.1).
+The existing credential must already permit those reads; missing access is a
+diagnostic, not a reason to create a credential or broaden permissions.
+ADO work discovery uses the project **name**, exact identity unique name/ID rather
+than ambiguous display names, and semicolon-delimited exact tags. Dependency
+targets must pass a project-scoped WIQL membership check before their detail is
+read; foreign-project relations block the observation. Linked PR feedback must
+match the configured repository and the relation's project identity.
+
+Host-side integration uses the actual exported factories:
+
+```ts
+const configured = createConfiguredDevsquadProposalPlanner({
+  configuration,
+  tasks: configuration.taskTemplates,
+  evaluateFocus: evaluateOrchestrationFocus,
+});
+const readiness = await configured.preflight(signal);
+const tick = createOrchestrationNativeTick({
+  evaluateFocus: evaluateOrchestrationFocus,
+  planner: configured.plan,
+});
+```
+
+Pass `tick` to the local service using the service's immutable configuration,
+captured cancellation signal, guarded canonical `WorkspaceStore`, and operation
+admission API. Passing `configured.plan` unbound is supported. Native preflight
+does not launch a worker, install an agent, or alter authentication. Readiness
+contains `runtime` (provider, observed CLI version and named-agent/model flags),
+`missingConfiguration`, `missingCapabilities`, `executionReady`, and the combined
+`diagnostics`. CLI callers should inspect readiness before reserving a planner
+effect. If callers invoke planning anyway, a known pre-effect readiness failure
+is retained as `blocked`, not disguised as successful planning or a lost worker.
+
+`runtime.phaseDefinitions` is an explicit six-stage registry for `specify`,
+`plan`, `decompose`, `implement`, `review`, and `fix`. Each entry is
+`{stage,agentName,definitionPath,definitionDigest,model:{id,family}}`.
+Paths must be absolute canonical paths to existing named definitions; hashes are
+SHA-256 of actual file bytes, not a JSON-string hash. The adapter verifies the
+file, bounded size, name and current digest. These are configuration-integrity
+checks, **not proof that the backend loaded that definition**. Neither the root
+candidate agent name nor a model alias is an attestation.
+
+When an existing local DevSquad plugin is not globally registered, each phase
+may additionally register `pluginDirectory` and `pluginManifestDigest` together.
+The directory must be absolute/canonical, contain the selected definition
+directly under `agents`, and have `.github/plugin/plugin.json` naming `devsquad`
+with `agents` or `agents/`. The manifest's SHA-256 must match the pinned digest.
+Explicit local-files controls and installed CLI `--plugin-dir` support are
+required; unsupported/mutated definitions or manifests fail before new launches.
+The production provider passes the directory as a separate direct argv value
+for planning and implementation; it does not install or globally enable plugins.
+Host launch evidence retains directory/manifest bindings. This trusts the
+installed plugin code, including hooks; it does not hash every plugin file,
+disable all hooks, isolate credentials/network or prove backend-loaded identity.
+
+One trusted task template per project supplies scopes, base branch and acceptance.
+The configured planner rejects ambiguous templates, inherited PR/source authority,
+and unresolved `dependsOn`/`requiresContracts`. It does not silently rename
+dependency references. `createOrchestrationProposalTask(template,item,revision)`
+derives a stable task ID/branch from the complete template, project/source/item
+identity, observed revision and configuration revision. Different items, template
+changes or reviewed revisions cannot borrow one shared implementation branch.
+Trusted scopes/acceptance are preserved; no repository-root scope is invented.
+
+## Proposal actions and executor boundary
+
+`createOrchestrationProposalQueue({store,namespace:configuration.id})` exposes
+`list`, `get`, `ingest`, `plan`, `review`, `decideByPolicy`, and `execute`. `list`/`get` return the
+source snapshot for the particular proposal, including superseded revisions.
+Planning actually invokes the existing DevSquad worker route three times:
+investigation via `specify`, specification via `specify`, and implementation plan
+via `plan`. Trusted task instructions survive, the investigation feeds
+specification, and both prior artifacts feed planning. Hub text is explicitly
+marked untrusted. Substantive same-stage amendments replace the phase's summary
+when supplied; they remain proposals, not authority. Malformed tagged receipts
+remain unknown outcomes, never inferred successes. Artifacts have this validated shape:
+
+```ts
+{
+  investigation: string;
+  specification: string;
+  plan: string;
+  acceptance: {
+    criterion: string;
+    verification: string;
+  }
+  [];
+}
+```
+
+`queue.review({proposalId,proposalDigest,sourceRevision,configurationRevision,
+decision:"approve"|"reject"})` binds all three revision/digest values. A stale
+review fails explicitly. New source/configuration revisions supersede earlier
+proposals without overwriting their source evidence; replaying old observations
+cannot revive their approvals or downgrade configuration.
+
+`createOrchestrationDiscoveryAdapter(source,transport?).refresh(item,signal)`
+directly refreshes the exact item and bounded feedback/dependencies. It verifies
+configured source/project identity, selectors and (for GitHub) open state.
+`queue.execute({proposalId,configurationRevision},
+{authorize,refresh,dispatch},signal)` checks current policy before reading,
+refreshes source evidence, rechecks approval/current policy atomically before
+dispatch reservation, and retains the actual dispatch receipt. Failed source
+verification blocks before implementation; changed evidence supersedes approval.
+`dispatching`/`unknown` outcomes suppress automatic repetition after restart.
+Approval is never a publication permission.
+
+## Automatic bounded-local policy
+
+The default still requires exact local proposal review. For an explicitly
+authorized trusted-local lane, register this optional runtime property using
+`workspace runtime --revision <current> --file <runtime.json>`:
+
+```json
+"proposalPolicy": {
+  "kind": "bounded-local",
+  "rules": [{ "sourceId": "assigned-work", "taskTemplateId": "safe-documentation" }]
+}
+```
+
+Each unique rule names an existing exact source and its project's sole trusted
+template. The configuration rejects missing/ambiguous templates, nonliteral file
+scopes, labeled templates, dependencies and required/provided contracts. It also
+requires explicit trusted-local execution and local-files controls; strict
+independent-backend mode is never silently downgraded.
+
+The shipped `workspace run/start` composition freshly verifies all eligible
+observations before planning, and again before policy/dispatch. Assignment/tag
+removal, closure, changed revision or failed native scope checks prevent new
+effects. Execute focus and current exact discover/investigate/implement grants
+are required for automatic authorization. Pull requests and exact
+case-insensitive `needs-human`, `needs-input`, `do-not-autofix`, `critical`,
+`security`, `breaking-change` labels cannot receive it. A worker cannot select
+another template, widen scope, substitute acceptance or grant itself authority.
+The trusted template must explicitly require failure for work outside its lane;
+restricting edits is not permission to substitute documentation for a code task.
+
+An observed item receives three real named planning calls. A later pass may
+authorize the ready artifact and dispatch its bounded local implementation.
+One atomic `intake-policy-authorized` event records a separate `policyDecision`
+bound to policy/template/proposal digests and source/configuration revisions.
+It writes no human `approval` and conveys no independent acceptance/review,
+critical or publication evidence. The existing core lifecycle therefore retains
+genuine needs-input gates after an edit; an admission receipt is not completion.
+Trusted host acceptance helpers remain separate from model assertions.
+Rules can additionally register `needsInputTerms` (bounded literal,
+case-insensitive substring matches against source title/body). A matching
+request cannot receive automatic implementation authority and is reported as
+needs-input for a trusted host decision. This conservative host-owned exclusion
+can include credential, security, infrastructure, deployment and destructive
+operations; it is not semantic intent detection and can intentionally hold
+negated mentions too. Its configuration/digest binding cannot be changed by
+source text or a worker.
+
+For ordinary code lanes, register explicit source/test file scopes and
+[native local validation](orchestration-workspace.md#trusted-local-code-validation)
+instead of unrestricted repository scopes or documentation-only substitutes.
+Pinned host-owned baseline tests can run against the edited code separately
+from editable current tests, preventing removal of a regression check from
+silently turning acceptance green.
+
+Older planning/dispatching/unknown/admitted work for the same source/item blocks
+automatic progression of a later revision. Supersession preserves earlier
+uncertainty in `supersededFrom`; changing configuration or reopening the journal
+must not turn an uncertain effect into a fresh launch. Never clear a hold or
+manufacture a revision just to retry a model. Human review remains available for
+unmatched ready proposals. Pausing, narrowing focus or removing implement grants
+stops new effects; service cancellation reaches owned native process trees.
+Budgets are per pass/process, not a rolling account spending cap.
+
+Focused executable acceptance covers automatic three-phase planning and one
+implementation, separate policy authority, reopening without redispatch, stale
+decisions/configuration, unknown supersession, Observe/Propose denial, current
+eligibility refresh and unchanged independent-proof gates. Fixture runners and
+hub rows are not live framework evidence.
+
+The public workspace host now supplies a built-in bridge to the existing core
+lifecycle; users need not invent a dispatch callback. Strict mode remains blocked
+on the independent identity gap below. Explicit trusted-local mode can admit
+approved issue/work-item proposals with current Execute focus, an exact implement
+grant and one trusted configured template. The host binds the proposal
+digest/approval/source/configuration to an immutable core cause, same-database
+ownership, artifact seed and actual local worker. Its retained
+`native-admission:` receipt acknowledges admission, not acceptance or completion.
+Unavailable independent critic/critical proof stops the lifecycle at needs-input.
+No native publication authority or unrelated PR binding is introduced.
+See [built-in implementation and recovery](orchestration-workspace.md#built-in-implementation-and-recovery)
+for crash windows, independent-lane reconciliation and unresolved scope holds.
+The lower-level `createOrchestrationNativeTick` callback remains an embedding seam;
+an injected callback alone is not live execution evidence.
+
+`createOrchestrationNativeAcceptance({checks,timeoutMs})` runs only trusted host
+`executable`/`args` in an absolute configured `cwd`, without a shell or worker-
+supplied command substitution. Actual process exit determines pass/fail;
+missing checks fail explicitly. Process success proves a host check, not model,
+framework identity, PR policy, or publication authorization.
+
+## Actual automatic local progression validation
+
+On 2026-11-11 the shipped public native workspace tick, configured planner,
+bounded-local policy and built-in lifecycle ran against an isolated local Git
+fixture using authenticated native Copilot CLI 1.0.109 and the existing
+plugin-qualified `devsquad:devsquad.specify`, `devsquad:devsquad.plan` and
+`devsquad:devsquad.implement`. Only the GitHub source transport/data was a fixture:
+no substituted process/runner, seeded planning artifacts or manual approval.
+Explicit process-local loading used the actual installed DevSquad plugin,
+canonical definitions and pinned manifest, not a global installation.
+
+The successful run made exactly four native invocations: investigation,
+specification, plan, implementation. A distinct revision-bound policy decision
+authorized the implementation without a human approval record. The real model
+edited only `src/value.txt`; the host committed the scoped local edit. An
+independently executed exact-content assertion failed before launch (exit 1)
+and passed on the actual edited branch (exit 0, accepting LF or CRLF).
+Reopening the journal retained four launch admissions and no repeat invocation.
+The lifecycle deliberately remained needs-input for unavailable independent
+phase-critic/critical evidence; no review, CI, backend attestation or publication
+receipt was fabricated.
+
+Earlier distinct fixture attempts remain retained: an invalid union-query
+fixture failed before a launch; the unregistered named plugin produced an
+explicit `No such agent` failure; and a model-generated malformed closing
+delimiter left planning unknown. The latter was not parsed leniently, reset or
+retried from its uncertain journal. Host output instructions were clarified,
+and the final proof used a new disposable fixture with the same strict parser.
+No automatic retry of any unknown attempt occurred.
+
+Each invocation had the configured 30-credit **soft** CLI limit, zero autopilot
+continuations, file-only tools, configured/builtin MCP disables and a hard
+240-second owned-process deadline. The pass deadline was 900 seconds, concurrency
+one, with at most three planning invocations then one implementation. Existing
+Python was selected per process with automatic setup disabled; no runtime or
+dependency installation, credential change, remote write or primary-checkout
+edit was performed. These results prove bounded local progression, not live
+LLMLab issue execution or unrestricted work readiness.
+
+### Actual ordinary code and test validation
+
+A separate 2026-11-11 isolated fixture exercised the same shipped public native
+path with real DevSquad investigation, specification, planning and implementation.
+The model fixed a Python arithmetic-mean implementation and added a regression
+test to its existing test module. The host committed exactly those two scoped
+files and automatically ran the registered shell-free Python checker on a
+detached snapshot of that commit. Frozen host assertions plus the edited
+unittest suite evaluated four tests and passed. An independent invocation failed
+before the edit (exit 1, three tests) and passed afterward (exit 0, four tests).
+Both same-process and fresh-process journal reopens retained four native launch
+admissions and one validation admission: no model or check replay.
+
+The lifecycle remained needs-input for unavailable independent critic/critical
+proof. Only hub source/data was synthetic; no substituted runner, seeded model
+artifacts, manual approval, remote write or publication was used. This is actual
+local model/code/test/validation evidence, not execution of a live LLMLab issue.
+
+The real LLMLab offline baseline was separately exercised with the existing
+Python 3.14.3: 45 frozen-baseline tests and 45 current tests passed without
+dependency installation. The configured coding lane names six offline Python
+helper/test pairs (dashboard URL, query templates, portable HTML, static Plotly
+HTML, artifact validation, WSR validation), not a repository-wide wildcard.
+Credential/security, infrastructure/deployment, live collectors/MCPs, dependency
+or manifest changes and destructive work remain outside that lane and require
+trusted input. Local tests do not supply independent review or publication
+authority.
+
+## Bounded polling and recovery
+
+Each poll reads one primary page, at most 20 selected items, retaining a cursor
+only after observations are durably ingested. Nested GitHub evidence is bounded
+by `maxPages` pages of 100; incomplete evidence fails without cursor advancement.
+ADO follows bounded comments and rejects unsupported continuation/truncated
+responses. Feedback ordering is normalized before revision hashing. Rate limits
+use bounded retry delays; transient failures retain the cursor and exhaust the
+configured attempt budget explicitly rather than retrying forever.
+
+The shared `prioritizeOrchestrationProjects` helper orders sources by focused
+project priority, with its stable project-ID tie break. Across all sources,
+`focus.budgets.maxItems` bounds **new or revised observations per pass**, including
+new configuration revisions, even in Observe mode. Retained exact observations
+do not consume that budget or create another queue event. When only part of a
+batch fits, the original source cursor is retained; the next pass replays that
+page, skips retained observations and admits the remainder. Cursor advancement
+occurs only when the entire batch has been accounted for. Observe returns after
+discovery, without attempting investigation or reporting an intentional lack of
+investigation authority as a failure.
+
+Recurring safe reads use focus evaluation plus cancellation and source CAS,
+**not** one permanent service effect reservation per poll. Model invocations and
+dispatch use stable exact-effect IDs. The queue retains up to 200 item entries,
+20 proposals per item, and 950,000 serialized bytes. Capacity failure preserves
+evidence; it never silently evicts an uncertain operation. `planning`,
+`dispatching`, `unknown` and `blocked` entries do not automatically restart.
+Operators must inspect retained journal evidence before any explicit recovery.
+Changing source configuration creates a new source-state identity, not permission
+to replay an uncertain effect. No automatic archival/reset command is implied.
+GitHub polling is a repeated current-state observation, not an exhaustive event
+log or a proof that no intermediate update occurred.
+
+The canonical store independently rejects records over **1 MiB**; the proposal
+queue stops earlier at 950,000 bytes, 200 item entries, or 20 retained proposals
+per item. A capacity error does not advance the source cursor or delete a prior
+proposal, approval or receipt. Recovery is an explicit operator task: pause the
+service, inspect/export the retained canonical journal, narrow future intake
+where appropriate, and arrange a reviewed archival/migration that preserves
+deduplication and uncertain-effect evidence before resuming. No implicit
+deletion, queue truncation, automatic archive, or fresh-workspace retry bypass is
+provided.
+
+## Read-only runtime evidence
+
+The bounded local probe used the explicitly scoped `davidsantf/sandcastle`
+repository and existing credentials. No issue, label, work item, PR, merge,
+deployment, worker, or external implementation was created or launched.
+
+| Check                       | Observed evidence                                                                                                               | Meaning                                                                                         |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Existing runtime            | Node `v22.18.0`, `gh 2.102.1`, native `copilot.exe` CLI `1.0.106`                                                               | Existing tools; nothing installed or upgraded                                                   |
+| Repository permission read  | `gh api repos/davidsantf/sandcastle`: pull true; push/admin/maintain/triage false                                               | Read access only; no work authorization inferred                                                |
+| Native adapter preflight    | `readable:true`, `authority:"read-only"` after exact repository identity check                                                  | Actual transport read, not a fixture                                                            |
+| Native adapter poll         | Opt-in label `orchestration-intake-validation`, page size 1/max pages 1; zero observations, cursor `{page:1,afterId:0,cycle:1}` | Actual bounded empty read; no opt-in label created and no live feedback/dependency item claimed |
+| Native CLI help             | `--agent`, `--model`, `--session-id`, `--log-dir`, `--stream`, `--output-format` supported                                      | Invocation/transport options exist; flags alone do not prove executed identity                  |
+| Native registry probe       | Empty explicitly supplied `phaseDefinitions` yields six missing-registration diagnostics                                        | Missing configuration, **not** a claim that no agents are installed                             |
+| Default execution readiness | `executionReady:false` and missing independent backend identity capability                                                      | Execution remains blocked even if registry configuration is later supplied                      |
+| ADO                         | No actual destination/credential scope selected for this probe                                                                  | ADO behavior has fixture coverage only; live ADO readiness remains unverified                   |
+
+Supported integration paths inspected without launching a worker:
+
+1. [Copilot stream handling](../../src/AgentProvider.ts) exposes text/tool/result
+   events and terminal `sessionId`; it does not expose a trusted loaded-agent
+   definition digest bound to the exact orchestration request.
+2. [RunResult](../../src/run.ts) retains iterations, stdout, commits, branch and
+   optional log path, not an independent executed framework identity receipt.
+   The Copilot provider explicitly uses `captureSessions:false`; there is no
+   configured session-storage attestation adapter.
+3. Existing host session event **metadata field names only** were inspected:
+   `session.start` exposes selected model/context; `session.usage_record.usage`
+   exposes provider/model, usage and API/provider-call identifiers. Neither
+   inspected metadata schema supplies the loaded named-agent definition digest
+   plus exact phase/request-intent/revision binding. The observed producer was
+   `copilot-agent` with event metadata version
+   `1.0.102-0.unstable.r41779900948.gf482387`, distinct from native CLI `1.0.106`.
+   That existing app session is not the configured worker's execution evidence.
+
+This establishes a gap in the **currently integrated evidence paths**, not a
+claim that every possible provider/backend can never expose such evidence.
+During that initial read-only preflight no new CLI session was launched.
+The separate bounded named-agent probe below was subsequently authorized.
+The smallest external capability needed for strict mode is backend-owned,
+independently verifiable evidence binding the actual invocation and request
+intent/revision, executed phase/named agent, loaded definition SHA-256, and
+resolved model/family. A trusted host bridge must consume that evidence through
+the existing executor's resolve/authorize/attest controls. Desired identity echoed
+by configuration, worker text, a host-generated process receipt, selected-model
+metadata alone, or a zero exit code cannot replace it. Additional configuration
+alone therefore cannot make this default factory execution-ready.
+
+### Actual installed named-agent launch probe
+
+A later bounded, local-only probe used the existing authenticated native
+Copilot CLI `1.0.106` and installed DevSquad plugin `0.12.0`. The real registered
+agent is **`devsquad:devsquad.implement`**, although its file declares
+`name: devsquad.implement`. An unqualified name was rejected before model
+execution; the qualified invocation succeeded.
+
+The probe ran in an empty local artifact directory, not a target repository.
+It requested only an exact toy response marker. All usable tools were denied
+(`--available-tools read_file --deny-tool read_file`); builtin MCPs and each
+configured MCP name were disabled, custom instructions/updates/temp access/
+session sync were off, and `--no-ask-user` was set. Its model was `auto`,
+autopilot continuation budget was zero, and AI credit ceiling was **30**, the
+installed CLI's minimum (a ceiling of 1 was rejected before execution).
+No runtimes or dependencies were installed.
+
+The actual process returned the exact requested
+`<orchestration-probe>devsquad.implement:local-read-only</orchestration-probe>`
+marker and exit 0. Sanitized metadata recorded one user/model request,
+1,848 ms API duration, current model `gpt-6-luna`, zero tool executions and
+zero file changes. No remote writes/publication were requested or observed.
+This proves authentication and actual named-agent launch/parsing, **not**
+independent loaded-definition/model attestation, a full implementation lifecycle,
+live ADO access, acceptance, CI or publication.
+
+### Actual local implementation through the native lifecycle
+
+A subsequent authorized check on 2026-11-09 used a disposable local Git
+repository, the actual installed `devsquad:devsquad.implement` agent and existing
+authenticated Copilot CLI `1.0.106`. The hub source, issue, investigation,
+specification, plan and approved proposal were **labeled fixtures authored by the
+validation host**, not live GitHub/ADO data or model-generated planning.
+The exact proposal/source/configuration approval and trusted template admitted
+one actual implementation via exported `createWorkspaceNativeTick`,
+`runLocalOrchestrationPass`, the built-in dispatcher and durable core.
+
+The trusted `invoke` seam called the **real `run`**, preserving its isolated Git
+worktree, worker prompt, Copilot stream parser, structured output schema and
+branch/commit collection. A validation-only process transport replaced its
+generated shell command with a shell-free native argv launcher. This distinction
+matters: this check proves the public dispatcher/core and actual model edit
+under those controls, **not the unmodified default launcher or an unrestricted
+DevSquad workflow**. The production runner does not acquire these validation
+controls merely by selecting trusted-local.
+
+The launcher allowed native file tools only, with absolute read/write approval
+for the one worktree file `src/value.txt`. The successful invocation used only
+`view` and `apply_patch`. Shell, URL, memory and delegation tools were unavailable
+or denied; builtin and configured MCP servers, custom instructions, updates,
+temporary-directory access, account-history sync and interactive questions were
+disabled. Each invocation had a 30-credit ceiling (the CLI minimum), zero
+autopilot continuations and a 240-second process timeout. These are CLI controls,
+not OS credential/network isolation. Git setup used a fixture-local
+`GIT_CONFIG_GLOBAL`; the fixture's push URL was non-routable. No installation,
+credential change, live target write, push, PR or startup registration occurred.
+
+Three separate fixtures retained their own journals; no uncertain invocation was
+retried or erased:
+
+| Attempt | Actual result                                                                                                                                                  | Retained lifecycle                     |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| Initial | Real model read the toy file but reported `file-edit-tool-unavailable`; the allowlist omitted native `apply_patch`, so no edit occurred                        | `unknown`, no implementation recorded  |
+| Second  | Real `apply_patch` changed the file, but the host's exact LF check rejected Windows CRLF checkout bytes; no host commit was made                               | `unknown`, preserved dirty worktree    |
+| Third   | Fixture-local `core.autocrlf=false` supplied explicit LF checkout semantics; the real model changed only the intended file and returned its structured receipt | `needs-input`, implementation recorded |
+
+The third CLI session exited 0 (reported `premiumRequests:1`, 6,639 ms API
+duration, current model `gpt-6-luna`), with one successful read and one
+successful patch. The **host**, not the model, checked exact bytes/file scope and
+committed the actual model-origin edit on the derived feature branch. Its local
+commit was `7b26651b918669da6ebc27847de06958552a935a`. An independent host
+`node acceptance.mjs` then passed its exact-content assertion on that branch;
+the same check exited 1 on the unchanged baseline and 0 on the implementation.
+Only `src/value.txt` differed from the baseline. This is measured local toy
+acceptance, not native phase-critic, CI or remote policy evidence.
+
+A separate fresh process reopened all three canonical databases and ran the
+public native pass again: **zero model invocations**, one retained launch
+admission per fixture, unchanged `unknown` states for the first two, and
+`needs-input` with `implementationRecorded:true` for the third. The third's
+admission receipt and trusted-local evidence remained `backendAttested:false`.
+Unavailable independent critic/critical approval proof still blocked lifecycle
+verification, publication and completion despite the separately passing toy
+check. The local raw logs, fixture repositories and journal evidence are retained
+as session artifacts, not published as repository content.
+
+### Historical default-launch blocker
+
+The first default-path preflight stopped before model launch: the shipped runtime
+could not express credit/continuation limits, tool/MCP controls or a hard process
+deadline. Setting `COPILOT_ALLOW_ALL=false`, relying on idle/focus timers or
+putting flags in the command name was not an equivalent supported workaround.
+No unbounded model was launched at that checkpoint. The subsequent
+user-authorized production correction below addresses that concrete missing
+facility; the earlier validation bridge is still not default-path evidence.
+
+### Shipped default launch validation with explicit controls
+
+The revision-bound optional `runtime.executionControls` local-files profile now
+flows through public workspace configuration/CLI, planning, native implementation,
+the real `run`, Copilot provider and the shipped no-sandbox direct runner.
+It generates exact shell-free argv rather than relying on Windows shell quoting.
+Installed CLI help and host process-tree support are checked; unsupported
+controls/backends fail closed rather than silently dropping a bound.
+See [configuration, precise limits and hook caveats](orchestration-workspace.md#bounded-local-file-execution).
+Strict identity remains the default; selecting this profile does not select
+trusted-local or satisfy any stronger-proof gate.
+
+On 2026-11-09 the exact public native tick -> built-in dispatcher -> durable core
+-> real run -> Copilot provider -> noSandbox direct process path launched
+installed CLI `1.0.106` and `devsquad:devsquad.implement` from DevSquad `0.12.0`.
+**No invoke, agent, sandbox or process transport was substituted.** Only source
+hub reads and host-authored investigation/specification/plan/proposal approval
+were labeled fixtures. Each separate disposable Git repository had a nonroutable
+push URL, fixture-local Git configuration and no sensitive task input.
+
+Every invocation used a 30-credit **soft** CLI limit, zero autopilot
+continuations, a 240000ms host process deadline, file-only tools, absolute
+read/write approval for `src/value.txt`, builtin MCP disabling and 54 explicitly
+enumerated configured/plugin MCP names disabled. Custom instructions, updates,
+questions, temp access and account-history sync were off. No runtimes,
+dependencies, credentials, global permissions or startup entries were changed.
+This is not credential/network isolation or independent backend attestation.
+
+Three new exact-production fixtures retained separate journals:
+
+| Attempt | Independent acceptance | Actual result                                                                                                                                                    |
+| ------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| First   | Baseline 1, edited 1   | Model copied an unrelated installed LLMLab hook diagnostic into the scoped file; host committed that actual model edit. Not a passing implementation.            |
+| Second  | Baseline 1, edited 1   | Model wrote the correct target line with CRLF; this fixture's original LF-only assertion failed. Its assertion and failed evidence were preserved.               |
+| Third   | Baseline 1, edited 0   | A new fixture defined LF/CRLF-normalized acceptance **before launch**. Model wrote the exact single target line and one newline; only the approved file changed. |
+
+The successful native session `26d9f581-371a-475c-938f-14a3945fa8c5`
+recorded the actual qualified agent selection and CLI-reported model
+`gpt-6-luna` (requested `auto`); those observations are not independent
+loaded-definition/model proof. The actual model used file read/patch tools.
+The production host independently verified the repository/common directory,
+branch and changed scope and committed the model-origin edit as local fixture
+commit `391322812b2e541639cdb05a9208327bf0b953d5`.
+It did not claim independent acceptance while committing. A separate host
+`node acceptance.mjs` then passed on that retained implementation; the immutable
+baseline had failed the same predefined check. Only `src/value.txt` differed,
+and the retained worktree was clean.
+
+Fresh processes reopened **all three** stores using the public native pass:
+one prior admission per fixture, **zero new model launches**, unchanged
+`needs-input, implementationRecorded:true`, and `backendAttested:false`.
+Failed content checks were not rewritten as passing evidence and no fixture was
+reset/retried. The third is a distinct, newly approved proposal/template fixture.
+Native verification, independent critic/critical approval, CI, publication and
+completion remain blocked; the independently passing toy check does not inject
+missing proof into the lifecycle.
+
+The failed first probe exposed a concrete installed-plugin caveat: LLMLab's
+preToolUse hook added a Python `3.14.3` requirement diagnostic, despite MCP and
+custom-instruction disabling. Installed DevSquad postToolUse hooks also exited
+127 on this host. No hook was disabled or bypassed and no Python setup was
+attempted. The toy file edit did not require LLMLab; the final trusted brief
+explicitly distinguished the accepted file content from environment diagnostics.
+For LLMLab work, select an existing exact supported interpreter (or its explicit
+launcher path) before setup; if none exists, installing one needs separate user
+approval. These hook messages are not evidence of failed Copilot authentication
+or a missing launcher control.
+
+This closes the shipped bounded **local Windows edit/parse/reopen** verification
+gap. It does not establish a full unrestricted DevSquad workflow, independent
+backend identity, live ADO/target rollout, external CI or remote publication.
+Raw local logs, fixture repositories, immutable failure/success evidence and
+journals remain session artifacts, not published repository data.
+
+## Verification scope
+
+The later user-authorized trusted-local policy is documented in
+[workspace setup](orchestration-workspace.md#explicit-trusted-local-mode).
+It is a separate trust choice, not a newly discovered metadata path or proof
+that the historical probe executed a worker. Strict setup still has the identity
+gap above. Trusted-local records requested agent/model and configured definition
+hashes with `backendAttested: false`; it never fulfills independent-proof gates.
+
+The additive tests use the actual canonical SQLite store for host integration,
+fenced ownership, replay and retained queue events. Other tests cover bounded
+GitHub/ADO reads, revision changes, stale reviews, rejection, concurrent/restarted
+reservation suppression, blocked source verification, unknown dispatch, denied
+policy, named-agent command generation, registry hash changes and actual trusted
+argv process exit status. Named worker execution tests mock `run` and use
+explicit fixture attestations: they demonstrate wiring, **not live DevSquad
+identity or successful external implementation**.
+
+Validation commands:
+
+```text
+npm run typecheck
+npx vitest run src/OrchestrationDiscovery.test.ts src/OrchestrationProposal.test.ts src/OrchestrationNativeHost.test.ts src/OrchestrationWorkspace.test.ts src/MultiProjectWorker.test.ts
+```
+
+The initial integration run passed 73 tests across those five files; type checking
+passed. This includes negative team/iteration/query mapping tests with zero
+transport, operation-admission, sandbox or worker calls.
+The intake-budget followup passed 38 tests across the native-host, proposal and
+shared-focus suites plus type checking, including multi-pass partial-page replay,
+new/revised/configuration observation accounting, project priority, and clean
+Observe-only admission without model effects.
+The native-scope followup passed 77 tests across Discovery, NativeHost, Proposal
+and Focus plus type checking. It covers matching native ADO facts, absent and
+mismatching facts, exact area boundaries, native team/project/query identities,
+bounded query overflow, query metadata expansion and selected-team context,
+scope refresh and persistent rate-limit backoff before model/dispatch reservations, and zero-read denial without
+a discover grant. These are deterministic fixture tests with canonical-store
+integration, **not live ADO validation**. No ADO work items, queries, tickets,
+PRs or other live resources were written.
+
+Central CLI/public exports, service/focus composition, full product integration
+and README linking are owned by the core integration session. This slice is not
+a whole-product completion claim.

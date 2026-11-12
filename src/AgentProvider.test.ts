@@ -1625,6 +1625,71 @@ describe("resumeSession on non-Claude providers", () => {
 // ---------------------------------------------------------------------------
 
 describe("copilot factory", () => {
+  it.each([false, true])(
+    "generates a read-only named reviewer tool policy (local-files: %s)",
+    (controlled) => {
+      const provider = copilot("fixture-model", {
+        agent: "devsquad.review",
+        readOnly: true,
+        ...(controlled
+          ? {
+              executionControls: {
+                profile: "local-files" as const,
+                maxAiCredits: 30,
+                maxAutopilotContinues: 0,
+                timeoutMs: 2000,
+                disabledMcpServers: ["fixture"],
+              },
+              fileScopes: ["src/value.ts"],
+            }
+          : {}),
+      });
+      const command = provider.buildPrintCommand(opts("review"));
+      if (controlled) {
+        const args = command.process!.args;
+        const available = args.slice(
+          args.indexOf("--available-tools") + 1,
+          args.indexOf("--deny-tool"),
+        );
+        expect(available).toEqual(["view", "read_file"]);
+        expect(args.at(args.lastIndexOf("--deny-tool") + 1)).toBe(
+          "apply_patch",
+        );
+        expect(args).not.toContain("--allow-all-tools");
+        expect(args).not.toContain("--allow-tool");
+        expect(command.process!.timeoutMs).toBe(2000);
+        expect(command.process!.scopedFiles).toEqual(["src/value.ts"]);
+      } else {
+        expect(command.command).toContain("--available-tools view read_file");
+        expect(command.command).toContain("--deny-tool apply_patch");
+        expect(command.command).not.toContain("--allow-all-tools");
+      }
+      expect(command.command).toContain("devsquad.review");
+      expect(() => provider.buildInteractiveArgs!(opts("review"))).toThrow(
+        /non-interactive/,
+      );
+    },
+  );
+  it("keeps local-files scoped editing available for implementation", () => {
+    const command = copilot("fixture-model", {
+      executionControls: {
+        profile: "local-files",
+        maxAiCredits: 30,
+        maxAutopilotContinues: 0,
+        timeoutMs: 2000,
+        disabledMcpServers: [],
+      },
+      fileScopes: ["src/value.ts"],
+    }).buildPrintCommand(opts("implement"));
+    const args = command.process!.args;
+    expect(
+      args.slice(
+        args.indexOf("--available-tools") + 1,
+        args.indexOf("--deny-tool"),
+      ),
+    ).toEqual(["view", "read_file", "apply_patch"]);
+    expect(command.process!.scopedFiles).toEqual(["src/value.ts"]);
+  });
   it("selects the installed named agent in both print and interactive modes", () => {
     const provider = copilot("fixture-model", {
       agent: "devsquad:devsquad.implement",

@@ -71,7 +71,103 @@ host owns authorization and acceptance; workers cannot approve themselves,
 merge, deploy, or mutate hubs. A transactional SQLite journal retains artifacts,
 exclusive reservations, fencing, and unknown outcomes across restarts.
 
-Requires Node 22.13+ for this feature. Try the offline scripted-worker demo:
+Requires Node 22.13+ for this feature.
+
+For versioned local onboarding without a pre-existing PR, start with
+`sandcastle orchestrate workspace init --database <local-sqlite-file>`.
+See [workspace setup and exact permissions](docs/agents/orchestration-workspace.md)
+and [user-local service controls](docs/agents/local-orchestration-service.md).
+GitHub sources support [linked allowed accounts](docs/agents/orchestration-workspace.md#linked-allowed-accounts):
+pin an existing named account for discovery and workflow writes, with identity
+verification and no silent fallback to another owner when access is denied.
+Use `workspace start/status/pause/resume/stop` for local polling and
+`workspace proposals/proposal/review` for revision-bound local proposal review.
+For a local read-only activity UI, run
+`sandcastle orchestrate workspace dashboard --file <local-dashboard.json> --port 4318`.
+The JSON contains `{"workspaces":[{"name":"Project","database":"<absolute canonical SQLite path>"}]}`.
+Open the printed loopback URL. The dashboard reads existing journals in place
+and checks existing authenticated status controls; it never starts agents,
+approves work, or repairs stopped services. It refreshes every 15 seconds,
+labels retained observations separately from current eligibility, and shows
+unknown launches, local validation (not independent review), and recent events.
+Source text is rendered as text; runtime secrets and raw issue bodies are omitted.
+Keep this personal host configuration outside the repository. Stop the
+dashboard with Ctrl+C; restart with the same command and canonical databases.
+For Windows current-user sign-in startup of **only the read-only dashboard**,
+run `node scripts\dashboard-startup\build.mjs`, then
+`.\scripts\dashboard-startup\Install-Dashboard.ps1 -Configuration <absolute-dashboard.json>`.
+This installs a standalone user-local runtime and a least-privilege interactive
+logon task (Startup-folder shortcut if task registration is unavailable), without
+stored passwords or starting agents. See
+[dashboard sign-in startup and controls](docs/agents/orchestration-workspace.md#windows-dashboard-sign-in-startup).
+
+Worker sign-in startup is a separate explicit opt-in:
+`node scripts\worker-startup\build.mjs`, then
+`.\scripts\worker-startup\Install-Worker.ps1 -Name MyProject -Database <existing-canonical.sqlite>`.
+It preserves canonical modes, permissions, approvals and unknown-outcome holds;
+see [worker startup and controls](docs/agents/orchestration-workspace.md#windows-worker-sign-in-startup).
+After installing workers, explicitly opt into the dashboard launcher's bounded
+watchdog with `.\scripts\worker-startup\Install-WorkerWatchdog.ps1` while the
+dashboard is stopped. It respects intentional stops and unknown outcomes;
+browser routes remain read-only.
+See [native intake and live-readiness boundaries](docs/agents/orchestration-intake.md).
+Native sources support a single deduplicated assignment-or-exact-tag selector;
+ADO can also restrict exact work-item types within native team-area scope.
+ADO workspace sources can explicitly select identity-bound existing Azure CLI
+Bearer authentication with in-memory expiry-aware refresh; omitted selection
+preserves the host PAT default. Neither path logs in or grants work permissions.
+The workspace starts in observe mode with no grants. Setup diagnostics distinguish
+configuration from actual framework execution readiness. Strict backend-attestation
+mode is the default. Explicit `runtime.executionTrust: "trusted-local"` enables
+local proposal and approved implementation workers with durable host launch evidence, trusting the installed
+CLI to honor agent/model selection; it does not claim independent backend proof.
+See the workspace guide before opting in: workers run on the host without
+credential/network isolation. Public `workspace run/start` admits exact approved,
+current-source/configuration-bound proposals to the existing core lifecycle only
+with Execute focus and an explicit implement grant. Implementation receipts are
+not completion: unavailable independent review/critical proof blocks acceptance,
+publication and completion without fabricating evidence.
+
+For automatic bounded local progression without per-stage human review, explicitly
+configure `runtime.proposalPolicy: {kind:"bounded-local",rules:[{sourceId,taskTemplateId}]}`
+alongside trusted-local execution, local-files controls, Execute focus and exact
+discover/investigate/implement grants. The host investigates, specifies, plans
+and records a revision-bound **policy decision**, not a fabricated human approval.
+Only the registered template supplies scopes and acceptance; source text grants
+no authority. Independent review, critical-change and publication gates still stop
+at needs-input. See [automatic local policy](docs/agents/orchestration-intake.md#automatic-bounded-local-policy).
+
+For an explicit human plan gate, a GitHub discovery source can instead configure
+`workflow: {kind:"github-labels",approver:"github-login"}`. This disables automatic
+policy approval for that source. The host publishes the exact plan, verifies the
+configured user's later label event, and synchronizes planning, approval,
+implementation and separate read-only review stages. Findings are commented and
+fixed within the approved scope; `runtime.reviewLoop.maxIterations` defaults to
+**10** implementation/review pairs, including the initial pair, and survives
+restart/source refresh. Unknown outcomes and missing independent proof block,
+never mark finished. See [label workflow](docs/agents/orchestration-workspace.md#github-label-workflow).
+
+Optional revisioned `runtime.localValidation` registers exact shell-free host
+check argv against the implementation's pinned detached Git snapshot. Each
+check must match trusted template acceptance and return a nonzero structured
+test scope. Actual pass/fail/unknown evidence is journaled without automatic
+replay; passing local tests never substitutes for independent review or permits
+publication. See [local code validation](docs/agents/orchestration-workspace.md#trusted-local-code-validation).
+
+For bounded native local editing, configure the optional revision-bound
+`runtime.executionControls` **local-files** profile. It propagates credit and
+continuation limits, file-only tools, named MCP disables and a host process
+deadline through planning and implementation; unsupported controls fail closed.
+Omitting it preserves legacy launch behavior, not these bounds. Credit limits
+are soft CLI limits; host process termination is separate. Neither scoped tool
+approvals nor MCP disables isolate host credentials, installed hooks or network.
+An installed DevSquad plugin not globally registered can be loaded explicitly
+per process using each phase definition's canonical `pluginDirectory` and pinned
+`pluginManifestDigest`; no plugin installation or global enablement is performed.
+See [execution controls and configuration](docs/agents/orchestration-workspace.md#bounded-local-file-execution)
+and [actual shipped Windows launch evidence](docs/agents/orchestration-intake.md#shipped-default-launch-validation-with-explicit-controls).
+
+Try the offline scripted-worker demo:
 
 ```powershell
 sandcastle orchestrate --demo .\.sandcastle\orchestration-demo
@@ -82,8 +178,9 @@ workers, use `sandcastle orchestrate --config <trusted-host-module>` with explic
 authorization, validation, sandbox, and native GitHub/ADO evidence adapters.
 Use `createDevsquadOrchestrationWorker()` as the host's `execute` capability
 to select installed named DevSquad phase agents through Copilot CLI `--agent`.
-Unavailable or unattested framework capabilities do not fall back to generic
-workers. The offline demo does not execute DevSquad.
+Unavailable framework capabilities do not fall back to generic workers.
+Trusted-local execution never satisfies independent critic/attestation gates.
+The offline demo does not execute DevSquad.
 See [setup, authority boundaries, and recovery](docs/agents/multi-project-orchestration.md).
 Cowork composition adds diverse critics, governed instruction/component checks,
 durable signal-to-item scheduling, and downstream compatibility tasks. A verified

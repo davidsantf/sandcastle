@@ -107,6 +107,79 @@ describe("explicit installed DevSquad execution", () => {
     vi.mocked(run).mockResolvedValue(result);
     return { execute, resolveCapability, authorizeCapability, attestExecution };
   };
+  it.each([
+    "specify",
+    "plan",
+    "decompose",
+    "review",
+    "implement",
+    "fix",
+  ] as const)(
+    "enforces tool read-only for %s according to phase, without independent-backend claims",
+    async (stage) => {
+      const records: unknown[] = [];
+      const execute = createDevsquadOrchestrationWorker({
+        sandbox: () => sandbox,
+        resolveCapability: async () => capability(stage),
+        authorizeCapability: async () => true,
+        attestExecution: async () => {
+          throw new Error(
+            "Trusted-local is not independent backend attestation",
+          );
+        },
+        executionTrust: "trusted-local",
+        recordLocalExecution: async (evidence) => {
+          records.push(evidence);
+        },
+        executionControls: {
+          profile: "local-files",
+          maxAiCredits: 30,
+          maxAutopilotContinues: 0,
+          timeoutMs: 2000,
+          disabledMcpServers: [],
+        },
+      });
+      vi.mocked(run).mockResolvedValue(result);
+      expect(await execute({ ...request(), stage }, signal())).toEqual(receipt);
+      const invocation = vi.mocked(run).mock.calls[0]![0];
+      const args = invocation.agent.buildPrintCommand({
+        prompt: "fixture",
+        dangerouslySkipPermissions: true,
+      }).process!.args;
+      const editing = ["implement", "fix"].includes(stage);
+      expect(
+        args.slice(
+          args.indexOf("--available-tools") + 1,
+          args.indexOf("--deny-tool"),
+        ),
+      ).toEqual(
+        editing ? ["view", "read_file", "apply_patch"] : ["view", "read_file"],
+      );
+      expect(
+        args.some(
+          (arg, index) =>
+            arg === "--deny-tool" && args[index + 1] === "apply_patch",
+        ),
+      ).toBe(!editing);
+      expect(records).toEqual([
+        expect.objectContaining({
+          stage,
+          outcome: "reserved",
+          backendAttested: false,
+        }),
+        expect.objectContaining({
+          stage,
+          outcome: "admitted",
+          backendAttested: false,
+        }),
+        expect.objectContaining({
+          stage,
+          outcome: "completed",
+          backendAttested: false,
+        }),
+      ]);
+    },
+  );
   it("wires the configured framework executor into the runnable host", async () => {
     const framework = fixture();
     const host = createMultiProjectSandcastleHost({
@@ -371,6 +444,187 @@ describe("read-only Git revision and file-scope verifier", () => {
       "Fixture\n\nCo-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>",
     ]);
   };
+  it.each([false, true])(
+    "host records only scoped local-files edits (outside scope: %s)",
+    async (outside) => {
+      const root = repository();
+      execFileSync("git", [
+        "-C",
+        root,
+        "checkout",
+        "--quiet",
+        "-b",
+        task.branch,
+      ]);
+      writeFileSync(path.join(root, "src", "api.ts"), "model fixture edit\n");
+      if (outside)
+        writeFileSync(path.join(root, "outside.txt"), "not approved");
+      const input = {
+        ...request(),
+        project: { ...project, repositoryRoot: root },
+      };
+      vi.mocked(run).mockResolvedValue({
+        ...result,
+        preservedWorktreePath: root,
+      });
+      const execute = createSandcastleOrchestrationWorker({
+        agent,
+        sandbox: () => sandbox,
+        executionControls: {
+          profile: "local-files",
+          maxAiCredits: 30,
+          maxAutopilotContinues: 0,
+          timeoutMs: 2000,
+          disabledMcpServers: [],
+        },
+      });
+      const before = execFileSync("git", ["-C", root, "rev-parse", "HEAD"], {
+        encoding: "utf8",
+      }).trim();
+      if (outside) {
+        await expect(execute(input, signal())).rejects.toThrow(
+          /exceeds approved task scope/,
+        );
+        expect(
+          execFileSync("git", ["-C", root, "rev-parse", "HEAD"], {
+            encoding: "utf8",
+          }).trim(),
+        ).toBe(before);
+      } else {
+        const hooks = mkdtempSync(
+          path.join(os.tmpdir(), "fixture-disallowed-hooks-"),
+        );
+        folders.push(hooks);
+        writeFileSync(path.join(hooks, "pre-commit"), "#!/bin/sh\nexit 1\n", {
+          mode: 0o755,
+        });
+        execFileSync("git", ["-C", root, "config", "core.hooksPath", hooks]);
+        expect(await execute(input, signal())).toEqual(receipt);
+        expect(
+          execFileSync("git", ["-C", root, "status", "--porcelain"], {
+            encoding: "utf8",
+          }),
+        ).toBe("");
+        expect(
+          execFileSync(
+            "git",
+            ["-C", root, "diff", "--name-only", "main", task.branch],
+            { encoding: "utf8" },
+          ).trim(),
+        ).toBe("src/api.ts");
+        expect(
+          execFileSync("git", ["-C", root, "config", "core.hooksPath"], {
+            encoding: "utf8",
+          }).trim(),
+        ).toBe(hooks);
+        expect(
+          execFileSync("git", ["-C", root, "log", "-1", "--format=%B"], {
+            encoding: "utf8",
+          }),
+        ).toContain("Co-authored-by:");
+      }
+    },
+  );
+  it("refuses a dirty worktree from a different repository even with the expected branch", async () => {
+    const root = repository(),
+      foreign = repository();
+    execFileSync("git", [
+      "-C",
+      foreign,
+      "checkout",
+      "--quiet",
+      "-b",
+      task.branch,
+    ]);
+    writeFileSync(
+      path.join(foreign, "src", "api.ts"),
+      "unrelated repository edit\n",
+    );
+    const before = execFileSync("git", ["-C", foreign, "rev-parse", "HEAD"], {
+      encoding: "utf8",
+    });
+    vi.mocked(run).mockResolvedValue({
+      ...result,
+      preservedWorktreePath: foreign,
+    });
+    const execute = createSandcastleOrchestrationWorker({
+      agent,
+      sandbox: () => sandbox,
+      executionControls: {
+        profile: "local-files",
+        maxAiCredits: 30,
+        maxAutopilotContinues: 0,
+        timeoutMs: 2000,
+        disabledMcpServers: [],
+      },
+    });
+    await expect(
+      execute(
+        { ...request(), project: { ...project, repositoryRoot: root } },
+        signal(),
+      ),
+    ).rejects.toThrow("repository mismatch");
+    expect(
+      execFileSync("git", ["-C", foreign, "rev-parse", "HEAD"], {
+        encoding: "utf8",
+      }),
+    ).toBe(before);
+  });
+  it.each(["dirty", "committed"])(
+    "rejects an out-of-scope rename source hidden by Git rename detection (%s)",
+    async (state) => {
+      const root = repository();
+      writeFileSync(
+        path.join(root, "outside.txt"),
+        "preserve this original file\n",
+      );
+      commit(root);
+      execFileSync("git", ["-C", root, "config", "diff.renames", "true"]);
+      execFileSync("git", [
+        "-C",
+        root,
+        "checkout",
+        "--quiet",
+        "-b",
+        task.branch,
+      ]);
+      execFileSync("git", ["-C", root, "mv", "outside.txt", "src/moved.txt"]);
+      expect(
+        execFileSync("git", ["-C", root, "diff", "HEAD", "--name-only"], {
+          encoding: "utf8",
+        }).trim(),
+      ).toBe("src/moved.txt");
+      const input = {
+        ...request(),
+        project: { ...project, repositoryRoot: root },
+      };
+      if (state === "committed") {
+        commit(root);
+        await expect(
+          resolveOrchestrationGitRevision(input.project, task, signal()),
+        ).rejects.toThrow(/outside/);
+      } else {
+        vi.mocked(run).mockResolvedValue({
+          ...result,
+          preservedWorktreePath: root,
+        });
+        const execute = createSandcastleOrchestrationWorker({
+          agent,
+          sandbox: () => sandbox,
+          executionControls: {
+            profile: "local-files",
+            maxAiCredits: 30,
+            maxAutopilotContinues: 0,
+            timeoutMs: 2000,
+            disabledMcpServers: [],
+          },
+        });
+        await expect(execute(input, signal())).rejects.toThrow(
+          /exceeds approved task scope/,
+        );
+      }
+    },
+  );
   it("resolves the base before branch creation and the actual scoped task commit afterward", async () => {
     const root = repository();
     const p = { ...project, repositoryRoot: root };

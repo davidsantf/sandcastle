@@ -11,6 +11,7 @@ import {
   stat,
   symlink,
   writeFile,
+  rm,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -58,6 +59,46 @@ const setupRepo = async () => {
   await commitFile(repoDir, "hello.txt", "hello", "initial commit");
   return repoDir;
 };
+it.runIf(process.platform === "win32")(
+  "checks out Windows paths over 260 characters without persistent configuration changes",
+  async () => {
+    const root = await setupRepo();
+    const nested = join(
+      ...Array.from(
+        { length: 7 },
+        (_, index) => `nested-path-${index}-abcdefgh`,
+      ),
+    );
+    await mkdir(join(root, nested), { recursive: true });
+    await commitFile(
+      root,
+      join(nested, "proof.txt"),
+      "preserved",
+      "long path fixture",
+    );
+    const before = await execAsync("git config --local --list", { cwd: root });
+    try {
+      const worktree = await run(
+        create(root, {
+          branch: `orchestration/${"long-branch-".repeat(4)}proof`,
+          baseBranch: "main",
+        }),
+      );
+      expect(join(worktree.path, nested, "proof.txt").length).toBeGreaterThan(
+        260,
+      );
+      expect(
+        await readFile(join(worktree.path, nested, "proof.txt"), "utf8"),
+      ).toBe("preserved");
+      expect(
+        (await execAsync("git config --local --list", { cwd: root })).stdout,
+      ).toBe(before.stdout);
+      await run(remove(worktree.path));
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  },
+);
 
 /**
  * Set up a main repo with an `origin` remote backed by a bare repo. Returns

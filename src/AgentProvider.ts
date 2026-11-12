@@ -1,5 +1,5 @@
 import { mkdir, readFile, rm, writeFile, access } from "node:fs/promises";
-import { dirname, join, posix } from "node:path";
+import { dirname, join, posix, isAbsolute } from "node:path";
 import { tmpdir } from "node:os";
 import {
   claudeHostSessionPath,
@@ -21,6 +21,15 @@ import {
   type HostSessionLookup,
 } from "./SessionStore.js";
 import type { BindMountSandboxHandle } from "./SandboxProvider.js";
+import {
+  copilotExecutionControlsSchema,
+  assertCopilotFileScopes,
+  type CopilotExecutionControls,
+} from "./CopilotExecutionControls.js";
+export {
+  copilotExecutionControlsSchema,
+  type CopilotExecutionControls,
+} from "./CopilotExecutionControls.js";
 
 const fileExists = async (path: string): Promise<boolean> => {
   try {
@@ -220,6 +229,13 @@ export interface AgentCommandOptions {
 export interface PrintCommand {
   readonly command: string;
   readonly stdin?: string;
+  /** Exact shell-free host launch. Unsupported backends must reject it. */
+  readonly process?: {
+    readonly file: string;
+    readonly args: readonly string[];
+    readonly timeoutMs: number;
+    readonly scopedFiles?: readonly string[];
+  };
 }
 
 /** Per-iteration token usage snapshot extracted from the agent session. */
@@ -1102,16 +1118,36 @@ const parseCopilotStreamLine = (line: string): ParsedStreamEvent[] => {
 export interface CopilotOptions {
   /** Installed custom agent selected using the CLI's --agent flag. */
   readonly agent?: string;
+  /** Explicit host-selected local plugin; does not install or enable it globally. */
+  readonly pluginDirectory?: string;
   /** Reasoning effort level. Maps to the CLI's --effort flag. */
   readonly effort?: "low" | "medium" | "high";
   /** Environment variables injected by this agent provider. */
   readonly env?: Record<string, string>;
+  /** Explicit host-owned file-only profile; requires direct host process support. */
+  readonly executionControls?: CopilotExecutionControls;
+  /** Literal task scopes relative to the isolated worktree, not hub-supplied paths. */
+  readonly fileScopes?: readonly string[];
+  /** Restrict Copilot to file reads, including for named reviewer agents. */
+  readonly readOnly?: boolean;
 }
 
 export const copilot = (
   model: string,
   options?: CopilotOptions,
 ): AgentProvider => {
+  const controls = options?.executionControls
+    ? copilotExecutionControlsSchema.parse(options.executionControls)
+    : undefined;
+  const scopes = options?.fileScopes ? [...options.fileScopes] : [];
+  if (controls) assertCopilotFileScopes(scopes);
+  if (
+    options?.pluginDirectory &&
+    (!controls || !isAbsolute(options.pluginDirectory))
+  )
+    throw new Error(
+      "local Copilot plugin loading requires absolute host path and explicit execution controls",
+    );
   if (
     options?.agent !== undefined &&
     !/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,199}$/.test(options.agent)
@@ -1119,7 +1155,14 @@ export const copilot = (
     throw new Error("invalid Copilot custom agent name");
   return {
     name: "copilot",
-    env: options?.env ?? {},
+    env: controls
+      ? {
+          ...options?.env,
+          COPILOT_ALLOW_ALL: "false",
+          COPILOT_ASSISTED_APPROVAL: "false",
+          LLMLAB_PYTHON_AUTO_SETUP: "0",
+        }
+      : (options?.env ?? {}),
     captureSessions: false,
 
     // Copilot CLI does expose `--resume <id>`, but its session state is indexed by
@@ -1133,17 +1176,75 @@ export const copilot = (
       dangerouslySkipPermissions,
     }: AgentCommandOptions): PrintCommand {
       assertCopilotPrintPromptFitsArgv(prompt);
-      const allowAll = dangerouslySkipPermissions ? " --allow-all-tools" : "";
+      if (controls) {
+        const args = [
+          "-p",
+          prompt,
+          "--output-format",
+          "json",
+          "--model",
+          model,
+        ];
+        if (options?.agent) args.push("--agent", options.agent);
+        if (options?.pluginDirectory)
+          args.push("--plugin-dir", options.pluginDirectory);
+        if (options?.effort) args.push("--reasoning-effort", options.effort);
+        args.push(
+          "--max-ai-credits",
+          String(controls.maxAiCredits),
+          "--max-autopilot-continues",
+          String(controls.maxAutopilotContinues),
+          "--available-tools",
+          "view",
+          "read_file",
+          ...(options?.readOnly ? [] : ["apply_patch"]),
+          "--deny-tool",
+          "shell",
+          "--deny-tool",
+          "url",
+          "--deny-tool",
+          "memory",
+          "--disable-builtin-mcps",
+          "--no-custom-instructions",
+          "--no-auto-update",
+          "--no-ask-user",
+          "--disallow-temp-dir",
+          "--sync-session=off",
+        );
+        if (options?.readOnly) args.push("--deny-tool", "apply_patch");
+        for (const name of controls.disabledMcpServers)
+          args.push("--disable-mcp-server", name);
+        return {
+          command: ["copilot", ...args].map(shellEscape).join(" "),
+          process: {
+            file: "copilot",
+            args,
+            timeoutMs: controls.timeoutMs,
+            scopedFiles: scopes,
+          },
+        };
+      }
+      const allowAll =
+        dangerouslySkipPermissions && !options?.readOnly
+          ? " --allow-all-tools"
+          : "";
+      const readOnlyFlags = options?.readOnly
+        ? " --available-tools view read_file --deny-tool apply_patch --deny-tool shell --deny-tool url --deny-tool memory --disable-builtin-mcps"
+        : "";
       const effortFlag = options?.effort ? ` --effort ${options.effort}` : "";
       const agentFlag = options?.agent
         ? ` --agent ${shellEscape(options.agent)}`
         : "";
       return {
-        command: `copilot -p ${shellEscape(prompt)} --output-format json --model ${shellEscape(model)}${allowAll}${effortFlag}${agentFlag}`,
+        command: `copilot -p ${shellEscape(prompt)} --output-format json --model ${shellEscape(model)}${allowAll}${effortFlag}${agentFlag}${readOnlyFlags}`,
       };
     },
 
     buildInteractiveArgs({ prompt }: AgentCommandOptions): string[] {
+      if (controls || options?.readOnly)
+        throw new Error(
+          "local-files execution controls require non-interactive direct execution",
+        );
       const args = ["copilot", "--model", model];
       if (options?.agent) args.push("--agent", options.agent);
       // Seed the interactive session with `-i`/`--interactive`, NOT `-p`. The

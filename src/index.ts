@@ -1,4 +1,37 @@
 export { run } from "./run.js";
+export {
+  copilotExecutionControlsSchema,
+  type CopilotExecutionControls,
+} from "./CopilotExecutionControls.js";
+export * from "./OrchestrationWorkspaceContract.js";
+export {
+  OrchestrationWorkspaceStore,
+  workspaceConfigurationKey,
+  defaultWorkspaceConfiguration,
+  initializeWorkspace,
+  readWorkspaceConfiguration,
+  updateWorkspaceConfiguration,
+  migrateWorkspaceConfiguration,
+  registerWorkspaceProject,
+  removeWorkspaceProject,
+  registerWorkspaceRoute,
+  removeWorkspaceRoute,
+} from "./OrchestrationWorkspace.js";
+export * from "./LocalOrchestrationService.js";
+export * from "./LocalOrchestrationServiceControl.js";
+export * from "./OrchestrationDiscovery.js";
+export * from "./OrchestrationProposal.js";
+export * from "./OrchestrationNativeHost.js";
+export * from "./OrchestrationWorkspaceHost.js";
+export * from "./OrchestrationAzureCliTransport.js";
+export * from "./OrchestrationGithubAccount.js";
+export * from "./OrchestrationNativeDispatch.js";
+export * from "./OrchestrationNativeReview.js";
+export * from "./OrchestrationPlanningRecovery.js";
+export * from "./OrchestrationGithubWorkflow.js";
+export * from "./OrchestrationWorkflowContract.js";
+export * from "./OrchestrationFocus.js";
+export * from "./OrchestrationOperations.js";
 export { MultiProjectJournal } from "./MultiProjectJournal.js";
 export type {
   OrchestrationLease,
@@ -44,7 +77,10 @@ export {
   buildMultiProjectWorkerPrompt,
   resolveOrchestrationGitRevision,
 } from "./MultiProjectWorker.js";
-export type { DevsquadPhaseCapability } from "./MultiProjectWorker.js";
+export type {
+  DevsquadPhaseCapability,
+  OrchestrationLocalExecutionEvidence,
+} from "./MultiProjectWorker.js";
 export { runMultiProjectDemo } from "./MultiProjectDemo.js";
 export { runMultiProjectCoworkDemo } from "./MultiProjectCoworkDemo.js";
 export { runMultiProjectEntrypoint } from "./MultiProjectEntrypoint.js";

@@ -170,6 +170,11 @@ export function createGitHubOrchestrationHub(
   ): Promise<OrchestrationHubEvidence> => {
     if (project.hub.kind !== "github")
       throw new Error("GitHub project required");
+    if (!project.hub.pullRequest)
+      return {
+        ...unknownEvidence(),
+        diagnostic: "Change request registration required",
+      };
     const base = `/repos/${project.hub.repository}`;
     try {
       const pr = obj(
@@ -416,6 +421,11 @@ export function createAdoOrchestrationHub(
     binding?: { sourceBranch: string; targetBranch: string },
   ): Promise<OrchestrationHubEvidence> => {
     if (project.hub.kind !== "ado") throw new Error("ADO project required");
+    if (!project.hub.pullRequest)
+      return {
+        ...unknownEvidence(),
+        diagnostic: "Change request registration required",
+      };
     const hub = project.hub;
     const base = `https://dev.azure.com/${encodeURIComponent(hub.organization)}/${encodeURIComponent(hub.project)}`;
     const repo = `${base}/_apis/git/repositories/${encodeURIComponent(hub.repository)}`;
